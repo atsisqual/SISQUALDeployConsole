@@ -41,7 +41,7 @@
 | R-025 | TSplus/Web Access shared controller operation affects other environments | [CONFIRMED-CODE] current shared-resource locking | Critical | Medium | Local shared-resource lock and impact preview; never assume per-instance isolation |
 | R-026 | Central snapshot contains unsafe decrypted credential view | `cfg.ManagedInstanceRuntime` exposes decrypted secret values in current system | Critical | Medium | Explicit column contracts; never SELECT *; secret-bearing views excluded from generic sync |
 | R-027 | Central `ops.Engine.ScriptText` can mutate local executable code | Current system stores executable code in SQL | Critical | Medium | V1 local versioned modules are executable authority; central engine script is migration/reference data only |
-| R-028 | Repo reference and production DB diverge | Confirmed evidence gap; sync SQL is empty in inspected master; live DB unavailable | High | High | Every finding tagged by evidence source; live validation/snapshot later; never silently promote inference to confirmed |
+| R-028 | A generated central snapshot is mistaken for instantaneous state on every production server | `ManagementSync.sql` is a real PT_DEMO export, but target servers apply one-way sync later and can temporarily differ | High | Medium | Record snapshot generation/source identity; distinguish [CONFIRMED-SYNC] from [CONFIRMED-PRODUCTION]; validate server-specific runtime facts on target Windows hosts when required |
 | R-029 | Scope creep from newer Management Console features | Current master includes many features beyond initial handoff | Medium | High | Inventory them but do not include in V1 without explicit decision |
 | R-030 | Browser input controls filesystem paths | Engines manipulate privileged paths | Critical | Medium | Paths resolved from trusted synchronized config; canonicalize; enforce allowed roots; reject traversal/out-of-root |
 | R-031 | REST request replay/duplicate clicks execute action twice | Browser/network retries happen | Critical | Medium | Idempotency token + OperationId + coordinator deduplication |
@@ -54,6 +54,7 @@
 | R-038 | Operation history grows without bound | Local console persists logs/history | Medium | Medium | Local retention policy; never delete active/recovery evidence; exact policy later |
 | R-039 | Current central action approval/schedule model is accidentally recreated despite transient V1 design | Current repo includes governance/scheduling | Medium | Medium | V1 is operator-started/transient; no persistent Windows task/service; scheduling remains out of scope |
 | R-040 | V1 UI becomes coupled to Pode and blocks future framework replacement | Architectural maintainability risk | High | Medium | Vanilla HTML/CSS/JS + REST contract; engines/application services have no Pode dependency |
+| R-041 | Large repository file is silently elided by tooling and incorrectly classified as empty | [CONFIRMED] occurred during Phase 0 with the ~29.5 MB `ManagementSync.sql` blob | High | Medium | Never infer emptiness from wrapper content alone; verify Git blob size/metadata, then process oversized content through contents/blob endpoint and targeted extraction |
 
 ## Highest-priority risks before engine porting
 
@@ -100,6 +101,7 @@ Production-only assumptions remain open until they are represented by a stable c
 - Production lessons have corresponding risks/controls.
 - Pode, SQLite, concurrency and localhost API risks are explicit.
 - Security impact of local-admin execution is explicit.
-- Current-repo/live-production divergence is explicit.
+- Generated-snapshot vs live-runtime evidence boundaries are explicit.
+- Large-file repository-tooling failure mode and mandatory size-verification control are explicit.
 - Phase 1 technical spikes are identified without prematurely deciding their outcomes.
 - No product code or reference-repository modification was made.
