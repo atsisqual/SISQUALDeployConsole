@@ -281,7 +281,7 @@ Required current central model includes:
 - `ops.PulseRun`
 - server/instance identity
 
-### KE YCLOAK_CLIENT_SECRETS
+### KEYCLOAK_CLIENT_SECRETS
 
 - `cfg.ConfigRule`
 - `cfg.KeycloakClientSecretRule`
