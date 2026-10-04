@@ -141,6 +141,12 @@ There is **no `ops.Action` row named `SETTINGS_SYNC`** in the analysed snapshot.
 
 **[CONFIRMED-CODE]** `cfg.ConfigurationAdapterDefinition` still contains `DATABASE_SETTING -> SETTINGS_SYNC`. This is stale/inconsistent metadata relative to the executable `ops.Action` catalogue and must not be treated as a valid alias during the V1 port.
 
+**[CONFIRMED-SYNC]** The same inconsistency exists for Windows services: the effective catalogue is `WINDOWS_SERVICES -> WINDOWS_SERVICES`, while `cfg.ConfigurationAdapterDefinition` still contains `WINDOWS_SERVICE -> SERVICE_RECONCILE`. There are no current `ops.Action` or `ops.Engine` rows named `SETTINGS_SYNC` or `SERVICE_RECONCILE`; both names are stale adapter metadata.
+
+**[CONFIRMED-SYNC]** `ops.Engine` still retains an enabled legacy engine named `DATABASE_SETTINGS` (`Invoke-DatabaseSettings.ps1`, version `1.0`, minimum PowerShell `5.1`, no administrator requirement). The current action `DATABASE_SETTINGS` no longer uses that engine; it selects `DATABASE_CONTENT_SYNC` v4 instead.
+
+**[CONFIRMED-SYNC]** `FULL_DEPLOYMENT` contains 13 rows in `ops.ActionStep`: 12 enabled steps and one disabled step. The disabled row is `V8_KEYCLOAK_CONFIG` at order 63 with `IsEnabled = 0` and `StopOnError = 1`.
+
 ## 5. Managed server and environment model
 
 **[CONFIRMED-CODE]** The analysed sync contains **6 `dbo.ManagedServer` rows** and **76 `dbo.ManagedInstance` rows**.
