@@ -55,6 +55,8 @@
 | R-039 | Current central action approval/schedule model is accidentally recreated despite transient V1 design | Current repo includes governance/scheduling | Medium | Medium | V1 is operator-started/transient; no persistent Windows task/service; scheduling remains out of scope |
 | R-040 | V1 UI becomes coupled to Pode and blocks future framework replacement | Architectural maintainability risk | High | Medium | Vanilla HTML/CSS/JS + REST contract; engines/application services have no Pode dependency |
 | R-041 | Nightly reference `master` moves while analysis is in progress | [CONFIRMED] the reference repo advanced from `1050fbbc...` to `1e38c8ed...` during Phase 0 correction | Medium | High | Freeze and record commit SHA for every evidence pass; use moving `master` only to deliberately select a newer snapshot and document the transition |
+| R-042 | Large repository file is silently elided by tooling and incorrectly classified as empty | [CONFIRMED] occurred during Phase 0 with the ~29.5 MB `ManagementSync.sql` blob | High | Medium | Never infer emptiness from wrapper content alone; verify Git blob SHA/size and use an alternate/targeted content path before drawing repository conclusions |
+| R-043 | Stale catalogue metadata points to nonexistent execution identifiers | [CONFIRMED-SYNC] `cfg.ConfigurationAdapterDefinition` references `SETTINGS_SYNC` and `SERVICE_RECONCILE`, while current execution uses `DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC` and `WINDOWS_SERVICES -> WINDOWS_SERVICES` | High | Medium | Validate cross-catalogue references; effective execution mapping comes from validated `ops.Action` + `ops.Engine`; fail closed on dangling/stale adapter ActionCode values |
 
 ## Highest-priority risks before engine porting
 
@@ -66,6 +68,7 @@ The following must be resolved or materially reduced before mutable engines are 
 4. **R-015/R-016 — portable PowerShell/IIS/SQLite technical viability.**
 5. **R-002/R-026/R-036 — trusted snapshot activation and secret exclusion.**
 6. **R-017/R-019/R-023 — mutation safety for config, SQL and IIS.**
+7. **R-042/R-043 — large-file evidence and catalogue-reference validation.**
 
 ## Phase 1 risk gates
 
