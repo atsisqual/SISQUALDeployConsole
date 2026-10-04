@@ -272,6 +272,10 @@ It contains:
 
 - **117** unique `CREATE TABLE` schema definitions;
 - **200** `CREATE OR ALTER PROCEDURE` definitions;
+- **5** `CREATE OR ALTER FUNCTION` definitions;
+- **6** `CREATE OR ALTER VIEW` definitions;
+- **31,959** generated `INSERT INTO [...]` statements;
+- **200** `CREATE OR ALTER PROCEDURE` definitions;
 - **5** functions;
 - **6** views;
 - **31,959** generated `INSERT` statements;
