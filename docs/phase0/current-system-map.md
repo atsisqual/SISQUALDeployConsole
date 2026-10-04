@@ -1,17 +1,19 @@
 # Phase 0 — Current System Map
 
-**Status:** Phase 0 diagnostic  
+**Status:** Phase 0 diagnostic — corrected after full sync-payload inspection  
 **Reference repository:** `atsisqual/SISQUALManagementConsole` — read-only  
-**Reference branch/commit inspected:** `master` @ `1050fbbc97b6b077302154dd2e7307cce2ca3bbc`  
+**Initial code baseline inspected:** `master` @ `1050fbbc97b6b077302154dd2e7307cce2ca3bbc`  
+**Full sync snapshot additionally inspected:** `master` @ `1e38c8ed860615c4039ea2ec870f245102943ae4`  
 **Production evidence source:** approved knowledge-transfer document based on direct execution on 4+ real production servers  
 **Target repository:** `atsisqual/SISQUALDeployConsole`
 
 ## Evidence vocabulary
 
-- **[CONFIRMED-CODE]** visible in the inspected reference-repository commit.
+- **[CONFIRMED-CODE]** visible in versioned reference-repository code.
+- **[CONFIRMED-SNAPSHOT]** visible in the generated `database/sync/ManagementSync.sql` snapshot.
 - **[CONFIRMED-PRODUCTION]** confirmed by the production knowledge-transfer evidence.
 - **[INFERRED]** derived from confirmed evidence but not directly demonstrated end-to-end.
-- **[PENDING]** requires later evidence or a technical spike.
+- **[PENDING]** requires later evidence, an implementation decision, or a technical spike.
 - **[V]** requires validation on a real Windows/SISQUAL environment before it can be considered proven for the new product.
 
 This document describes the current system only. It does not define implementation code for SISQUALDeployConsole.
@@ -66,6 +68,10 @@ PowerShell engine
 
 Not every engine consumes every parameter, but the production invocation contract is fixed.
 
+**[CONFIRMED-SNAPSHOT]** The 2026-10-04 02:00:01 sync snapshot contains 24 `ops.Action` rows, 19 `ops.Engine` rows and 13 `ops.ActionStep` rows.
+
+**[CONFIRMED-SNAPSHOT]** The core V1 engines are present with complete `ScriptText`, version, source filename, SHA-256, minimum PowerShell version and administrator requirement.
+
 **[CONFIRMED-CODE]** The Worker is explicitly granted access to SQL procedures including:
 
 - `ops.GetConsoleActionMenu`
@@ -87,13 +93,19 @@ This confirms that action composition and engine retrieval are SQL-owned in the 
 
 ## 3. Configuration-repair model
 
-**[CONFIRMED-CODE]** `database/engines/CONFIG_REPAIR.ps1` is present as a standalone reference script and currently declares `#requires -Version 5.1`.
+**[CONFIRMED-CODE]** `database/engines/CONFIG_REPAIR.ps1` is present as a standalone reference script.
 
-**[CONFIRMED-CODE]** It resolves the local management SQL context, obtains a SQL-owned repair model through `cfg.ReviewRepairModel` and `cfg.GetRepairPlan`, and executes generic operations over JSON, XML, whole-file content and `TEXT_REGEX`.
+**[CONFIRMED-SNAPSHOT]** The active `ops.Engine` entry is:
 
-**[CONFIRMED-CODE]** Preview is the default and `-Apply` enables writes.
+- EngineCode: `CONFIG_REPAIR`
+- SourceFileName: `Invoke-ConfigRepair.ps1`
+- EngineVersion: `15.0`
+- MinimumPowerShell: `5.1`
+- RequiresAdministrator: `1`
 
-**[CONFIRMED-CODE]** The engine creates a run-specific backup/report directory and a transcript.
+**[CONFIRMED-SNAPSHOT]** Its central dependencies resolve through `cfg.GetLocalManagementContext`, `cfg.ReviewRepairModel` and `cfg.GetRepairPlan`, backed by `cfg.Application`, `cfg.ConfigFile`, `cfg.ConfigFileRepairPolicy`, `cfg.ConfigRule`, `dbo.ManagedInstance`, `dbo.ManagedServer` and the current credential runtime.
+
+**[CONFIRMED-CODE/SNAPSHOT]** Preview is the default and `-Apply` enables writes. The engine performs generic JSON/XML/whole-file/TEXT_REGEX repair behavior and creates backup/report evidence.
 
 **[CONFIRMED-PRODUCTION]** SISQUAL-specific decisions belong in configuration data, not hard-coded engine branches.
 
@@ -101,42 +113,95 @@ This confirms that action composition and engine retrieval are SQL-owned in the 
 
 ## 4. Database-content synchronization model
 
-**[CONFIRMED-PRODUCTION]** `DATABASE_CONTENT_SYNC` exists in production and is implemented in PowerShell without cross-instance linked-server dependence.
+**[CONFIRMED-SNAPSHOT]** The current operational mapping is exact:
 
-**[CONFIRMED-PRODUCTION]** `cfg.DatabaseObjectSettingRule` expresses database-content changes using structured target metadata and rule types `FULL_REPLACE` / `SUBSTRING_REPLACE`. Its filter model is structured and must not become arbitrary SQL text supplied by a browser.
+```text
+ops.Action.ActionCode = DATABASE_SETTINGS
+        |
+        v
+ops.Action.EngineCode = DATABASE_CONTENT_SYNC
+        |
+        v
+ops.Engine.EngineCode = DATABASE_CONTENT_SYNC
+```
 
-**[CONFIRMED-CODE]** The newer Configuration Adapter catalogue labels the equivalent database-settings surface as `DATABASE_SETTING_RULE` and maps it to action code `SETTINGS_SYNC`.
+The active engine is `DATABASE_CONTENT_SYNC.ps1`, version `v4`, minimum PowerShell `5.1`, administrator required.
 
-**[PENDING]** The exact relationship among the production engine name `DATABASE_CONTENT_SYNC`, current action code `SETTINGS_SYNC`, and any aliases in the live central database cannot be proven without the live database/snapshot.
+**[CONFIRMED-SNAPSHOT]** `cfg.DatabaseObjectSettingRule` contains the current rule contract:
+
+- `ObjectSettingRuleID`
+- `SettingCode`
+- `CountryCode`
+- `TargetDatabaseName`
+- `TargetSchemaName`
+- `TargetTableName`
+- `TargetColumnName`
+- `ExpectedTemplate`
+- `IsRequired`
+- `IsSensitive`
+- `SortOrder`
+- `IsEnabled`
+- `ModifiedAt`
+- `FilterClause`
+- `RuleType`
+- `CreateIfMissing`
+- `InsertColumnsJson`
+
+**[CONFIRMED-SNAPSHOT]** The engine uses direct `System.Data.SqlClient.SqlConnection` connections and references `cfg.DatabaseObjectSettingRule`, `cfg.ExpandTemplate`, `dbo.ManagedInstance` and `dbo.ManagedServer`.
+
+**[CONFIRMED-SNAPSHOT]** `cfg.ConfigurationAdapterDefinition` still contains `DATABASE_SETTING -> SETTINGS_SYNC`, but there is no `ops.Action` or `ops.Engine` named `SETTINGS_SYNC`. This is stale adapter metadata, not the active execution mapping.
+
+The same pattern exists for Windows services: the adapter still says `SERVICE_RECONCILE`, while the active action and engine are both `WINDOWS_SERVICES`.
 
 ## 5. Managed server and environment model
 
-**[CONFIRMED-PRODUCTION]** `dbo.ManagedServer` represents a physical server and includes at least:
+**[CONFIRMED-SNAPSHOT]** `dbo.ManagedServer` has:
 
 - `ServerCode`
 - `MachineName`
 - `ServicesRoot`
+- `IsEnabled`
+- `CreatedAt`
+- `ModifiedAt`
 - `ConfigBackupRoot`
+- `ManagementDatabaseName`
 
-**[CONFIRMED-PRODUCTION]** `dbo.ManagedInstance` represents a managed WFM environment and includes operational identity/configuration such as:
+**[CONFIRMED-SNAPSHOT]** `dbo.ManagedInstance` has:
 
 - `InstanceCode`
 - `ServerCode`
+- `CountryCode`
+- `CultureCode`
+- `CustomerCode`
+- `CustomerName`
 - `HostName`
-- `CountryCode` / `CultureCode`
-- `CustomerCode` / `ChannelID`
-- `SqlInstanceName` / `LinkedServer`
-- Keycloak ports
-- TSplus administration path/settings
-- enablement and customer metadata
+- `SqlInstanceName`
+- `LinkedServer`
+- `DatabaseName`
+- `ChannelID`
+- legacy `MobileAppToken`
+- `IsEnabled`
+- `Notes`
+- creation/modification metadata
+- customer-logo payload/metadata
+- `IisIdentityUserName` / legacy `IisIdentityPassword`
+- `WebAccessUserName` / legacy `WebAccessPassword`
+- links settings
+- `TsplusAdminToolPath`
+- `TsplusWebControlEnabled`
+- `KeycloakHttpPort`
+- `KeycloakHttpsPort`
+- `KeycloakManagementPort`
+
+**[CONFIRMED-SNAPSHOT]** The 02:00 snapshot contains 76 ManagedInstance rows. The three historical plaintext secret columns `MobileAppToken`, `IisIdentityPassword` and `WebAccessPassword` are NULL in all 76 generated INSERT rows.
 
 **[CONFIRMED-CODE]** Current code joins `ManagedInstance.ServerCode` to `ManagedServer.ServerCode` and constrains operational work by local `MachineName`.
-
-**[CONFIRMED-CODE]** `app.GetManagedEnvironments` resolves SQL data source from `ManagedServer.MachineName` plus `ManagedInstance.SqlInstanceName`.
 
 ## 6. Current credential model
 
 **[CONFIRMED-CODE]** Migration `0030_operational_hardening_legacy_cleanup_v370.sql` creates `sec.ManagedCredential` and encrypts secrets with an AES-256 SQL symmetric key protected by a SQL certificate.
+
+**[CONFIRMED-SNAPSHOT]** The generated sync payload contains 191 `sec.ManagedCredential` data rows and 384 `sec.ManagedCredentialAudit` rows.
 
 **[CONFIRMED-CODE]** Supported credential types are:
 
@@ -144,27 +209,27 @@ This confirms that action composition and engine retrieval are SQL-owned in the 
 - `WEB_ACCESS`
 - `MOBILE_APP_TOKEN`
 
-**[CONFIRMED-CODE]** Historical plaintext fields in `dbo.ManagedInstance` are migrated into the encrypted vault and then cleared.
+**[CONFIRMED-PRODUCTION]** The certificate/master-key chain is local to each SQL/server environment and is not naturally portable. Copying the encrypted rows does not make the secret usable on another server without the matching key material.
 
-**[CONFIRMED-PRODUCTION]** The certificate/master-key chain is local to each SQL/server environment and is not naturally portable. A database/snapshot copied to another server does not make the credential vault usable there without explicit key export/import.
-
-This is intentionally **not** the credential model selected for SISQUALDeployConsole V1. The approved new-product direction uses a local asymmetric machine identity and offline encrypted credential envelopes.
+This is intentionally **not** the credential model selected for SISQUALDeployConsole V1. The approved new-product direction uses a local asymmetric machine identity and offline encrypted + signed credential envelopes. Normal central-cache synchronization must not import the old vault as executable credential authority.
 
 ## 7. Current Windows privilege model
 
 **[CONFIRMED-CODE]** The current Worker asserts local Administrator privileges before management execution.
 
-**[CONFIRMED-CODE]** Current runtime code directly uses Windows/IIS APIs such as `WebAdministration`, `Get-Website`, `Get-WebApplication`, application-pool state functions, `Get-CimInstance Win32_Service`, and Windows service control.
+**[CONFIRMED-SNAPSHOT]** All core mutable engines except `DEPLOYMENT_PREFLIGHT` declare `RequiresAdministrator=1`; `DEPLOYMENT_PREFLIGHT` declares `0`.
 
-**[CONFIRMED-CODE]** The reference PowerShell runtime declares Windows PowerShell 5.1 compatibility in key entry points.
+**[CONFIRMED-CODE/SNAPSHOT]** Current runtime/engine code directly uses Windows/IIS APIs such as `WebAdministration`, `Get-Website`, `Get-WebApplication`, `Get-CimInstance Win32_Service`, Windows service control, `netsh`, `sc.exe` and local file operations depending on engine.
 
-**[V]** PowerShell 7 compatibility for the required IIS/Windows modules is not yet proven and belongs to Phase 1.
+**[CONFIRMED-SNAPSHOT]** Every core engine declares minimum PowerShell `5.1`.
+
+**[V]** PowerShell 7 compatibility for the required IIS/Windows behavior is not yet proven and belongs to Phase 1.
 
 ## 8. Current operational capabilities beyond the initial handoff scope
 
 The reference `master` contains a wider operational surface than the core engine list in the production handoff.
 
-**[CONFIRMED-CODE]** Current migrations/runtime include or reference:
+**[CONFIRMED-CODE/SNAPSHOT]** Current migrations/runtime/snapshot include or reference:
 
 - Database Copy / native backup-restore
 - Environment Clone
@@ -177,19 +242,75 @@ The reference `master` contains a wider operational surface than the core engine
 - TSplus portable operations
 - Website-folder and file-copy studios
 
-**[CONFIRMED-CODE]** `database/engines/STORAGE_SIZE_SCAN.ps1` exists as an additional standalone engine and is not part of the initially approved SISQUALDeployConsole V1 engine list.
-
 **[CONFIRMED]** Discovery of these capabilities does **not** expand V1 scope. They are inventory evidence only. Scope expansion requires an explicit later decision.
 
-## 9. Important repository/evidence gap
+## 9. Repository sync payload — corrected finding
 
-**[CONFIRMED-CODE]** `database/sync/ManagementSync.sql` at the inspected `master` commit is a zero-length file.
+The previous version of this document incorrectly stated that `database/sync/ManagementSync.sql` was zero-length.
 
-Therefore the current repository alone cannot reconstruct the production synchronization payload or every pre-existing table definition.
+That conclusion was false.
 
-For those areas, this Phase 0 inventory uses the approved production handoff as the authoritative evidence source.
+**[CONFIRMED-CODE]** At the exact initial commit `1050fbbc97b6b077302154dd2e7307cce2ca3bbc`, Git tree metadata reports:
 
-## 10. Current-system failure lessons that must carry forward
+- blob SHA: `31d3792f377d759cf4164d8d4f77a987b3c3622d`
+- size: **29,515,731 bytes**
+
+**[CONFIRMED-SNAPSHOT]** At current master `1e38c8ed860615c4039ea2ec870f245102943ae4`, Git tree metadata reports:
+
+- blob SHA: `4db6368dcab466bcd15cabdace92ebf3a408f798`
+- size: **29,516,382 bytes**
+- header: `_sisqualMANAGEMENT sync script - generated 2026-10-04 02:00:01 from ./_sisqualMANAGEMENT`
+
+The earlier error occurred because the high-level `fetch_file` read returned an empty content string for this ~29.5 MB file. That empty tool response was incorrectly interpreted as an empty Git blob. Tree/blob metadata and the contents endpoint prove otherwise.
+
+### Evidence-collection guardrail
+
+From this correction onward:
+
+1. an empty content response for a large repository file is **not** evidence that the file is empty;
+2. verify blob SHA and byte size from the Git tree;
+3. use the contents/blob endpoint or segmented/programmatic parsing for oversized files;
+4. only conclude “empty file” when repository metadata also reports zero bytes.
+
+**[CONFIRMED-SNAPSHOT]** The 02:00:01 payload was parsed as a complete generated sync script containing:
+
+- 68,763 lines;
+- 117 table DDL definitions;
+- 200 `CREATE OR ALTER PROCEDURE` definitions;
+- 5 functions;
+- 6 views;
+- 31,959 generated INSERT statements;
+- schema plus data for the central model.
+
+**[CONFIRMED-SNAPSHOT]** The known designed data exclusions are:
+
+- `app.JobLog`
+- `app.HousekeepingArtifact`
+- `dbo.DemoProfileImage`
+
+For all three, the table DDL is present but there are zero generated data INSERTs. This confirms that the exclusion is from synchronized data, not from schema creation.
+
+Other tables may also have zero current rows; zero rows alone must not be interpreted as a design exclusion.
+
+## 10. What the full sync payload resolves
+
+The snapshot removes several Phase 0 uncertainties.
+
+**[CONFIRMED-SNAPSHOT]**
+
+- the complete active `ops.Action` catalogue is available;
+- the complete `ops.Engine.ScriptText` for the core engines is available;
+- the exact `FULL_DEPLOYMENT` composition is available;
+- exact central table schemas are available;
+- exact current engine versions, minimum PowerShell and administrator requirements are available;
+- engine-to-action mappings are available;
+- engine SQL/procedure dependencies can be derived from the actual stored scripts and procedure definitions.
+
+The snapshot is therefore a primary Phase 0 source alongside the production handoff and versioned source code.
+
+It does **not** change the V1 authority decision: current SQL-stored `ScriptText` is migration/reference evidence only; V1 executable authority will be local versioned modules.
+
+## 11. Current-system failure lessons that must carry forward
 
 The following are **[CONFIRMED-PRODUCTION]** lessons:
 
@@ -201,7 +322,9 @@ The following are **[CONFIRMED-PRODUCTION]** lessons:
 6. Instance rename touches multiple foreign-key/dependent surfaces, including credentials, links and pulse state.
 7. A cloned Keycloak environment inherits source URLs/secrets unless explicitly repaired.
 
-## 11. Approved SISQUALDeployConsole V1 boundary derived from this map
+An additional **[CONFIRMED-CODE]** metadata-consistency lesson is now visible: `cfg.ConfigurationAdapterDefinition` can contain stale action names that no longer exist in `ops.Action`. V1 must validate cross-catalogue references instead of trusting adapter metadata blindly.
+
+## 12. Approved SISQUALDeployConsole V1 boundary derived from this map
 
 **[CONFIRMED]** The approved V1 direction is:
 
@@ -229,10 +352,12 @@ No V1 authoring writes configuration back to the central database.
 
 **[CONFIRMED]** Credentials use the separate offline asymmetric flow, not normal central-cache synchronization.
 
-## 12. Phase 0 acceptance check
+## 13. Phase 0 acceptance check
 
 - **All handoff engines classified:** yes; see `engine-porting-matrix.md`.
+- **Full generated sync payload inspected:** yes.
 - **Reference-code vs production-handoff differences identified:** yes.
+- **Action/engine alias ambiguity resolved where the snapshot permits:** yes.
 - **Reference repository modified:** no.
 - **Product code created:** no.
-- **Unproven items marked:** yes, with `[INFERRED]`, `[PENDING]`, or `[V]`.
+- **Remaining unproven items marked:** yes, with `[INFERRED]`, `[PENDING]`, or `[V]`.
