@@ -4,15 +4,15 @@
 
 This is a logical map, not a SQLite DDL specification.
 
-## Evidence limitation
+## Evidence sources and large-file correction
 
 **[CONFIRMED-CODE]** The inspected reference repository contains migrations from multiple generations of the management platform.
 
-**[CONFIRMED-CODE]** `database/sync/ManagementSync.sql` is zero-length at the inspected `master` commit.
+**[CONFIRMED-SYNC]** The generated `database/sync/ManagementSync.sql` is not empty. The Git blob is approximately 29.5 MB and begins with the generated timestamp `2026-10-04 02:00:01`. The earlier zero-length conclusion was caused by an oversized-file limitation in the normal file wrapper.
 
-**[CONFIRMED-PRODUCTION]** The production handoff therefore remains authoritative for central objects that are known from real servers but whose original creation DDL is not reconstructable from the current migration set.
+The generated payload contains schema repair/creation plus exported data. Inspection found 117 distinct `CREATE TABLE` definitions and data inserts across 103 tables. The known data exclusions `app.JobLog`, `app.HousekeepingArtifact`, and `dbo.DemoProfileImage` still receive schema blocks but have no data inserts.
 
-No claim below that is based only on production evidence is promoted to code-confirmed status.
+Accordingly this document now treats the generated snapshot as **[CONFIRMED-SYNC]** evidence for exact exported schema, rows, action mappings and SQL-stored engine content. The production handoff remains **[CONFIRMED-PRODUCTION]** evidence for runtime behavior observed on real servers.
 
 ## 1. Authority model for V1
 
@@ -53,16 +53,19 @@ Credential plaintext/private-key material is never part of normal central-cache 
 
 ### `dbo.ManagedServer`
 
-**Evidence:** [CONFIRMED-PRODUCTION], heavily referenced by current migrations.
+**Evidence:** [CONFIRMED-SYNC] + [CONFIRMED-PRODUCTION]. The snapshot contains six exported rows.
 
 **Role:** physical-server identity and roots.
 
-Known important fields:
+Exact exported schema fields:
 - `ServerCode`
 - `MachineName`
 - `ServicesRoot`
+- `IsEnabled`
+- `CreatedAt`
+- `ModifiedAt`
 - `ConfigBackupRoot`
-- enablement/management metadata as present in the current schema
+- `ManagementDatabaseName`
 
 Relationships:
 - one ManagedServer -> many ManagedInstance.
@@ -76,11 +79,11 @@ Use:
 
 ### `dbo.ManagedInstance`
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Evidence:** [CONFIRMED-SYNC] + [CONFIRMED-PRODUCTION]. The snapshot contains 76 exported rows.
 
 **Role:** authoritative environment identity and operational metadata.
 
-Known fields include:
+The generated schema confirms:
 - `InstanceCode`
 - `ServerCode`
 - `HostName`
@@ -108,7 +111,7 @@ Invariant:
 
 ### `cfg.Application`
 
-**Evidence:** [CONFIRMED-PRODUCTION] and referenced in current Configuration Studio code.
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 36 exported rows.
 
 **Role:** deployable application catalogue and physical-path templates.
 
@@ -120,7 +123,7 @@ V1 classification: **CENTRAL MIRROR — REQUIRED** for deployment/config/IIS eng
 
 ### `cfg.ConfigFile`
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 41 exported rows and confirms `FileID`, `ApplicationCode`, `RelativePath`, `FileFormat`, `IsRequired`, and `IsEnabled`.
 
 **Role:** associates managed configuration files with applications/paths/formats.
 
@@ -128,7 +131,7 @@ V1 classification: **CENTRAL MIRROR — REQUIRED** for CONFIG_REPAIR.
 
 ### `cfg.ConfigRule`
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 417 exported rows and the full rule schema including selector, validation, repair action/value/group/order and missing-node creation fields.
 
 **Role:** desired configuration mutations.
 
@@ -141,16 +144,25 @@ Security rule:
 
 ### `cfg.DatabaseObjectSettingRule`
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 61 exported rows.
 
 **Role:** generic application-database setting synchronization.
 
-Known production semantics:
+Exact exported schema includes:
+- `ObjectSettingRuleID`
+- `SettingCode`
+- `CountryCode`
 - `TargetDatabaseName`
+- `TargetSchemaName`
 - `TargetTableName`
 - `TargetColumnName`
+- `ExpectedTemplate`
+- `IsRequired` / `IsSensitive`
+- `SortOrder` / `IsEnabled` / `ModifiedAt`
 - structured `FilterClause`
-- `RuleType`: `FULL_REPLACE` / `SUBSTRING_REPLACE`
+- `RuleType`
+- `CreateIfMissing`
+- `InsertColumnsJson`
 
 V1 classification: **CENTRAL MIRROR — REQUIRED** for DATABASE_CONTENT_SYNC.
 
@@ -159,17 +171,17 @@ Security invariant:
 
 ### `cfg.ApplicationCopyPolicy`
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 22 exported rows and confirms the full field list: `ApplicationCode`, `DisplayName`, `RelativePath`, `CopyBinaries`, `CopyStaticAssets`, `PreserveDestinationConfig`, `ExcludePatterns`, `AssociatedServicePattern`, `HealthCheckPath`, `SortOrder`, `IsEnabled`, `ModifiedAt`, `UpdateSourceFamily`, and `UpdateSourceRelativePath`.
 
 **Role:** authoritative mapping from build/package source to deployed application destination.
 
-V1 classification: **CENTRAL MIRROR — REQUIRED IF deployment/copy behavior in core engines consumes it**.
+V1 classification: **CENTRAL MIRROR — REQUIRED IF a selected V1 engine consumes it**.
 
-**[PENDING]** Exact V1 consumer(s) and field list require extraction from the production model/reference code.
+The field-list uncertainty is resolved. Exact V1 consumers remain a porting-contract question, not a missing-schema question.
 
 ### `ops.Action`
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE].
+**Evidence:** [CONFIRMED-SYNC] + [CONFIRMED-PRODUCTION]. The snapshot contains 24 exported `ops.Action` rows.
 
 **Role:** action catalogue, mode policy, target requirements and enablement.
 
@@ -186,7 +198,7 @@ V1 does not use this table as a central write queue.
 
 ### `ops.ActionStep`
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+**Evidence:** [CONFIRMED-SYNC]. The snapshot contains 13 exported `ops.ActionStep` rows for `FULL_DEPLOYMENT`: 12 enabled plus disabled `V8_KEYCLOAK_CONFIG` at order 63.
 
 **Role:** ordered composition of actions such as `FULL_DEPLOYMENT`.
 
@@ -194,7 +206,7 @@ V1 classification: **CENTRAL MIRROR — REQUIRED** for centrally governed compos
 
 ### `ops.Engine`
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Evidence:** [CONFIRMED-SYNC] + [CONFIRMED-PRODUCTION]. The snapshot contains 19 exported engine rows including complete `ScriptText` and integrity hashes.
 
 **Current role:** stores executable PowerShell `ScriptText`, engine metadata and integrity hash.
 
@@ -208,13 +220,23 @@ Possible V1 mirrored metadata:
 - descriptive/action mapping;
 - source/version/hash for diagnostics/migration traceability.
 
-**[PENDING]** Exact mirrored subset will be defined after the porting contract is frozen.
+**[PENDING]** Exact V1 mirrored metadata subset will be defined after the porting contract is frozen. The source schema itself is no longer pending.
+
+## 2.1 Effective action/engine mappings resolved from the snapshot
+
+The generated central state resolves two previously ambiguous names:
+
+- **[CONFIRMED-SYNC]** `DATABASE_SETTINGS` is the enabled `ops.Action` and its `EngineCode` is `DATABASE_CONTENT_SYNC`. The stored engine is `DATABASE_CONTENT_SYNC.ps1` v4.
+- **[CONFIRMED-SYNC]** `WINDOWS_SERVICES` is both the enabled action and engine. The stored engine is `Invoke-WindowsServiceReconciliation.ps1` v2.0.
+- **[CONFIRMED-SYNC]** `cfg.ConfigurationAdapterDefinition` still contains `SETTINGS_SYNC` and `SERVICE_RECONCILE`, but neither exists as an `ops.Action` or `ops.Engine` in the snapshot. They are stale/inconsistent adapter metadata and must not drive V1 execution mapping.
+- **[CONFIRMED-SYNC]** The Windows-service definition schema is present and the current snapshot contains one exported definition: `WFM_MOBILE_APP`, using `AccountSource = IIS_IDENTITY`.
+- **[CONFIRMED-SYNC]** `cfg.IisApplicationDefinition` is fully present; the snapshot contains 30 exported rows.
 
 ## 3. Credential entities
 
 ### `sec.ManagedCredential`
 
-**Evidence:** [CONFIRMED-CODE].
+**Evidence:** [CONFIRMED-SYNC] + [CONFIRMED-CODE]. The snapshot contains 191 encrypted credential rows.
 
 Current schema includes:
 - `InstanceCode`
@@ -300,7 +322,7 @@ Historical central job data may be surfaced later only as a separate read-only f
 
 ## 6. Known rename/dependency surfaces
 
-**[CONFIRMED-PRODUCTION]** Renaming `InstanceCode` affects at least:
+**[CONFIRMED-SYNC + CONFIRMED-PRODUCTION]** Renaming `InstanceCode` affects at least:
 - `sec.ManagedCredential`
 - `cfg.LinksPageInstanceApplication`
 - `ops.PulseCheckState`
@@ -315,7 +337,7 @@ Consequence:
 
 ### Required central mirror domains
 
-At minimum, subject to exact schema extraction:
+At minimum, with the core source schemas now directly confirmed by the generated snapshot:
 
 ```text
 ManagedServer
@@ -368,13 +390,14 @@ It remains in INITIAL SETUP and exposes only bootstrap/identity/connection/sync 
 ## 10. Open schema work for later phases
 
 **[PENDING]**
-- exact column-level snapshot contract;
-- exact schema/version negotiation;
+- the **new V1** column-level snapshot contract (selection/minimization), even though the current central schemas are now known;
+- exact V1 schema/version negotiation;
 - exact safe subset of engine metadata;
-- exact Keycloak/IIS/service policy tables required by each engine;
-- whether central exposes a dedicated read-only export procedure or V1 performs explicit SELECTs;
-- snapshot transport details;
-- reconciliation of production engine/action aliases.
+- exact set of Keycloak/IIS/service policy tables each local engine should mirror (the source tables can now be extracted from the committed payload without live-DB access);
+- whether V1 consumes a dedicated read-only export procedure/snapshot endpoint or performs explicit read-only SELECTs;
+- snapshot transport and atomic activation details.
+
+**Resolved in Phase 0 correction:** the current source schemas for the core tables, the SQL-stored V1 engine texts, `DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC`, `WINDOWS_SERVICES -> WINDOWS_SERVICES`, and the fact that `SETTINGS_SYNC` / `SERVICE_RECONCILE` are stale adapter metadata rather than active execution identifiers.
 
 These are not user decisions required now; they are implementation/technical work for subsequent phases.
 
@@ -384,5 +407,5 @@ These are not user decisions required now; they are implementation/technical wor
 - Central-authoritative vs local-only state is explicit.
 - Secret-bearing current views/tables are identified as unsafe for generic mirroring.
 - V1 read-only authoring policy is encoded.
-- Missing live schema detail is marked [PENDING], not guessed.
+- Core live-export schema detail is now derived directly from the committed generated snapshot; remaining [PENDING] items are V1 design/porting questions rather than missing central-schema evidence.
 - No DDL/product implementation has been created.
