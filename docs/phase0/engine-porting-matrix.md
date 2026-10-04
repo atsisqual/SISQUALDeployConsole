@@ -7,7 +7,8 @@
 
 ## Status vocabulary
 
-- **[CONFIRMED-CODE]** demonstrated by the reference repository.
+- **[CONFIRMED-CODE]** demonstrated by normal versioned source/migrations in the reference repository.
+- **[CONFIRMED-SYNC]** demonstrated by the generated `ManagementSync.sql` snapshot, including live exported rows and SQL-stored engine text.
 - **[CONFIRMED-PRODUCTION]** demonstrated by the production handoff.
 - **[INFERRED]** reasonable mapping not yet proven end-to-end.
 - **[PENDING]** evidence/decision still required.
@@ -23,24 +24,24 @@ Every V1 engine must ultimately have a local contract with preview/apply semanti
 
 | Engine | Evidence | Current dependencies | Current side effects | V1 porting direction | Main blocker/risk | Phase |
 |---|---|---|---|---|---|---|
-| `DEPLOYMENT_PREFLIGHT` | [CONFIRMED-PRODUCTION]; current repo retains deployment-preflight support surfaces | Managed server/instance catalogue, application catalogue, filesystem/IIS/SQL prerequisites | Intended read-only validation | Local diagnostic module reading cached central policy plus live local machine state | Exact production script not available as standalone repo file | First |
-| `PULSE_STATUS` | [CONFIRMED-PRODUCTION]; pulse/profile surfaces visible in current migrations | Instance/server catalogue, URLs/services/SQL/IIS depending on checks, pulse state/history | Primarily probes; current system may persist state centrally | Local probes; results/history stored only in local SQLite in V1 | Exact live check catalogue/state contract not fully available | First |
+| `DEPLOYMENT_PREFLIGHT` | [CONFIRMED-SYNC] engine `Invoke-DeploymentPreflight.ps1` v1.0 stored in `ops.Engine` | Managed server/instance catalogue, application catalogue, filesystem/IIS/SQL prerequisites | Read-only validation | Local diagnostic module reading cached central policy plus live local machine state | Semantic extraction + PowerShell 7/Windows validation [V] | First |
+| `PULSE_STATUS` | [CONFIRMED-SYNC] engine `Invoke-SISQUALPulseStatus.ps1` v2; `ops.PulseCheckState` schema + 132 exported rows | Instance/server catalogue, pulse profile/check definitions, HTTP/SQL/IIS checks, pulse state/history | Probes plus deployment/reconciliation of Pulse page/status snapshot | Local probes; operational results/history stored locally in V1 | Decide which central pulse definitions are mirror inputs vs local result state; Windows/network validation [V] | First |
 | `CONFIG_REPAIR` | [CONFIRMED-CODE] standalone engine v15 | `cfg.GetLocalManagementContext`, `cfg.ReviewRepairModel`, `cfg.GetRepairPlan`, config files, backup root | Backup + JSON/XML/whole-file/TEXT_REGEX modifications on Apply | Split plan resolution from generic file mutation; consume synchronized rule model locally | PS 5.1 compatibility; exact parser/encoding preservation; rule schema extraction | First |
-| `DATABASE_CONTENT_SYNC` | [CONFIRMED-PRODUCTION]; adapter maps database settings to `SETTINGS_SYNC` | `cfg.DatabaseObjectSettingRule`, target application DBs, direct SQL connectivity | Updates configured DB values | Local generic DB-setting engine using structured predicates only and direct SqlConnection | Need exact rule schema and live alias mapping; prohibit arbitrary browser SQL | Later core |
-| `MANAGED_ASSETS` | [CONFIRMED-PRODUCTION] | Managed instance metadata/assets, filesystem, hashes | Writes/deploys managed assets | Local asset reconciliation from cache/package, hash verified | Exact asset table/contract needs extraction | Mid |
+| `DATABASE_CONTENT_SYNC` | [CONFIRMED-SYNC] engine `DATABASE_CONTENT_SYNC.ps1` v4; active action `DATABASE_SETTINGS` -> `DATABASE_CONTENT_SYNC` | exact `cfg.DatabaseObjectSettingRule` schema (61 exported rows), target application DBs, direct SQL connectivity | Updates configured DB values | Local generic DB-setting engine using structured predicates only and direct SqlConnection | No alias blocker remains; still prohibit arbitrary browser SQL and validate PS7/SQL behavior [V] | Later core |
+| `MANAGED_ASSETS` | [CONFIRMED-SYNC] engine `Invoke-ManagedAssets.ps1` v1.0 is present in `ops.Engine` | Managed instance metadata/assets, filesystem, hashes | Writes/deploys managed assets | Local asset reconciliation from cache/package, hash verified | Extract exact consumed tables/fields from stored script; filesystem validation [V] | Mid |
 | `IIS_RECONCILE` | [CONFIRMED-PRODUCTION]; [CONFIRMED-CODE] IIS adapter/runtime | IIS topology policy, `WebAdministration`, instance paths, bindings, pools, credentials | Creates/updates sites/apps/pools/bindings; starts pools | Local IIS module; preview desired/actual diff before Apply | PowerShell 7/WebAdministration compatibility [V]; destructive topology changes | Mid |
-| `WINDOWS_SERVICES` | [CONFIRMED-PRODUCTION]; current adapter action is `SERVICE_RECONCILE` | Service definitions, Win32_Service/Get-Service, instance/hostname mapping, credentials where applicable | Create/update/start/stop service configuration | Local Windows-service reconciliation module | Exact production naming/action alias; service privilege semantics [V] | Mid |
-| `V8_KEYCLOAK_PREREQUISITES` | [CONFIRMED-PRODUCTION] | Keycloak files/runtime/ports/instance metadata | Repairs/installs prerequisites | Local prerequisite validator/reconciler | Exact script not standalone; Java/runtime assumptions [V] | Mid |
-| `V8_KEYCLOAK_SERVICE` | [CONFIRMED-PRODUCTION] | Keycloak service config, ports, filesystem, Windows service | Configures/operates Keycloak service | Local service/config module after prerequisite engine | Clone-origin leakage of URLs/secrets; service compatibility [V] | Mid |
-| `KEYCLOAK_CLIENT_SECRETS` | [CONFIRMED-PRODUCTION] | Keycloak clients, credential material, instance URLs | Updates client secrets/config | Local engine consuming offline-delivered credential envelope; never normal sync | Secret handling, redaction, idempotency; exact Keycloak interface [V] | After credential Phase |
-| `WEB_ACCESS` | [CONFIRMED-PRODUCTION]; [CONFIRMED-CODE] TSplus portable runtime exists | TSplus AdminTool, shared-resource semantics, instance metadata | Web Access/TSplus start-stop/configuration | Local module with explicit shared-resource lock | Shared controller can affect multiple environments; path/version differences [V] | Later |
-| `LINKS_PAGES` | [CONFIRMED-PRODUCTION]; links publishing/profile code exists | Instance/app visibility/profile configuration, filesystem/web content | Publishes/repairs links pages | Local generation/reconciliation from read-only central config | Current repo has multiple generations/profile override precedence | Later |
+| `WINDOWS_SERVICES` | [CONFIRMED-SYNC] active action + engine are both `WINDOWS_SERVICES`; engine `Invoke-WindowsServiceReconciliation.ps1` v2.0 | exact `cfg.WindowsServiceDefinition` schema; current snapshot has one enabled WFM Mobile App definition; Win32 service APIs; IIS identity credential | Create/update/start/stop service configuration | Local Windows-service reconciliation module | `SERVICE_RECONCILE` is stale adapter metadata, not an active action/engine; service semantics still require [V] | Mid |
+| `V8_KEYCLOAK_PREREQUISITES` | [CONFIRMED-SYNC] stored engine v7 | Keycloak files/runtime/ports/instance metadata | Verifies/reconciles prerequisites | Local prerequisite validator/reconciler | Java/runtime assumptions and PS7 behavior [V] | Mid |
+| `V8_KEYCLOAK_SERVICE` | [CONFIRMED-SYNC] stored engine v5 | Keycloak service config, ports, filesystem, Windows service | Configures/operates Keycloak service and validates listeners/OpenID reachability | Local service/config module after prerequisite engine | Clone-origin leakage of URLs/secrets; service compatibility [V] | Mid |
+| `KEYCLOAK_CLIENT_SECRETS` | [CONFIRMED-SYNC] stored engine v1 and enabled action | Keycloak clients, canonical config rules, credential material, instance URLs | Synchronizes Keycloak client secret and application config | Local engine consuming offline-delivered credential envelope; never normal sync | Secret handling/redaction/idempotency and Keycloak interface validation [V] | After credential Phase |
+| `WEB_ACCESS` | [CONFIRMED-SYNC] stored engine `Invoke-WebAccessDeployment.ps1` v5.0; [CONFIRMED-CODE] TSplus runtime support | TSplus AdminTool, shared-resource semantics, instance metadata | Web Access/TSplus user/credential/broker deployment and control | Local module with explicit shared-resource lock | Shared controller can affect multiple environments; path/version differences [V] | Later |
+| `LINKS_PAGES` | [CONFIRMED-SYNC] stored engine `Invoke-LinksPageDeployment.ps1` v7.1 plus profile/override data | Instance/app visibility/profile configuration, filesystem/web content | Publishes/repairs links pages and global website branding | Local generation/reconciliation from read-only central config | Preserve current profile/override precedence exactly; filesystem validation [V] | Later |
 
 ## Composite action
 
 ### `FULL_DEPLOYMENT`
 
-**[CONFIRMED-PRODUCTION]** The current system composes approximately twelve action steps through `ops.Action` / `ops.ActionStep`.
+**[CONFIRMED-SYNC]** The exported central state contains exactly 13 `FULL_DEPLOYMENT` rows in `ops.ActionStep`: 12 enabled steps and one disabled step (`V8_KEYCLOAK_CONFIG`, order 63). The enabled sequence is preflight, Keycloak prerequisites, config repair, database settings, managed assets, IIS, Windows services, Keycloak client secrets, Keycloak service, Web Access, Pulse and links pages.
 
 **[PROPOSED/APPROVED PLAN]** Do not port `FULL_DEPLOYMENT` as a monolithic engine. In V1 it should become orchestration over already-validated local engines.
 
@@ -91,7 +92,7 @@ Required output should distinguish:
 
 No mutations should occur.
 
-**[PENDING]** Extract exact current preflight definition/procedures and all enabled requirements from available migrations/seed material or later central snapshot.
+**[CONFIRMED-SYNC]** The exact current preflight engine text is available in `ops.Engine.ScriptText` in the generated snapshot. Dependency extraction remains porting work, but it no longer requires access to a live central database.
 
 ### PULSE_STATUS
 
@@ -159,12 +160,13 @@ Current repo contains profile/override precedence. V1 should synchronize resolve
 
 ## Name/contract differences discovered
 
-| Production handoff | Current repo evidence | Status |
+| Production/effective contract | Generated snapshot evidence | Status |
 |---|---|---|
-| `DATABASE_CONTENT_SYNC` | Configuration adapter uses `SETTINGS_SYNC` | [PENDING] alias/rename relationship |
-| `WINDOWS_SERVICES` | Adapter uses `SERVICE_RECONCILE` | [PENDING] alias/rename relationship |
-| SQL-stored engine catalogue | Only `CONFIG_REPAIR.ps1` and `STORAGE_SIZE_SCAN.ps1` are visible as standalone `database/engines` scripts plus runtime orchestrators | [CONFIRMED] repo is not a complete export of live `ops.Engine` |
-| nightly sync payload | `database/sync/ManagementSync.sql` is empty at inspected master | [CONFIRMED] cannot reconstruct sync solely from this file |
+| `DATABASE_CONTENT_SYNC` | Active `ops.Action DATABASE_SETTINGS` -> `ops.Engine DATABASE_CONTENT_SYNC` v4. Adapter still says `SETTINGS_SYNC`, but its route points to `DATABASE_SETTINGS`; no `SETTINGS_SYNC` action/engine exists. | [CONFIRMED-SYNC] effective mapping resolved; adapter metadata is stale/inconsistent |
+| `WINDOWS_SERVICES` | Active action and engine are both `WINDOWS_SERVICES` v2.0. Adapter says `SERVICE_RECONCILE`; no such action/engine exists. | [CONFIRMED-SYNC] effective mapping resolved; adapter metadata is stale/inconsistent |
+| SQL-stored engine catalogue | Generated sync payload contains 19 `ops.Engine` rows including the V1 engine scripts even when no standalone file exists under `database/engines`. | [CONFIRMED-SYNC] sync snapshot is a usable source for exact stored engine text |
+| `FULL_DEPLOYMENT` | 13 action-step rows, 12 enabled + disabled `V8_KEYCLOAK_CONFIG`. | [CONFIRMED-SYNC] exact current composition resolved |
+| nightly sync payload | Generated `ManagementSync.sql` is ~29.5 MB and contains schema + data export. | [CONFIRMED-SYNC] previous “empty file” conclusion corrected |
 
 ## Capabilities discovered but not automatically in V1 scope
 
@@ -176,6 +178,6 @@ The current reference repo includes Database Copy, Environment Clone, Housekeepi
 
 All engines explicitly named in the production handoff have been classified.
 
-No engine is marked “ready to port” without later Phase 1/runtime validation or extraction of its exact configuration contract.
+The exact SQL-stored script text for the V1 engines is now available from the generated snapshot. No engine is nevertheless marked “ready to port” without Phase 1/runtime validation and an explicit local contract.
 
 No production/reference repository file was modified.
