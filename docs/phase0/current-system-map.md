@@ -8,7 +8,8 @@
 
 ## Evidence vocabulary
 
-- **[CONFIRMED-CODE]** visible in the inspected reference-repository commit.
+- **[CONFIRMED-CODE]** visible in normal versioned source/migrations in the inspected reference-repository commit.
+- **[CONFIRMED-SYNC]** visible in the generated `database/sync/ManagementSync.sql` snapshot committed in the reference repository.
 - **[CONFIRMED-PRODUCTION]** confirmed by the production knowledge-transfer evidence.
 - **[INFERRED]** derived from confirmed evidence but not directly demonstrated end-to-end.
 - **[PENDING]** requires later evidence or a technical spike.
@@ -105,20 +106,20 @@ This confirms that action composition and engine retrieval are SQL-owned in the 
 
 **[CONFIRMED-PRODUCTION]** `cfg.DatabaseObjectSettingRule` expresses database-content changes using structured target metadata and rule types `FULL_REPLACE` / `SUBSTRING_REPLACE`. Its filter model is structured and must not become arbitrary SQL text supplied by a browser.
 
-**[CONFIRMED-CODE]** The newer Configuration Adapter catalogue labels the equivalent database-settings surface as `DATABASE_SETTING_RULE` and maps it to action code `SETTINGS_SYNC`.
+**[CONFIRMED-SYNC]** The generated central snapshot resolves the effective mapping precisely: `ops.Action.ActionCode = DATABASE_SETTINGS` is enabled and points to `ops.Engine.EngineCode = DATABASE_CONTENT_SYNC`; the stored engine is `DATABASE_CONTENT_SYNC.ps1`, version `v4`.
 
-**[PENDING]** The exact relationship among the production engine name `DATABASE_CONTENT_SYNC`, current action code `SETTINGS_SYNC`, and any aliases in the live central database cannot be proven without the live database/snapshot.
+**[CONFIRMED-SYNC]** `cfg.ConfigurationAdapterDefinition` still contains `ActionCode = SETTINGS_SYNC` for the `DATABASE_SETTING` adapter, while its route is `/actions?action=DATABASE_SETTINGS`. No `ops.Action` or `ops.Engine` named `SETTINGS_SYNC` exists in the generated snapshot. Therefore `SETTINGS_SYNC` is stale/inconsistent adapter metadata, not the effective execution action.
 
 ## 5. Managed server and environment model
 
-**[CONFIRMED-PRODUCTION]** `dbo.ManagedServer` represents a physical server and includes at least:
+**[CONFIRMED-SYNC]** The generated snapshot contains the complete `dbo.ManagedServer` schema and six data rows. It represents a physical server and includes:
 
 - `ServerCode`
 - `MachineName`
 - `ServicesRoot`
 - `ConfigBackupRoot`
 
-**[CONFIRMED-PRODUCTION]** `dbo.ManagedInstance` represents a managed WFM environment and includes operational identity/configuration such as:
+**[CONFIRMED-SYNC]** The generated snapshot contains the complete `dbo.ManagedInstance` schema and 76 data rows. It represents a managed WFM environment and includes operational identity/configuration such as:
 
 - `InstanceCode`
 - `ServerCode`
@@ -181,13 +182,38 @@ The reference `master` contains a wider operational surface than the core engine
 
 **[CONFIRMED]** Discovery of these capabilities does **not** expand V1 scope. They are inventory evidence only. Scope expansion requires an explicit later decision.
 
-## 9. Important repository/evidence gap
+## 9. Generated sync payload in the repository
 
-**[CONFIRMED-CODE]** `database/sync/ManagementSync.sql` at the inspected `master` commit is a zero-length file.
+**[CORRECTED]** The earlier Phase 0 statement that `database/sync/ManagementSync.sql` was zero-length was false. The error came from treating an empty `fetch_file` response for an oversized blob as evidence that the Git blob itself was empty.
 
-Therefore the current repository alone cannot reconstruct the production synchronization payload or every pre-existing table definition.
+**[CONFIRMED-SYNC]** At the inspected `master` commit, the Git tree reports the `ManagementSync.sql` blob at approximately 29.5 MB. Its content begins:
 
-For those areas, this Phase 0 inventory uses the approved production handoff as the authoritative evidence source.
+```text
+/* _sisqualMANAGEMENT sync script - generated 2026-10-04 02:00:01 from ./_sisqualMANAGEMENT */
+```
+
+The file contains real generated SQL for the central model: schema creation/repair plus data inserts. Automated inspection of the payload found 117 distinct `CREATE TABLE` definitions and data inserts across 103 tables.
+
+**[CONFIRMED-SYNC + CONFIRMED-PRODUCTION]** The three known high-volume exclusions are handled as schema-only in this payload:
+
+- `app.JobLog`
+- `app.HousekeepingArtifact`
+- `dbo.DemoProfileImage`
+
+All three have schema blocks in the generated script and zero data `INSERT` statements. Their row data is excluded by design.
+
+**[CONFIRMED-SYNC]** The payload also includes the actual rows for `ops.Engine`, `ops.Action`, `ops.ActionStep`, the central configuration tables, managed instances/servers, credential ciphertext rows, IIS/service definitions, links and pulse state. Consequently, many facts previously marked pending because they appeared to require a live DB can be proven directly from the committed generated snapshot.
+
+### Repository-reading guardrail
+
+A repository tool returning empty content for a large file must never again be interpreted as “zero-byte file” without independent metadata verification.
+
+For large blobs the required sequence is:
+
+1. inspect Git tree/contents metadata and record the real blob size;
+2. if the normal file wrapper elides content, use the GitHub contents endpoint and process the payload inside the tool call;
+3. extract targeted blocks/rows instead of emitting the entire large file;
+4. only classify a file as empty when Git metadata reports size 0.
 
 ## 10. Current-system failure lessons that must carry forward
 
@@ -200,6 +226,7 @@ The following are **[CONFIRMED-PRODUCTION]** lessons:
 5. Cross-instance linked servers are fragile; direct `SqlConnection` is preferred.
 6. Instance rename touches multiple foreign-key/dependent surfaces, including credentials, links and pulse state.
 7. A cloned Keycloak environment inherits source URLs/secrets unless explicitly repaired.
+8. Generated sync snapshots are authoritative evidence of the exported central state, but large-file tooling must be size-verified before conclusions are drawn.
 
 ## 11. Approved SISQUALDeployConsole V1 boundary derived from this map
 
@@ -233,6 +260,7 @@ No V1 authoring writes configuration back to the central database.
 
 - **All handoff engines classified:** yes; see `engine-porting-matrix.md`.
 - **Reference-code vs production-handoff differences identified:** yes.
+- **Generated sync payload inspected directly:** yes; schema/data and action/engine mappings are now part of the evidence set.
 - **Reference repository modified:** no.
 - **Product code created:** no.
 - **Unproven items marked:** yes, with `[INFERRED]`, `[PENDING]`, or `[V]`.
