@@ -2,19 +2,33 @@
 
 **Purpose:** identify the central-management data that SISQUALDeployConsole V1 must understand and classify it as central read-only mirror data, credential-delivery data, local-only state, or out-of-scope operational history.
 
-This is a logical map, not a SQLite DDL specification.
+**Reference sync snapshot:** `atsisqual/SISQUALManagementConsole` `master` @ `1e38c8ed860615c4039ea2ec870f245102943ae4`  
+**Sync file:** `database/sync/ManagementSync.sql`  
+**Blob SHA:** `4db6368dcab466bcd15cabdace92ebf3a408f798`  
+**Blob size:** 29,516,382 bytes
 
-## Evidence limitation
+This is a logical inventory and authority map, not SQLite DDL.
 
-**[CONFIRMED-CODE]** The inspected reference repository contains migrations from multiple generations of the management platform.
+## 1. Sync-payload completeness
 
-**[CONFIRMED-CODE]** `database/sync/ManagementSync.sql` is zero-length at the inspected `master` commit.
+The original Phase 0 document incorrectly described the sync file as empty because the normal file-reader path returned an empty content string for the oversized blob.
 
-**[CONFIRMED-PRODUCTION]** The production handoff therefore remains authoritative for central objects that are known from real servers but whose original creation DDL is not reconstructable from the current migration set.
+**[CONFIRMED-CODE]** The full sync payload was re-read through an alternate GitHub content path and programmatically processed end-to-end.
 
-No claim below that is based only on production evidence is promoted to code-confirmed status.
+It contains:
 
-## 1. Authority model for V1
+- **117** unique table schema definitions;
+- **114** table data-export sections;
+- exactly three explicit data exclusions:
+  - `app.HousekeepingArtifact`
+  - `app.JobLog`
+  - `dbo.DemoProfileImage`.
+
+The excluded tables still receive schema DDL; only their data is omitted. The generated file marks them with `-- SKIPPED (excluded): ...`.
+
+Therefore the central schema/data inventory can be derived directly from this repository snapshot for the exported surfaces.
+
+## 2. V1 authority model
 
 **[CONFIRMED — approved product decision]**
 
@@ -22,7 +36,7 @@ No claim below that is based only on production evidence is promoted to code-con
 Central _sisqualMANAGEMENT
         |
         | READ ONLY
-        | snapshot/sync
+        | validated snapshot/sync
         v
 Local management.db
         |
@@ -33,7 +47,7 @@ Local management.db
 
 V1 never authors configuration back to the central database.
 
-The credential flow is separate:
+Credential delivery is a separate flow:
 
 ```text
 local machine public key
@@ -47,305 +61,465 @@ central credential packaging
 local machine private key
 ```
 
-Credential plaintext/private-key material is never part of normal central-cache synchronization.
+Private-key material and credential plaintext are never part of normal central-cache synchronization.
 
-## 2. Core central entities
+## 3. Core central entities and current row counts
 
-### `dbo.ManagedServer`
+| Object | Rows in analysed sync | V1 classification |
+|---|---:|---|
+| `dbo.ManagedServer` | 6 | REQUIRED CENTRAL MIRROR |
+| `dbo.ManagedInstance` | 76 | REQUIRED CENTRAL MIRROR, safe fields only |
+| `cfg.Application` | 36 | REQUIRED CENTRAL MIRROR |
+| `cfg.ConfigFile` | 41 | REQUIRED CENTRAL MIRROR |
+| `cfg.ConfigRule` | 417 | REQUIRED CENTRAL MIRROR |
+| `cfg.DatabaseObjectSettingRule` | 61 | REQUIRED CENTRAL MIRROR |
+| `cfg.ApplicationCopyPolicy` | 22 | CENTRAL MIRROR only if a V1 engine consumes it |
+| `cfg.WindowsServiceDefinition` | 1 | REQUIRED CENTRAL MIRROR |
+| `cfg.KeycloakClientSecretRule` | 8 | REQUIRED NON-SECRET CENTRAL MIRROR |
+| `cfg.PulseProfile` | 4 | REQUIRED CENTRAL MIRROR |
+| `cfg.LinksPageInstanceApplication` | 12 | REQUIRED/DERIVED LINKS POLICY INPUT |
+| `ops.Action` | 24 | REQUIRED CENTRAL MIRROR for centrally governed action catalogue |
+| `ops.ActionStep` | 13 | REQUIRED CENTRAL MIRROR for composite ordering |
+| `ops.Engine` | 19 | METADATA/MIGRATION SOURCE; NOT executable authority |
+| `ops.PulseCheckState` | 132 | CURRENT CENTRAL RUNTIME STATE; not active V1 control state |
+| `sec.ManagedCredential` | 191 | DO NOT mirror secret ciphertext into normal V1 cache |
 
-**Evidence:** [CONFIRMED-PRODUCTION], heavily referenced by current migrations.
+## 4. Physical server model — dbo.ManagedServer
 
-**Role:** physical-server identity and roots.
+**[CONFIRMED-CODE] Exact current columns**
 
-Known important fields:
-- `ServerCode`
-- `MachineName`
-- `ServicesRoot`
-- `ConfigBackupRoot`
-- enablement/management metadata as present in the current schema
+- `ServerCode varchar(30) NOT NULL`
+- `MachineName sysname NOT NULL`
+- `ServicesRoot nvarchar(1000) NOT NULL`
+- `IsEnabled bit NOT NULL`
+- `CreatedAt datetime2 NOT NULL`
+- `ModifiedAt datetime2 NOT NULL`
+- `ConfigBackupRoot nvarchar(1000) NOT NULL`
+- `ManagementDatabaseName sysname NOT NULL`
 
-Relationships:
-- one ManagedServer -> many ManagedInstance.
+Role:
+- identifies a physical management target;
+- scopes local environments;
+- resolves filesystem roots and management DB identity.
 
-V1 classification: **CENTRAL MIRROR — REQUIRED**.
+V1 classification: **REQUIRED CENTRAL MIRROR**.
 
-Use:
-- bind current machine to an approved server identity;
-- scope visible/operable environments;
-- resolve roots/defaults.
+## 5. Environment model — dbo.ManagedInstance
 
-### `dbo.ManagedInstance`
+**[CONFIRMED-CODE] Exact current columns**
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+- `InstanceCode varchar(20) NOT NULL`
+- `ServerCode varchar(30) NOT NULL`
+- `CountryCode char(2) NOT NULL`
+- `CultureCode nvarchar(10) NOT NULL`
+- `CustomerCode int NULL`
+- `CustomerName nvarchar(100) NULL`
+- `HostName sysname NOT NULL`
+- `SqlInstanceName sysname NULL`
+- `LinkedServer sysname NULL`
+- `DatabaseName sysname NOT NULL`
+- `ChannelID int NULL`
+- `MobileAppToken nvarchar(255) NULL`
+- `IsEnabled bit NOT NULL`
+- `Notes nvarchar(1000) NULL`
+- `CreatedAt datetime2 NOT NULL`
+- `ModifiedAt datetime2 NOT NULL`
+- `CustomerLogo varbinary(max) NULL`
+- `CustomerLogoFileName nvarchar(260) NULL`
+- `CustomerLogoMimeType varchar(100) NULL`
+- `CustomerLogoSha256 char(64) NULL`
+- `CustomerLogoModifiedAt datetime2 NULL`
+- `IisIdentityUserName nvarchar(255) NULL`
+- `IisIdentityPassword nvarchar(255) NULL`
+- `WebAccessUserName sysname NULL`
+- `WebAccessPassword nvarchar(255) NULL`
+- `WebAccessModifiedAt datetime2 NULL`
+- `LinksIncludeAllInstances bit NOT NULL`
+- `LinksAssignedUserName nvarchar(150) NULL`
+- `TsplusAdminToolPath nvarchar(1000) NULL`
+- `TsplusWebControlEnabled bit NOT NULL`
+- `KeycloakHttpPort int NULL`
+- `KeycloakHttpsPort int NULL`
+- `KeycloakManagementPort int NULL`
 
-**Role:** authoritative environment identity and operational metadata.
+V1 classification: **REQUIRED CENTRAL MIRROR, explicit safe-column contract only**.
 
-Known fields include:
-- `InstanceCode`
-- `ServerCode`
-- `HostName`
-- `CountryCode`
-- `CultureCode`
-- `CustomerCode`
-- `CustomerName`
-- `SqlInstanceName`
-- `LinkedServer`
-- `DatabaseName`
-- `ChannelID`
-- Keycloak HTTP/HTTPS/management ports [production evidence]
-- `TsplusAdminToolPath`
-- `TsplusWebControlEnabled`
-- `IsEnabled`
-- customer branding/assets metadata
-- non-secret credential usernames where applicable
+The historical/plaintext secret columns must not be copied into V1 merely because they exist in the current schema.
 
-Current migration 0030 also shows historical secret columns being cleared after migration to `sec.ManagedCredential`.
+## 6. Application/configuration model
 
-V1 classification: **CENTRAL MIRROR — REQUIRED**, excluding plaintext secret material.
+### cfg.Application
 
-Invariant:
-- local execution is restricted to enabled instances belonging to the current approved physical server.
+**Current rows:** 36.
 
-### `cfg.Application`
-
-**Evidence:** [CONFIRMED-PRODUCTION] and referenced in current Configuration Studio code.
-
-**Role:** deployable application catalogue and physical-path templates.
-
-Known production field examples:
+Exact columns:
 - `ApplicationCode`
-- `PhysicalPathTemplate`, e.g. `{INSTANCE_ROOT}\V8\sisqual-dashboard`
+- `DisplayName`
+- `FolderName`
+- `IisPath`
+- `PhysicalPathTemplate`
+- `IsOptional`
+- `IsEnabled`
+- Links display/URL/icon/sort/publication/default/hub fields.
 
-V1 classification: **CENTRAL MIRROR — REQUIRED** for deployment/config/IIS engines.
+V1 use:
+- application identity;
+- physical-path resolution;
+- IIS/config/link mappings.
 
-### `cfg.ConfigFile`
+### cfg.ConfigFile
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Current rows:** 41.
 
-**Role:** associates managed configuration files with applications/paths/formats.
+Exact columns:
+- `FileID`
+- `ApplicationCode`
+- `RelativePath`
+- `FileFormat`
+- `IsRequired`
+- `IsEnabled`
 
-V1 classification: **CENTRAL MIRROR — REQUIRED** for CONFIG_REPAIR.
+Current format distribution:
+- JSON: 17
+- XML: 21
+- TEXT: 3
 
-### `cfg.ConfigRule`
+### cfg.ConfigRule
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+**Current rows:** 417.
 
-**Role:** desired configuration mutations.
+Exact columns:
+- `RuleID`
+- `FileID`
+- `CountryCode`
+- `RuleCode`
+- `Category`
+- `SelectorType`
+- `Selector`
+- `ExpectedTemplate`
+- `ValidationType`
+- `IsRequired`
+- `AllowEncrypted`
+- `IsSensitive`
+- `Severity`
+- `Description`
+- `IsEnabled`
+- `CreatedAt`
+- `ModifiedAt`
+- `RepairAction`
+- `RepairValueType`
+- `RepairGroup`
+- `RepairOrder`
+- `CreateIfMissing`
+- `MissingParentSelector`
+- `MissingNodeTemplate`
 
-Confirmed supported conceptual formats include JSON, XML and TEXT_REGEX/whole-file operations.
+Current selector distribution:
+- JSON_VALUE: 242
+- XML_TEXT: 99
+- XML_ATTRIBUTE: 37
+- XML_NODES_ALL: 29
+- TEXT_REGEX: 10
 
-V1 classification: **CENTRAL MIRROR — REQUIRED**.
+Current validation types:
+- EXACT
+- INTEGER
+- BOOLEAN
+- URL
+- PATH
+- CONNECTION_STRING
 
-Security rule:
-- rule content is trusted only after snapshot validation; REST clients cannot supply arbitrary mutation expressions that bypass synchronized rules.
+Current repair data:
+- all 417 current rows use `SET_VALUE`;
+- repair value types: STRING 350, BOOLEAN 53, INTEGER 14.
 
-### `cfg.DatabaseObjectSettingRule`
+V1 classification for all three: **REQUIRED CENTRAL MIRROR**.
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+## 7. Database-content rule model — cfg.DatabaseObjectSettingRule
 
-**Role:** generic application-database setting synchronization.
+**Current rows:** 61.
 
-Known production semantics:
+Exact columns:
+- `ObjectSettingRuleID`
+- `SettingCode`
+- `CountryCode`
 - `TargetDatabaseName`
+- `TargetSchemaName`
 - `TargetTableName`
 - `TargetColumnName`
-- structured `FilterClause`
-- `RuleType`: `FULL_REPLACE` / `SUBSTRING_REPLACE`
+- `ExpectedTemplate`
+- `IsRequired`
+- `IsSensitive`
+- `SortOrder`
+- `IsEnabled`
+- `ModifiedAt`
+- `FilterClause`
+- `RuleType`
+- `CreateIfMissing`
+- `InsertColumnsJson`
 
-V1 classification: **CENTRAL MIRROR — REQUIRED** for DATABASE_CONTENT_SYNC.
+**[CONFIRMED-CODE]** Current data:
+- 61 `FULL_REPLACE`;
+- 0 current `SUBSTRING_REPLACE` rows;
+- 14 rows with `CreateIfMissing=1`.
 
-Security invariant:
-- “structured predicates, never arbitrary SQL from UI/API” is part of the porting contract.
+**[CONFIRMED-PRODUCTION]** SUBSTRING_REPLACE remains a known supported production capability and should remain in the port contract unless later evidence deliberately removes it.
 
-### `cfg.ApplicationCopyPolicy`
+V1 security invariant:
+- table/schema/column/filter configuration comes only from a validated trusted snapshot;
+- REST/UI input never becomes arbitrary SQL;
+- values are parameterized;
+- identifiers/predicate grammar are validated against the local contract.
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+## 8. Windows-service model — cfg.WindowsServiceDefinition
 
-**Role:** authoritative mapping from build/package source to deployed application destination.
+**Current rows:** 1.
 
-V1 classification: **CENTRAL MIRROR — REQUIRED IF deployment/copy behavior in core engines consumes it**.
+Exact columns:
+- `ServiceCode`
+- `DisplayName`
+- `ServiceNameTemplate`
+- `DisplayNameTemplate`
+- `DescriptionTemplate`
+- `ExecutablePathTemplate`
+- `ArgumentsTemplate`
+- `StartupType`
+- `DelayedAutoStart`
+- `StartAfterApply`
+- `RestartOnApply`
+- `AccountSource`
+- `CreateAccountIfMissing`
+- `PasswordNeverExpires`
+- `IsRequired`
+- `SortOrder`
+- `IsEnabled`
+- `ModifiedAt`
 
-**[PENDING]** Exact V1 consumer(s) and field list require extraction from the production model/reference code.
+Current enabled definition:
+- `ServiceCode = WFM_MOBILE_APP`
+- `ServiceNameTemplate = sisqualWFMMobileAppService - {HOST_NAME}`
+- required = 1.
 
-### `ops.Action`
+V1 classification: **REQUIRED CENTRAL MIRROR**.
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE].
+## 9. Application-copy policy — cfg.ApplicationCopyPolicy
 
-**Role:** action catalogue, mode policy, target requirements and enablement.
+**Current rows:** 22.
 
-Current code confirms policies such as:
-- mode policy;
-- instance selection requirement;
-- allow-all-instances;
-- confirmation text;
-- enablement.
+Exact columns:
+- `ApplicationCode`
+- `DisplayName`
+- `RelativePath`
+- `CopyBinaries`
+- `CopyStaticAssets`
+- `PreserveDestinationConfig`
+- `ExcludePatterns`
+- `AssociatedServicePattern`
+- `HealthCheckPath`
+- `SortOrder`
+- `IsEnabled`
+- `ModifiedAt`
+- `UpdateSourceFamily`
+- `UpdateSourceRelativePath`
 
-V1 classification: **CENTRAL MIRROR — REQUIRED** if the local UI/action catalogue remains centrally governed.
+**[CONFIRMED-CODE]** None of the twelve approved core V1 engine scripts directly references this table.
 
-V1 does not use this table as a central write queue.
+Therefore V1 classification is now:
+- **KNOWN CENTRAL POLICY**
+- **not automatically required in the initial local mirror**
+- include only if a ported core procedure/plan contract proves a dependency or if Database Copy/related functionality enters V1 scope.
 
-### `ops.ActionStep`
+This replaces the previous schema-discovery `[PENDING]` with a narrower runtime/dependency decision.
 
-**Evidence:** [CONFIRMED-PRODUCTION].
+## 10. Action/engine composition
 
-**Role:** ordered composition of actions such as `FULL_DEPLOYMENT`.
+### ops.Action
 
-V1 classification: **CENTRAL MIRROR — REQUIRED** for centrally governed composite action ordering, subject to contract normalization.
+**Current rows:** 24.
 
-### `ops.Engine`
+Columns include:
+- `ActionCode`
+- `GroupCode`
+- `DisplayName`
+- `Description`
+- `ActionType`
+- `EngineCode`
+- `SqlCommand`
+- `ModePolicy`
+- target-selection flags/policy
+- apply/pass flags
+- confirmation/timeout/sort/menu/error/enablement metadata.
 
-**Evidence:** [CONFIRMED-PRODUCTION] + [CONFIRMED-CODE] references.
+V1 classification: **REQUIRED CENTRAL MIRROR** for action catalogue and centrally governed composition metadata.
 
-**Current role:** stores executable PowerShell `ScriptText`, engine metadata and integrity hash.
+### ops.ActionStep
 
-V1 classification: **MIGRATION SOURCE / METADATA ONLY — NOT EXECUTABLE AUTHORITY**.
+**Current rows:** 13, all belonging to the current FULL_DEPLOYMENT definition; one step is disabled.
 
-Approved V1 architecture ports engines into local versioned modules. The central database must not be able to replace local executable code merely by changing `ScriptText`.
+Exact columns:
+- `ParentActionCode`
+- `StepOrder`
+- `ChildActionCode`
+- `StepPhase`
+- `StopOnError`
+- `IsEnabled`
+- `ModifiedAt`
 
-Possible V1 mirrored metadata:
-- engine code;
-- enabled status;
-- descriptive/action mapping;
-- source/version/hash for diagnostics/migration traceability.
+V1 classification: **REQUIRED CENTRAL MIRROR**.
 
-**[PENDING]** Exact mirrored subset will be defined after the porting contract is frozen.
+### ops.Engine
 
-## 3. Credential entities
+**Current rows:** 19.
 
-### `sec.ManagedCredential`
+Exact columns:
+- `EngineCode`
+- `DisplayName`
+- `SourceFileName`
+- `EngineVersion`
+- `ScriptText`
+- `ScriptSha256`
+- `MinimumPowerShell`
+- `RequiresAdministrator`
+- `IsEnabled`
+- `ModifiedAt`
 
-**Evidence:** [CONFIRMED-CODE].
+V1 classification:
+- **engine identity/version/hash metadata may be mirrored**;
+- **central `ScriptText` is not executable authority in V1**;
+- local versioned modules are executable authority.
 
-Current schema includes:
+## 11. Confirmed current action-name inconsistency
+
+The full payload resolves the prior ambiguity.
+
+**Executable `ops.Action` catalogue:**
+
+```text
+DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC
+WINDOWS_SERVICES  -> WINDOWS_SERVICES
+```
+
+**Configuration Adapter metadata:**
+
+```text
+DATABASE_SETTING -> SETTINGS_SYNC
+WINDOWS_SERVICE  -> SERVICE_RECONCILE
+```
+
+There are no current `ops.Action` rows named `SETTINGS_SYNC` or `SERVICE_RECONCILE`.
+
+Conclusion: the adapter rows are stale/inconsistent metadata, not valid aliases that V1 should reproduce.
+
+**[CONFIRMED-SYNC]** `ops.Engine` also retains an enabled legacy engine named `DATABASE_SETTINGS` (`Invoke-DatabaseSettings.ps1`, version `1.0`, PowerShell `5.1`, no administrator requirement). This does not alter the effective mapping above: the current `ops.Action` row `DATABASE_SETTINGS` points to `DATABASE_CONTENT_SYNC`, not to the legacy `DATABASE_SETTINGS` engine. The legacy engine is therefore retained catalogue/history, not the engine selected by the current action.
+
+## 12. Credential entities
+
+### sec.ManagedCredential
+
+**Current rows:** 191.
+
+Exact columns:
 - `InstanceCode`
 - `CredentialType`
-- encrypted `SecretCipher`
-- secret version
-- rotation/modification metadata
-- row version
+- `SecretCipher varbinary(max)`
+- `SecretVersion`
+- `LastRotatedAt`
+- `ModifiedBy`
+- `ModifiedAt`
+- `RowVersion timestamp`
 
-Current credential types:
-- IIS_IDENTITY
-- WEB_ACCESS
-- MOBILE_APP_TOKEN
+Current type distribution:
+- IIS_IDENTITY: 76
+- WEB_ACCESS: 76
+- MOBILE_APP_TOKEN: 39
 
-V1 classification: **DO NOT MIRROR SECRET CIPHERTEXT AS NORMAL CACHE DATA**.
+**Important:** current ManagementSync includes these encrypted ciphertext rows.
+
+V1 classification: **DO NOT COPY `SecretCipher` INTO THE GENERAL LOCAL MIRROR**.
 
 Reason:
-- current ciphertext is protected by the existing SQL certificate/key model and is not the approved new portability model.
+- current SQL encryption is not the approved V1 portability mechanism;
+- ciphertext is tied to the existing SQL certificate/symmetric-key security model;
+- normal sync must not become a second credential transport.
 
-The new credential-envelope mechanism must be independent of this table's SQL encryption implementation.
+### cfg.KeycloakClientSecretRule
 
-### `sec.ManagedCredentialAudit`
+**Current rows:** 8.
 
-Current central audit is useful historical evidence but is not required to execute V1 local operations.
+This contains non-secret mapping:
+- `KeycloakClientId`
+- `SecretRuleCode`
+- `IsEnabled`
+- `ModifiedAt`
 
-V1 classification: **OPTIONAL READ-ONLY MIRROR / OUT OF INITIAL EXECUTION CONTRACT**.
+V1 classification: **safe non-secret central mirror input**, subject to contract review.
 
-Local credential package import/use must have its own local audit trail.
+## 13. Pulse and links state
 
-## 4. Runtime and UI support surfaces
+### cfg.PulseProfile
 
-### `cfg.ManagedInstanceRuntime`
+**Current rows:** 4.
 
-**[CONFIRMED-CODE]** Current migration 0030 creates this view to join instance metadata with decrypted managed credentials.
+Contains hub/page/path/scheduled-task/interval/threshold/scope configuration.
 
-V1 classification: **DO NOT SYNC AS-IS** because it can expose decrypted secrets.
+This is central policy and is mirrorable.
 
-The sync contract should select explicit safe fields rather than “SELECT *” from runtime views.
+### ops.PulseCheckState
 
-### `cfg.ConfigurationAdapterDefinition`
+**Current rows:** 132.
 
-**[CONFIRMED-CODE]** Maps logical configuration surfaces to action codes and preview/apply capability.
+Contains current probe state such as:
+- target/check identity;
+- raw/display status;
+- consecutive failures;
+- messages/timings/HTTP status;
+- last checked/success timestamps.
 
-V1 classification: **OPTIONAL CENTRAL MIRROR**. Useful for UI metadata, not required as execution authority.
+V1 classification:
+- do not use it as active local execution state;
+- current central values may be optionally exposed as read-only imported history/status;
+- new V1 run state is local.
 
-### UI resources/navigation/settings
+### cfg.LinksPageInstanceApplication
 
-Current repo contains:
-- `ui.Resource`
-- `ui.NavigationItem`
-- `cfg.SettingSection`
-- `cfg.SettingDefinition`
-- `cfg.SettingValue`
-- `sec.Policy`
-- `sec.WindowsGroupPolicy`
+**Current rows:** 12.
 
-V1 classification: **NOT AUTOMATICALLY REQUIRED**.
+Contains:
+- `InstanceCode`
+- `ApplicationCode`
+- `IsPublished`
+- `ModifiedAt`
 
-The new portable product owns its own local UI. Central operational configuration should not be conflated with the old .NET application's navigation/settings model.
+This confirms the rename dependency identified in production.
 
-## 5. Current central job/runtime state
+## 14. Current central job/runtime state
 
-Current code contains:
+Current system contains:
 - `app.Job`
 - `app.JobTarget`
-- `app.JobLog`
+- `app.JobLog` schema
 - `app.WorkerState`
 - `app.ActionRuntimePolicy`
-- additional later operational-state tables
+- richer later runtime/operation tables.
 
-These exist to coordinate the current central Web + Worker platform.
+The sync intentionally excludes **app.JobLog data**, even though its schema is present.
 
 V1 classification: **DO NOT MIRROR AS ACTIVE CONTROL STATE**.
 
-Equivalent concepts are local-only in the new product:
+Equivalent V1 concepts are local:
 - Operation
 - OperationTarget
 - OperationLog
 - lock/lease state
-- local process/session state
+- local session/process state.
 
-Historical central job data may be surfaced later only as a separate read-only feature.
+## 15. Snapshot contract requirements derived from the real payload
 
-## 6. Known rename/dependency surfaces
+The future V1 snapshot must not simply ingest every current ManagementSync table.
 
-**[CONFIRMED-PRODUCTION]** Renaming `InstanceCode` affects at least:
-- `sec.ManagedCredential`
-- `cfg.LinksPageInstanceApplication`
-- `ops.PulseCheckState`
+It needs an explicit safe contract containing only the central policy required for local execution.
 
-The current repo also contains newer links/profile and operational-state surfaces.
-
-Consequence:
-- the future `rename-instance` skill cannot assume `dbo.ManagedInstance` is the only authoritative reference.
-- V1 read-only central policy means a true central rename cannot be authored by SISQUALDeployConsole V1. The skill can diagnose/plan or operate only within an explicitly approved local/target-system scope.
-
-## 7. Sync classification
-
-### Required central mirror domains
-
-At minimum, subject to exact schema extraction:
-
-```text
-ManagedServer
-ManagedInstance (safe fields only)
-Application
-ConfigFile
-ConfigRule
-DatabaseObjectSettingRule
-ApplicationCopyPolicy (when consumed)
-Action
-ActionStep
-safe engine metadata
-engine-specific definition/policy tables required by V1
-```
-
-### Explicit exclusions from generic snapshot
-
-```text
-decrypted secrets
-SQL master keys/certificates/symmetric keys
-current central Worker queue ownership
-central write/approval state not required for local execution
-arbitrary executable ScriptText as runtime authority
-temporary SQL session/runtime state
-```
-
-## 8. Snapshot contract requirements derived from schema
-
-The future sync manifest must include at least:
-
+At minimum the snapshot manifest must include:
 - contract/schema version;
 - snapshot ID;
 - generation timestamp UTC;
@@ -353,36 +527,52 @@ The future sync manifest must include at least:
 - per-entity counts;
 - per-entity/content hashes;
 - compatibility version;
-- enough server identity to prove the snapshot applies to the local machine.
+- target/machine applicability information.
 
-Activation must occur only after complete staging validation.
+Activation:
+1. download/read into staging;
+2. validate schema, counts, hashes and required relationships;
+3. reject secret-bearing/unapproved entities;
+4. atomically activate only after complete validation;
+5. keep previous valid snapshot on failure.
 
-A failed/incompatible snapshot must leave the last valid snapshot active.
+## 16. First-run behavior
 
-## 9. First-run behavior derived from schema authority
+Without a valid trusted snapshot, an empty local SQLite database must never mean “there are zero environments”.
 
-Without a valid central snapshot, the application must not interpret an empty local database as “no managed environments”.
+The application remains in **INITIAL SETUP** and exposes only:
+- machine identity/public-key bootstrap;
+- central connection/sync configuration;
+- connectivity diagnostics;
+- initial sync;
+- logs/about.
 
-It remains in INITIAL SETUP and exposes only bootstrap/identity/connection/sync diagnostics until the first trusted snapshot is activated.
+Operational execution remains blocked until a trusted central snapshot is active.
 
-## 10. Open schema work for later phases
+## 17. Remaining open work after full sync analysis
 
-**[PENDING]**
-- exact column-level snapshot contract;
-- exact schema/version negotiation;
-- exact safe subset of engine metadata;
-- exact Keycloak/IIS/service policy tables required by each engine;
-- whether central exposes a dedicated read-only export procedure or V1 performs explicit SELECTs;
-- snapshot transport details;
-- reconciliation of production engine/action aliases.
+The sync payload eliminates most Phase 0 schema-discovery uncertainty.
 
-These are not user decisions required now; they are implementation/technical work for subsequent phases.
+Remaining items are mainly implementation/runtime questions for later phases:
 
-## 11. Phase 0 acceptance
+- exact minimal V1 snapshot entity/column whitelist;
+- snapshot transport mechanism;
+- contract/version negotiation;
+- whether some current SQL procedures should be represented as materialized policy rows or reimplemented as deterministic local resolvers;
+- PowerShell 7/IIS/SQLite compatibility;
+- private-key storage mechanism;
+- central signing-key trust bootstrap.
 
-- Core central objects from the handoff are mapped.
-- Central-authoritative vs local-only state is explicit.
-- Secret-bearing current views/tables are identified as unsafe for generic mirroring.
-- V1 read-only authoring policy is encoded.
-- Missing live schema detail is marked [PENDING], not guessed.
-- No DDL/product implementation has been created.
+These are not user decisions required before Phase 1.
+
+## 18. Phase 0 acceptance
+
+- Full sync schema/data payload has been inspected.
+- Exact intentional data exclusions are known.
+- Core schema and row counts are known.
+- Core action/engine mappings are known.
+- Stale adapter mappings are identified.
+- Secret-bearing central data is explicitly excluded from generic V1 mirroring.
+- Remaining uncertainties are runtime/contract-design issues, not artefacts of an unread sync file.
+- No product code was created.
+- Reference repository remained read-only.

@@ -1,114 +1,142 @@
 # Phase 0 — Engine Porting Matrix
 
-**Status:** Phase 0 diagnostic  
+**Status:** Phase 0 diagnostic, corrected using the full 2026-10-04 central sync payload  
 **Target:** SISQUALDeployConsole V1  
 **Reference repository:** `atsisqual/SISQUALManagementConsole` read-only  
+**Reference sync snapshot:** `master` @ `1e38c8ed860615c4039ea2ec870f245102943ae4`  
 **V1 authoring policy:** central configuration is read-only; execution is local.
 
 ## Status vocabulary
 
-- **[CONFIRMED-CODE]** demonstrated by the reference repository.
-- **[CONFIRMED-PRODUCTION]** demonstrated by the production handoff.
+- **[CONFIRMED-CODE]** demonstrated by reference code or the analysed sync payload.
+- **[CONFIRMED-PRODUCTION]** demonstrated by production handoff.
 - **[INFERRED]** reasonable mapping not yet proven end-to-end.
 - **[PENDING]** evidence/decision still required.
 - **[V]** must be validated on Windows/SISQUAL in a later phase.
 
 ## Porting principle
 
-“Port” means preserve the operational behavior and safety contract while moving execution into local PowerShell modules. It does **not** mean copying the current SQL-stored script verbatim.
+“Port” means preserve operational behavior and safety contracts while moving execution into local versioned PowerShell modules.
 
-Every V1 engine must ultimately have a local contract with preview/apply semantics where applicable, structured output, explicit target scope, idempotency expectations, backup/rollback evidence, and no dependency on Pode.
+It does **not** mean continuing to execute mutable `ops.Engine.ScriptText` from central SQL in V1.
+
+Every mutable V1 engine must eventually have:
+
+- deterministic preview where technically possible;
+- structured local result;
+- explicit target scope;
+- idempotency expectations;
+- backup/rollback evidence where mutation is destructive;
+- secret-safe logs;
+- no dependency on Pode;
+- no central writeback.
+
+## Exact current engine catalogue for V1 scope
+
+The analysed sync contains the following exact engine metadata.
+
+| Engine | Source | Version | Min PS | Admin | Current action mapping |
+|---|---|---:|---:|---:|---|
+| `DEPLOYMENT_PREFLIGHT` | `Invoke-DeploymentPreflight.ps1` | 1.0 | 5.1 | No | `DEPLOYMENT_PREFLIGHT -> DEPLOYMENT_PREFLIGHT` |
+| `PULSE_STATUS` | `Invoke-SISQUALPulseStatus.ps1` | v2 | 5.1 | Yes | `PULSE_STATUS -> PULSE_STATUS` |
+| `CONFIG_REPAIR` | `Invoke-ConfigRepair.ps1` | 15.0 | 5.1 | Yes | `CONFIG_REPAIR -> CONFIG_REPAIR` |
+| `DATABASE_CONTENT_SYNC` | `DATABASE_CONTENT_SYNC.ps1` | v4 | 5.1 | Yes | `DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC` |
+| `MANAGED_ASSETS` | `Invoke-ManagedAssets.ps1` | 1.0 | 5.1 | Yes | `MANAGED_ASSETS -> MANAGED_ASSETS` |
+| `IIS_RECONCILE` | `Invoke-IISReconciliation.ps1` | 16.3 | 5.1 | Yes | `IIS_RECONCILE -> IIS_RECONCILE` |
+| `WINDOWS_SERVICES` | `Invoke-WindowsServiceReconciliation.ps1` | 2.0 | 5.1 | Yes | `WINDOWS_SERVICES -> WINDOWS_SERVICES` |
+| `V8_KEYCLOAK_PREREQUISITES` | `V8_KEYCLOAK_PREREQUISITES.ps1` | v7 | 5.1 | Yes | `V8_KEYCLOAK_PREREQUISITES -> V8_KEYCLOAK_PREREQUISITES` |
+| `V8_KEYCLOAK_SERVICE` | `V8_KEYCLOAK_SERVICE.ps1` | v5 | 5.1 | Yes | `V8_KEYCLOAK_SERVICE -> V8_KEYCLOAK_SERVICE` |
+| `KEYCLOAK_CLIENT_SECRETS` | `KEYCLOAK_CLIENT_SECRETS.ps1` | v1 | 5.1 | Yes | `KEYCLOAK_CLIENT_SECRETS -> KEYCLOAK_CLIENT_SECRETS` |
+| `WEB_ACCESS` | `Invoke-WebAccessDeployment.ps1` | 5.0 | 5.1 | Yes | `WEB_ACCESS -> WEB_ACCESS` |
+| `LINKS_PAGES` | `Invoke-LinksPageDeployment.ps1` | 7.1 | 5.1 | Yes | `LINKS_PAGES -> LINKS_PAGES` |
+
+All listed engine rows are enabled in the analysed snapshot.
 
 ## Core V1 engines
 
-| Engine | Evidence | Current dependencies | Current side effects | V1 porting direction | Main blocker/risk | Phase |
-|---|---|---|---|---|---|---|
-| `DEPLOYMENT_PREFLIGHT` | [CONFIRMED-PRODUCTION]; current repo retains deployment-preflight support surfaces | Managed server/instance catalogue, application catalogue, filesystem/IIS/SQL prerequisites | Intended read-only validation | Local diagnostic module reading cached central policy plus live local machine state | Exact production script not available as standalone repo file | First |
-| `PULSE_STATUS` | [CONFIRMED-PRODUCTION]; pulse/profile surfaces visible in current migrations | Instance/server catalogue, URLs/services/SQL/IIS depending on checks, pulse state/history | Primarily probes; current system may persist state centrally | Local probes; results/history stored only in local SQLite in V1 | Exact live check catalogue/state contract not fully available | First |
-| `CONFIG_REPAIR` | [CONFIRMED-CODE] standalone engine v15 | `cfg.GetLocalManagementContext`, `cfg.ReviewRepairModel`, `cfg.GetRepairPlan`, config files, backup root | Backup + JSON/XML/whole-file/TEXT_REGEX modifications on Apply | Split plan resolution from generic file mutation; consume synchronized rule model locally | PS 5.1 compatibility; exact parser/encoding preservation; rule schema extraction | First |
-| `DATABASE_CONTENT_SYNC` | [CONFIRMED-PRODUCTION]; adapter maps database settings to `SETTINGS_SYNC` | `cfg.DatabaseObjectSettingRule`, target application DBs, direct SQL connectivity | Updates configured DB values | Local generic DB-setting engine using structured predicates only and direct SqlConnection | Need exact rule schema and live alias mapping; prohibit arbitrary browser SQL | Later core |
-| `MANAGED_ASSETS` | [CONFIRMED-PRODUCTION] | Managed instance metadata/assets, filesystem, hashes | Writes/deploys managed assets | Local asset reconciliation from cache/package, hash verified | Exact asset table/contract needs extraction | Mid |
-| `IIS_RECONCILE` | [CONFIRMED-PRODUCTION]; [CONFIRMED-CODE] IIS adapter/runtime | IIS topology policy, `WebAdministration`, instance paths, bindings, pools, credentials | Creates/updates sites/apps/pools/bindings; starts pools | Local IIS module; preview desired/actual diff before Apply | PowerShell 7/WebAdministration compatibility [V]; destructive topology changes | Mid |
-| `WINDOWS_SERVICES` | [CONFIRMED-PRODUCTION]; current adapter action is `SERVICE_RECONCILE` | Service definitions, Win32_Service/Get-Service, instance/hostname mapping, credentials where applicable | Create/update/start/stop service configuration | Local Windows-service reconciliation module | Exact production naming/action alias; service privilege semantics [V] | Mid |
-| `V8_KEYCLOAK_PREREQUISITES` | [CONFIRMED-PRODUCTION] | Keycloak files/runtime/ports/instance metadata | Repairs/installs prerequisites | Local prerequisite validator/reconciler | Exact script not standalone; Java/runtime assumptions [V] | Mid |
-| `V8_KEYCLOAK_SERVICE` | [CONFIRMED-PRODUCTION] | Keycloak service config, ports, filesystem, Windows service | Configures/operates Keycloak service | Local service/config module after prerequisite engine | Clone-origin leakage of URLs/secrets; service compatibility [V] | Mid |
-| `KEYCLOAK_CLIENT_SECRETS` | [CONFIRMED-PRODUCTION] | Keycloak clients, credential material, instance URLs | Updates client secrets/config | Local engine consuming offline-delivered credential envelope; never normal sync | Secret handling, redaction, idempotency; exact Keycloak interface [V] | After credential Phase |
-| `WEB_ACCESS` | [CONFIRMED-PRODUCTION]; [CONFIRMED-CODE] TSplus portable runtime exists | TSplus AdminTool, shared-resource semantics, instance metadata | Web Access/TSplus start-stop/configuration | Local module with explicit shared-resource lock | Shared controller can affect multiple environments; path/version differences [V] | Later |
-| `LINKS_PAGES` | [CONFIRMED-PRODUCTION]; links publishing/profile code exists | Instance/app visibility/profile configuration, filesystem/web content | Publishes/repairs links pages | Local generation/reconciliation from read-only central config | Current repo has multiple generations/profile override precedence | Later |
-
-## Composite action
-
-### `FULL_DEPLOYMENT`
-
-**[CONFIRMED-PRODUCTION]** The current system composes approximately twelve action steps through `ops.Action` / `ops.ActionStep`.
-
-**[PROPOSED/APPROVED PLAN]** Do not port `FULL_DEPLOYMENT` as a monolithic engine. In V1 it should become orchestration over already-validated local engines.
-
-It is the last core capability to enable because its safety depends on the correctness, idempotency and rollback behavior of the individual engines.
-
-## Current Worker behavior worth preserving as contracts
-
-### Non-interactive execution
-
-**[CONFIRMED-CODE]** The current Worker parses engine AST and rejects interactive commands. V1 should retain an equivalent static test/gate for shipped local modules.
-
-### Integrity
-
-**[CONFIRMED-CODE]** The current runtime verifies engine hashes before execution.
-
-**[PROPOSED]** V1 local modules should be release-manifest/hash verified rather than fetched as mutable SQL text at execution time. The exact package-signing mechanism is outside Phase 0.
-
-### Job lifecycle
-
-**[CONFIRMED-CODE]** Current states include a SQL-backed queue/claim/run/complete/fail lifecycle; later migrations add richer failure states and runtime policy.
-
-**[PROPOSED]** V1 keeps structured operation state locally rather than reproducing the central Worker queue.
-
-### Target isolation
-
-**[CONFIRMED-CODE]** Current job creation rejects disabled, unknown or foreign-machine targets.
-
-**[PROPOSED]** V1 must preserve this invariant: an operation may only target an enabled environment whose synchronized `ServerCode/MachineName` maps to the current machine, unless a future explicitly approved operation is designed for a remote target.
-
-### Preview first
-
-**[CONFIRMED-CODE]** `CONFIG_REPAIR` defaults to preview.
-
-**[CONFIRMED-CODE]** Configuration adapters declare preview/apply capability.
-
-**[PROPOSED]** Every mutable V1 engine should expose a deterministic preview where technically possible. Apply must use the same normalized plan rather than independently recalculating an unrelated action.
-
-## Detailed port notes
-
 ### DEPLOYMENT_PREFLIGHT
 
-Required output should distinguish:
-- missing prerequisite;
-- incompatible prerequisite;
-- unreachable dependency;
-- warning;
-- ready.
+**[CONFIRMED-CODE] Current SQL dependencies**
+- `cfg.GetWindowsServiceDeploymentPlan`
+- `ops.GetDeploymentPreflightFilePlan`
+- `ops.GetReviewPlan`
 
-No mutations should occur.
+**[CONFIRMED-CODE] Current behavior**
+- read-only preflight engine metadata;
+- does not require Administrator according to `ops.Engine`;
+- action mode is `NONE`;
+- requires instance selection and supports all enabled instances.
 
-**[PENDING]** Extract exact current preflight definition/procedures and all enabled requirements from available migrations/seed material or later central snapshot.
+**V1 direction**
+- local diagnostic module reading cached central policy plus live local machine state;
+- no mutations;
+- structured results: READY / WARNING / MISSING / INCOMPATIBLE / UNREACHABLE.
+
+**[PENDING]**
+- PowerShell 7 behavior for all prerequisite probes is a Phase 1/real-environment concern, not a schema-discovery gap.
 
 ### PULSE_STATUS
 
-Read-only local probe execution is a good early proof of the portable architecture because it exercises Windows, IIS, SQL and HTTP access without making changes.
+**[CONFIRMED-CODE] Current dependencies**
+- procedures:
+  - `cfg.GetPulseCheckPlan`
+  - `cfg.GetPulseDeploymentPlan`
+  - `cfg.GetPulseResourcePlan`
+  - `cfg.GetWebsiteBrandingAssetPlan`
+  - `cfg.GetWebsiteBrandingPlan`
+  - `cfg.ReviewPulseModel`
+  - `cfg.ReviewWebsiteBrandingModel`
+  - `ops.GetPulseStatusSnapshot`
+  - `ops.RecordPulseRun`
+- tables directly referenced:
+  - `cfg.PulseProfile`
+  - `dbo.ManagedInstance`
+  - `dbo.ManagedServer`
 
-**[PENDING]** Define whether historical pulse results are purely local V1 state or whether central read-only snapshots include historical status. No central writes are allowed.
+**[CONFIRMED-CODE]** The current central snapshot contains:
+- 4 `cfg.PulseProfile` rows;
+- 132 `ops.PulseCheckState` rows.
+
+**[CONFIRMED-CODE]** Current engine behavior can persist pulse-run/state centrally through `ops.RecordPulseRun`.
+
+**V1 direction**
+- probes execute locally;
+- historical/result state is local SQLite only;
+- no V1 central writes;
+- synchronized central pulse policy remains authoritative.
+
+This is now a confirmed behavioral change from current architecture rather than a pending discovery item.
 
 ### CONFIG_REPAIR
 
-Confirmed generic operations include JSON/XML/whole-file/TEXT_REGEX behavior.
+**[CONFIRMED-CODE] Current dependencies**
+- `cfg.GetLocalManagementContext`
+- `cfg.GetRepairPlan`
+- `cfg.ReviewRepairModel`
+- filesystem/registry/SQL;
+- backup/report output.
 
-Port decomposition should be:
+**[CONFIRMED-CODE] Current rule data**
+- 41 config files: 17 JSON / 21 XML / 3 TEXT;
+- 417 rules;
+- selector types:
+  - JSON_VALUE 242
+  - XML_TEXT 99
+  - XML_ATTRIBUTE 37
+  - XML_NODES_ALL 29
+  - TEXT_REGEX 10
+- all current repair actions: `SET_VALUE`;
+- repair value types:
+  - STRING 350
+  - BOOLEAN 53
+  - INTEGER 14.
+
+**V1 direction**
 
 ```text
-cached rules
-  -> local rule resolver
-  -> normalized repair plan
+cached central rules
+  -> local resolver
+  -> normalized plan
   -> preview
   -> backup
   -> apply
@@ -116,66 +144,310 @@ cached rules
   -> structured result
 ```
 
-The engine must preserve file encoding and must never perform an unverified silent exact-string replacement.
+The port must preserve encoding and must fail if an expected mutation does not actually occur.
 
 ### DATABASE_CONTENT_SYNC
 
-The local engine must:
-- connect directly to the destination SQL instance;
-- use parameterized SQL;
-- derive table/column/predicate only from trusted synchronized configuration;
-- reject free-form SQL originating from REST/UI input;
-- support preview of old/new values;
-- verify affected-row expectations.
+**[CONFIRMED-CODE] Current dependencies**
+- `cfg.DatabaseObjectSettingRule`
+- `dbo.ManagedInstance`
+- `dbo.ManagedServer`
+- direct SQL connections.
 
-Linked-server execution is explicitly not a V1 design.
+**[CONFIRMED-CODE] Current rule data**
+- 61 rules;
+- all current rows are `FULL_REPLACE`;
+- 14 have `CreateIfMissing=1`.
+
+**[CONFIRMED-PRODUCTION]** `SUBSTRING_REPLACE` remains a known supported production capability even though it is not represented by a current row in this snapshot.
+
+**[CONFIRMED-CODE] Exact action relationship**
+
+```text
+ActionCode  = DATABASE_SETTINGS
+EngineCode  = DATABASE_CONTENT_SYNC
+ModePolicy  = PREVIEW_APPLY
+Enabled     = 1
+```
+
+**[CONFIRMED-CODE]** There is no current `ops.Action` named `SETTINGS_SYNC`.
+
+**[CONFIRMED-SYNC] Legacy engine retained but unused by the current action catalogue**
+
+`ops.Engine` still contains an enabled legacy engine row:
+
+```text
+EngineCode            = DATABASE_SETTINGS
+SourceFileName        = Invoke-DatabaseSettings.ps1
+EngineVersion         = 1.0
+MinimumPowerShell     = 5.1
+RequiresAdministrator = 0
+IsEnabled             = 1
+```
+
+The current `ops.Action` row with `ActionCode = DATABASE_SETTINGS` does **not** reference that legacy engine; its `EngineCode` is `DATABASE_CONTENT_SYNC`. Therefore `DATABASE_SETTINGS` is simultaneously a current **action code** and a retained **legacy engine code**, but only `DATABASE_CONTENT_SYNC` is the effective engine for that action.
+
+**V1 direction**
+- direct `SqlConnection`;
+- allowlisted/structured table/column/filter metadata;
+- parameterized values;
+- preview old/new values;
+- affected-row expectations;
+- no linked-server execution;
+- no arbitrary SQL supplied by REST/UI.
+
+### MANAGED_ASSETS
+
+**[CONFIRMED-CODE] Current SQL dependencies**
+- `cfg.GetManagedAssetPlan`
+- `ops.GetConsoleBootstrap`
+
+**[CONFIRMED-CODE] Current behavior**
+- filesystem mutation;
+- backup-related logic present;
+- action is PREVIEW/APPLY.
+
+**V1 direction**
+- local asset reconciliation from synchronized policy;
+- hash verification;
+- desired/actual diff before write.
+
+**[PENDING]**
+- filesystem behavior remains subject to Windows validation, not schema discovery.
 
 ### IIS_RECONCILE
 
-Known production requirements include one pool per application, application/pool reassignment, SNI/bindings, site creation and local identity behavior.
+**[CONFIRMED-CODE] Current SQL dependencies**
+- `cfg.GetIisApplicationAutoStartPlan`
+- `cfg.GetIisDeploymentPlan`
+- `cfg.GetIisServiceAutoStartProviderPlan`
+- `cfg.GetLocalManagementContext`
+- `cfg.ReviewIisDeploymentModel`
 
-Those requirements are operational evidence, not permission to hard-code one estate layout. Desired state must come from synchronized configuration.
+**[CONFIRMED-CODE] Current platform dependencies**
+- `WebAdministration`;
+- IIS provider/site/application-pool/binding operations;
+- Windows services;
+- registry;
+- filesystem;
+- credential material.
+
+**V1 direction**
+- local IIS desired-vs-actual engine;
+- machine/instance ownership checks;
+- explicit preview;
+- controlled Apply;
+- post-apply verification.
+
+**[V]**
+- PowerShell 7 + WebAdministration compatibility;
+- IIS/SNI/binding behavior on target Windows versions.
 
 ### WINDOWS_SERVICES
 
-The current platform code demonstrates service discovery through CIM and state control. V1 must separate:
-- definition;
-- discovery;
-- diff;
-- apply;
-- health verification.
+**[CONFIRMED-CODE] Current SQL dependency**
+- `cfg.GetWindowsServiceDeploymentPlan`.
 
-### Keycloak engines
+**[CONFIRMED-CODE] Current platform dependencies**
+- Windows services;
+- CIM;
+- registry;
+- filesystem;
+- credentials.
 
-A clone cannot be considered safe merely because the service starts. URL/client/secret provenance must be validated explicitly.
+**[CONFIRMED-CODE]** Current `cfg.WindowsServiceDefinition` has one enabled required definition:
+- `ServiceCode = WFM_MOBILE_APP`
+- `ServiceNameTemplate = sisqualWFMMobileAppService - {HOST_NAME}`.
+
+**[CONFIRMED-CODE] Exact action relationship**
+
+```text
+ActionCode = WINDOWS_SERVICES
+EngineCode = WINDOWS_SERVICES
+ModePolicy = PREVIEW_APPLY
+Enabled    = 1
+```
+
+There is no current `ops.Action` named `SERVICE_RECONCILE`.
+
+**V1 direction**
+- definition -> discovery -> diff -> apply -> verification;
+- protected-management-service denylist;
+- no service operation without environment ownership proof.
+
+### V8_KEYCLOAK_PREREQUISITES
+
+**[CONFIRMED-CODE] Current behavior**
+- filesystem checks;
+- NSSM checks;
+- backup-related paths;
+- no direct central SQL object dependency detected in the engine script itself beyond common invocation context.
+
+**V1 direction**
+- local prerequisite detector/reconciler;
+- no hidden installation assumptions.
+
+**[V]**
+- exact Java/NSSM/runtime behavior on supported servers.
+
+### V8_KEYCLOAK_SERVICE
+
+**[CONFIRMED-CODE] Current dependencies**
+- `app.GetManagedCredentialRuntime`
+- `dbo.ManagedInstance`
+- `dbo.ManagedServer`
+- Windows services/CIM;
+- registry;
+- HTTP health/OpenID probe;
+- NSSM;
+- credential material.
+
+**V1 direction**
+- consume credentials from the approved local credential-envelope mechanism;
+- never call the current central decrypted-credential runtime procedure;
+- validate target-specific ports/URLs/client state after service reconciliation.
+
+**[V]**
+- NSSM/Java/HTTP behavior on real servers.
+
+### KEYCLOAK_CLIENT_SECRETS
+
+**[CONFIRMED-CODE] Current dependencies**
+- `cfg.ConfigRule`
+- `cfg.KeycloakClientSecretRule`
+- target application table `dbo.CLIENT`
+- `dbo.ManagedInstance`
+- `dbo.ManagedServer`.
+
+**[CONFIRMED-CODE]** Current central snapshot contains 8 `cfg.KeycloakClientSecretRule` rows.
+
+**V1 direction**
+- local credential envelope is authoritative for transported secret material;
+- synchronized non-secret rule metadata can remain central;
+- no secret plaintext in logs/SQLite/general sync.
 
 ### WEB_ACCESS
 
-Current platform code uses a TSplus AdminTool and SQL-owned shared-resource locking. V1 needs an equivalent local lock because the shared controller can affect more than one environment.
+**[CONFIRMED-CODE] Current SQL dependencies**
+- `cfg.GetLocalManagementContext`
+- `cfg.GetWebAccessDeploymentPlan`
+- `cfg.ReviewWebAccessModel`
+
+**[CONFIRMED-CODE] Current platform dependencies**
+- registry;
+- filesystem;
+- HTTP;
+- IIS-related functions;
+- credential material.
+
+**V1 direction**
+- local module;
+- explicit shared-controller/resource locking;
+- no assumption that Web Access operations are isolated per environment.
 
 ### LINKS_PAGES
 
-Current repo contains profile/override precedence. V1 should synchronize resolved configuration or reproduce the resolution deterministically; it must not invent a second authoring model.
+**[CONFIRMED-CODE] Current SQL dependencies**
+- `cfg.GetLinksPageDeploymentPlan`
+- `cfg.GetLinksPageItemPlan`
+- `cfg.GetLinksPagePresentationResourcePlan`
+- `cfg.GetLinksPageResourcePlan`
+- `cfg.GetWebsiteBrandingAssetPlan`
+- `cfg.GetWebsiteBrandingPlan`
+- `cfg.ReviewLinksPageModel`
+- `cfg.ReviewLinksPagePresentationResources`
+- `cfg.ReviewLinksPageQrCodes`
+- `cfg.ReviewWebsiteBrandingModel`
+- `cfg.SyncLinksPageInstanceApplications`
 
-## Name/contract differences discovered
+**[CONFIRMED-CODE]** Current implementation can write central link-instance application assignments through `cfg.SyncLinksPageInstanceApplications`.
 
-| Production handoff | Current repo evidence | Status |
-|---|---|---|
-| `DATABASE_CONTENT_SYNC` | Configuration adapter uses `SETTINGS_SYNC` | [PENDING] alias/rename relationship |
-| `WINDOWS_SERVICES` | Adapter uses `SERVICE_RECONCILE` | [PENDING] alias/rename relationship |
-| SQL-stored engine catalogue | Only `CONFIG_REPAIR.ps1` and `STORAGE_SIZE_SCAN.ps1` are visible as standalone `database/engines` scripts plus runtime orchestrators | [CONFIRMED] repo is not a complete export of live `ops.Engine` |
-| nightly sync payload | `database/sync/ManagementSync.sql` is empty at inspected master | [CONFIRMED] cannot reconstruct sync solely from this file |
+**V1 direction**
+- no central writeback;
+- local rendering/reconciliation from synchronized authoritative link/profile policy;
+- any currently write-producing central resolution must be converted to read-only deterministic resolution or local derived state.
+
+## FULL_DEPLOYMENT exact composition
+
+**[CONFIRMED-CODE]** The analysed snapshot contains 13 `ops.ActionStep` rows for `FULL_DEPLOYMENT`; 12 are enabled.
+
+| Order | Child action | Phase | Enabled |
+|---:|---|---|---:|
+| 10 | DEPLOYMENT_PREFLIGHT | PREFLIGHT | 1 |
+| 12 | V8_KEYCLOAK_PREREQUISITES | PREFLIGHT | 1 |
+| 20 | CONFIG_REPAIR | EXECUTION | 1 |
+| 30 | DATABASE_SETTINGS | EXECUTION | 1 |
+| 40 | MANAGED_ASSETS | EXECUTION | 1 |
+| 50 | IIS_RECONCILE | EXECUTION | 1 |
+| 60 | WINDOWS_SERVICES | EXECUTION | 1 |
+| 63 | V8_KEYCLOAK_CONFIG | EXECUTION | 0 |
+| 64 | KEYCLOAK_CLIENT_SECRETS | EXECUTION | 1 |
+| 65 | V8_KEYCLOAK_SERVICE | EXECUTION | 1 |
+| 70 | WEB_ACCESS | EXECUTION | 1 |
+| 75 | PULSE_STATUS | EXECUTION | 1 |
+| 80 | LINKS_PAGES | EXECUTION | 1 |
+
+**Approved V1 direction:** `FULL_DEPLOYMENT` becomes orchestration over validated local engines, not a monolithic engine.
+
+## Action/adaptor inconsistency resolved
+
+The previous Phase 0 matrix left these names pending:
+
+| Surface | Current executable catalogue | Current adapter metadata | Conclusion |
+|---|---|---|---|
+| Database settings | `DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC` | `DATABASE_SETTING -> SETTINGS_SYNC` | Adapter metadata is stale/inconsistent; `SETTINGS_SYNC` is not a current action |
+| Windows services | `WINDOWS_SERVICES -> WINDOWS_SERVICES` | `WINDOWS_SERVICE -> SERVICE_RECONCILE` | Adapter metadata is stale/inconsistent; `SERVICE_RECONCILE` is not a current action |
+
+These are now **[CONFIRMED-CODE]**, not `[PENDING]`.
+
+The V1 port must use the executable action/engine contracts and must not invent aliases merely to preserve stale Configuration Studio metadata.
+
+## Current Worker behavior worth preserving as contracts
+
+### Non-interactive execution
+
+**[CONFIRMED-CODE]** The current Worker parses engine AST and rejects interactive commands.
+
+V1 should retain equivalent static tests for shipped local modules.
+
+### Integrity
+
+**[CONFIRMED-CODE]** Current engine rows include `ScriptSha256`.
+
+V1 local modules should use release/package integrity rather than mutable central SQL script text as runtime authority.
+
+### Target isolation
+
+**[CONFIRMED-CODE]** Current job creation rejects disabled, unknown or foreign-machine targets.
+
+V1 must preserve this invariant.
+
+### Preview/apply
+
+**[CONFIRMED-CODE]** All mutable core actions in the current catalogue use `PREVIEW_APPLY`, except `DEPLOYMENT_PREFLIGHT` which uses `NONE`.
+
+Apply should consume the same normalized plan/fingerprint when feasible.
 
 ## Capabilities discovered but not automatically in V1 scope
 
-The current reference repo includes Database Copy, Environment Clone, Housekeeping, Environment Power, Version Intelligence, scheduling/approvals and file-copy features.
+The current sync also contains enabled or historical capabilities such as:
 
-**[CONFIRMED]** They are recorded as future inventory only. Their presence in the reference repo does not make them V1 requirements.
+- DATABASE_COPY
+- ENVIRONMENT_STATE_PROBE
+- LINKS_VISIBILITY
+- MODEL_REVIEW
+- STORAGE_SIZE_SCAN
+- V8_KEYCLOAK_CONFIG
+- additional SQL/composite actions.
+
+Their existence is inventory evidence only. V1 scope is unchanged unless explicitly expanded.
 
 ## Phase 0 classification result
 
-All engines explicitly named in the production handoff have been classified.
-
-No engine is marked “ready to port” without later Phase 1/runtime validation or extraction of its exact configuration contract.
-
-No production/reference repository file was modified.
+- All handoff engines are classified against their actual current `ops.Engine` rows.
+- Exact core engine source/version/minimum-PowerShell/admin metadata is known.
+- Exact `FULL_DEPLOYMENT` step composition is known.
+- Database-settings and Windows-service action-name ambiguity is resolved.
+- Current central-write behavior in PULSE_STATUS and LINKS_PAGES is explicitly identified for removal/localization in V1.
+- Remaining `[PENDING]` items are now primarily technical/runtime validation items rather than missing-sync-data items.
+- No reference repository file was modified.
