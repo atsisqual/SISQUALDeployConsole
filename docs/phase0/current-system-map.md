@@ -271,6 +271,10 @@ and the file starts with:
 It contains:
 
 - **117** unique `CREATE TABLE` schema definitions;
+- **200** `CREATE OR ALTER PROCEDURE` definitions;
+- **5** functions;
+- **6** views;
+- **31,959** generated `INSERT` statements;
 - exported data sections for **114** tables;
 - exactly three explicit data exclusions:
   - `app.HousekeepingArtifact`
