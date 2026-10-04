@@ -39,9 +39,9 @@
 | R-023 | IIS reconciliation damages unrelated sites/pools | Engine runs as administrator and mutates IIS | Critical | Medium | Machine/instance ownership checks, desired-vs-actual preview, allowlisted paths/site names, backups where applicable, post-apply verification |
 | R-024 | Windows service reconciliation touches management/control-plane service | Current runtime explicitly excludes Management Worker | Critical | Low/Medium | Explicit protected-service denylist plus environment ownership proof |
 | R-025 | TSplus/Web Access shared controller operation affects other environments | [CONFIRMED-CODE] current shared-resource locking | Critical | Medium | Local shared-resource lock and impact preview; never assume per-instance isolation |
-| R-026 | Central snapshot contains unsafe decrypted credential view | `cfg.ManagedInstanceRuntime` exposes decrypted secret values in current system | Critical | Medium | Explicit column contracts; never SELECT *; secret-bearing views excluded from generic sync |
+| R-026 | Central snapshot/cache ingests secret-bearing credential surfaces | [CONFIRMED] current model exposes decrypted values through `cfg.ManagedInstanceRuntime`; analysed sync also exports 191 `sec.ManagedCredential` ciphertext rows | Critical | Medium | Explicit entity/column allowlist; never SELECT *; exclude decrypted views and `SecretCipher` from general V1 mirror; credentials use separate envelope flow |
 | R-027 | Central `ops.Engine.ScriptText` can mutate local executable code | Current system stores executable code in SQL | Critical | Medium | V1 local versioned modules are executable authority; central engine script is migration/reference data only |
-| R-028 | Repo reference and production DB diverge | Confirmed evidence gap; sync SQL is empty in inspected master; live DB unavailable | High | High | Every finding tagged by evidence source; live validation/snapshot later; never silently promote inference to confirmed |
+| R-028 | Oversized repository artefact is misclassified because a reader returns empty/truncated content | [CONFIRMED] `fetch_file` returned an empty content string for the ~29.5 MB `ManagementSync.sql` even though Git tree metadata and an alternate contents path proved the blob was populated | High | Medium | For large files verify tree `size`/SHA, use an alternate content path, record the exact commit, and never treat an empty reader result alone as evidence of an empty file |
 | R-029 | Scope creep from newer Management Console features | Current master includes many features beyond initial handoff | Medium | High | Inventory them but do not include in V1 without explicit decision |
 | R-030 | Browser input controls filesystem paths | Engines manipulate privileged paths | Critical | Medium | Paths resolved from trusted synchronized config; canonicalize; enforce allowed roots; reject traversal/out-of-root |
 | R-031 | REST request replay/duplicate clicks execute action twice | Browser/network retries happen | Critical | Medium | Idempotency token + OperationId + coordinator deduplication |
@@ -54,6 +54,7 @@
 | R-038 | Operation history grows without bound | Local console persists logs/history | Medium | Medium | Local retention policy; never delete active/recovery evidence; exact policy later |
 | R-039 | Current central action approval/schedule model is accidentally recreated despite transient V1 design | Current repo includes governance/scheduling | Medium | Medium | V1 is operator-started/transient; no persistent Windows task/service; scheduling remains out of scope |
 | R-040 | V1 UI becomes coupled to Pode and blocks future framework replacement | Architectural maintainability risk | High | Medium | Vanilla HTML/CSS/JS + REST contract; engines/application services have no Pode dependency |
+| R-041 | Nightly reference `master` moves while analysis is in progress | [CONFIRMED] the reference repo advanced from `1050fbbc...` to `1e38c8ed...` during Phase 0 correction | Medium | High | Freeze and record commit SHA for every evidence pass; use moving `master` only to deliberately select a newer snapshot and document the transition |
 
 ## Highest-priority risks before engine porting
 
@@ -100,6 +101,6 @@ Production-only assumptions remain open until they are represented by a stable c
 - Production lessons have corresponding risks/controls.
 - Pode, SQLite, concurrency and localhost API risks are explicit.
 - Security impact of local-admin execution is explicit.
-- Current-repo/live-production divergence is explicit.
+- Large-file evidence handling and moving nightly reference commits are explicit.
 - Phase 1 technical spikes are identified without prematurely deciding their outcomes.
 - No product code or reference-repository modification was made.
