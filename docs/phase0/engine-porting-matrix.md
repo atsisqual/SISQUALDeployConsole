@@ -172,6 +172,21 @@ Enabled     = 1
 
 **[CONFIRMED-CODE]** There is no current `ops.Action` named `SETTINGS_SYNC`.
 
+**[CONFIRMED-SYNC] Legacy engine retained but unused by the current action catalogue**
+
+`ops.Engine` still contains an enabled legacy engine row:
+
+```text
+EngineCode            = DATABASE_SETTINGS
+SourceFileName        = Invoke-DatabaseSettings.ps1
+EngineVersion         = 1.0
+MinimumPowerShell     = 5.1
+RequiresAdministrator = 0
+IsEnabled             = 1
+```
+
+The current `ops.Action` row with `ActionCode = DATABASE_SETTINGS` does **not** reference that legacy engine; its `EngineCode` is `DATABASE_CONTENT_SYNC`. Therefore `DATABASE_SETTINGS` is simultaneously a current **action code** and a retained **legacy engine code**, but only `DATABASE_CONTENT_SYNC` is the effective engine for that action.
+
 **V1 direction**
 - direct `SqlConnection`;
 - allowlisted/structured table/column/filter metadata;
