@@ -410,6 +410,8 @@ There are no current `ops.Action` rows named `SETTINGS_SYNC` or `SERVICE_RECONCI
 
 Conclusion: the adapter rows are stale/inconsistent metadata, not valid aliases that V1 should reproduce.
 
+**[CONFIRMED-SYNC]** `ops.Engine` also retains an enabled legacy engine named `DATABASE_SETTINGS` (`Invoke-DatabaseSettings.ps1`, version `1.0`, PowerShell `5.1`, no administrator requirement). This does not alter the effective mapping above: the current `ops.Action` row `DATABASE_SETTINGS` points to `DATABASE_CONTENT_SYNC`, not to the legacy `DATABASE_SETTINGS` engine. The legacy engine is therefore retained catalogue/history, not the engine selected by the current action.
+
 ## 12. Credential entities
 
 ### sec.ManagedCredential
