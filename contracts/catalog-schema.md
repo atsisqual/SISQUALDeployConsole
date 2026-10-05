@@ -29,7 +29,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 3. Conventions for all tables [PROPOSED]
 
-- Text columns whose name ends in `Code` are declared `COLLATE NOCASE` (the source databases use `Latin1_General_CI_AS`, owner answer of 2026-10-05); `NOCASE` folds ASCII only, so code values must be ASCII, and the conversion tool reports any that are not. Other text columns compare case-sensitively.
+- Text is stored byte-exact: case and line endings are never changed (owner preference of 2026-10-05; some identity-provider links are case-sensitive). All text columns, including the `*Code` columns, compare exactly (SQLite default `BINARY`). The source databases use `Latin1_General_CI_AS`; the conversion tool can declare `*Code` columns `COLLATE NOCASE` only on request (`-CodeCollation NoCase`), and the default does not. Consumers must not rely on case-insensitive matching.
 - `dbo_ManagedServer` has no `ManagementDatabaseName` column (dropped, the central database ceases to exist).
 - Text is UTF-8. Dates and times converted from SQL Server `datetime2` are ISO 8601 text kept exactly as in the source, WITHOUT a time zone: the source values come from `SYSDATETIME()` (server local time), so they are not UTC and must not be treated as UTC. Only values created by the new tools (`built_at_utc`, manifest times) are UTC with a `Z`. See `docs/migration/catalog-conversion-plan.md` section 1.1.
 - Booleans (SQL Server `bit`) are INTEGER 0 or 1 with a `CHECK`.
