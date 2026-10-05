@@ -51,6 +51,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
 | #15 | `docs/handoff-2026-10-05` | this file | open |
 | #16 | `tools/export-management-engines` | Step B1: `tools/Export-ManagementEngines.ps1`, unit tests, `tools-tests.yml` workflow, `tools/README.md` | open; CI green on windows-2022 |
+| #19 | `tests/integration-localdb` | LocalDB integration test of the SQL Server path of both tools (`tests/Integration/Test-SqlServerPath.ps1`, `tests/Fixtures/carried-schema.json`), `tools/Initialize-SqlClient.ps1`, `vendor/sqlclient-pin.json` (25 files pinned one by one), `-TrustServerCertificate`, collation read from the database | open, STACKED on #17 (merge #16, #17, then #19). CI green on run 37321071517: 24 passed, 0 failed. Temporary branches `results/integration-*` can be deleted |
 | #18 | `spike/sqlclient-pin` | SQL client pin spike: workflow `sqlclient-pin.yml`, script, evidence `docs/phase1/evidence/sqlclient-pin-37314406178/`, `docs/phase1/sqlclient-pin.md` | open; run PASS. Temporary branch `results/sqlclient-pin-37314406178` can be deleted after review |
 | #17 | `tools/convert-management-db` | Step B2: `tools/Convert-ManagementDb.ps1` (new-machine mode), unit tests, pinned `sqlite3` download in CI | open, STACKED on #16 (base branch is #16's); CI green. Merge #16 first |
 
@@ -182,3 +183,14 @@ Lessons:
 - Counts, keys and types are not enough: compare VALUES. B4 (`Test-CatalogConversion.ps1`) must do a value-level comparison (and use the stored `ContentSha256` columns, which hash the UTF-16LE text).
 - A test fixture must contain the hard cases: multi-line text with CRLF, lone CR, lone LF, tab, quotes and non-ASCII. The fixture of `tests/Unit/Test-ConvertManagementDb.ps1` now does.
 - Do not trust a successful run of a conversion tool; verify its output independently (this session used a separate Python comparison).
+
+## 15. LocalDB integration test (PR #19) and how this part of the session was recovered (added later the same day)
+
+Recovery note: one execution of the session timed out after PR #19 had been created and while its fourth CI run was in progress. The next session reconstructed the state from git and the GitHub API (open PRs, branch commits, workflow runs, the `results/integration-*` branches) instead of starting again. If this happens again: list open PRs, compare each branch head with the local clone, read the latest workflow run and its results branch, then continue.
+
+PR #19 result ([CONFIRMED], run 37321071517): 24 passed, 0 failed. The SQL Server path of `Export-ManagementEngines.ps1` and `Convert-ManagementDb.ps1` works against LocalDB with a `Latin1_General_CI_AS` database; the catalog built from SQL Server equals the one built from the file value by value in every table; the engine exports are identical (CRLF and accents); no marker value appears anywhere; the collation is read from the database; the source database is unchanged. Three earlier runs failed on test-script defects and on the clock-generated server row times; fixed in the same PR.
+
+Additions in #19: `tools/Initialize-SqlClient.ps1` (restores the pinned client with `dotnet publish` and verifies all 25 files against `vendor/sqlclient-pin.json`), `-TrustServerCertificate` on both tools (off by default), and the manifest records the collation read from the database.
+
+Still [V] (needs a real SISQUAL server): volume and network behaviour, permissions, the live collation of `_sisqualMANAGEMENT`, certificate trust and encryption defaults, the credential read path.
+Still [PENDING]: how the 25 client files reach the operator machine (the helper needs the .NET SDK and nuget.org); B3 (cut mode), B4 (value-level test tool), B5 (seal tool), B6 (vault import and credential issue).
