@@ -47,7 +47,7 @@ jobs:
           & $pwsh -NoLogo -NoProfile -NonInteractive -File "$root\spike\Invoke-MachineIdentityCngSpike.ps1" `
             -Action SourceCreate `
             -KeyName $keyName `
-            -CredentialModulePath "$root\modules\Sisqual.Credentials\Sisqual.Credentials.psd1" `
+            -CredentialModulePath "$root\modules\Sisqual.Credentials\Sisqual.Credentials.psm1" `
             -IdentityPath "$env:GITHUB_WORKSPACE\machine-identity-source.json" `
             -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-create.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -65,7 +65,7 @@ jobs:
           & $pwsh -NoLogo -NoProfile -NonInteractive -File "$replacement\spike\Invoke-MachineIdentityCngSpike.ps1" `
             -Action SourceReopen `
             -KeyName $keyName `
-            -CredentialModulePath "$replacement\modules\Sisqual.Credentials\Sisqual.Credentials.psd1" `
+            -CredentialModulePath "$replacement\modules\Sisqual.Credentials\Sisqual.Credentials.psm1" `
             -IdentityPath "$env:GITHUB_WORKSPACE\machine-identity-source.json" `
             -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-reopen.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -87,8 +87,8 @@ jobs:
         run: |
           $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
           $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1B\machine-identity\Invoke-MachineIdentityCngSpike.ps1'
-          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psd1'
-          if ((Test-Path $pwsh) -and (Test-Path $script)) {
+          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psm1'
+          if ((Test-Path $pwsh) -and (Test-Path $script) -and (Test-Path $module)) {
             & $pwsh -NoLogo -NoProfile -NonInteractive -File $script `
               -Action Delete `
               -KeyName 'SISQUALDeployConsole-Spike-${{ github.run_id }}' `
@@ -129,7 +129,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $artifact = Join-Path $env:RUNNER_TEMP 'from-machine-a'
           $script = Get-ChildItem $artifact -Recurse -Filter 'Invoke-MachineIdentityCngSpike.ps1' -File | Select-Object -First 1 -ExpandProperty FullName
-          $module = Get-ChildItem $artifact -Recurse -Filter 'Sisqual.Credentials.psd1' -File | Select-Object -First 1 -ExpandProperty FullName
+          $module = Get-ChildItem $artifact -Recurse -Filter 'Sisqual.Credentials.psm1' -File | Select-Object -First 1 -ExpandProperty FullName
           $identity = Get-ChildItem $artifact -Recurse -Filter 'machine-identity-source.json' -File | Select-Object -First 1 -ExpandProperty FullName
           if (-not $script -or -not $module -or -not $identity) { throw 'Machine A artifact is incomplete.' }
           $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
@@ -155,8 +155,8 @@ jobs:
         run: |
           $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
           $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1B\machine-identity\Invoke-MachineIdentityCngSpike.ps1'
-          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psd1'
-          if ((Test-Path $pwsh) -and (Test-Path $script)) {
+          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psm1'
+          if ((Test-Path $pwsh) -and (Test-Path $script) -and (Test-Path $module)) {
             & $pwsh -NoLogo -NoProfile -NonInteractive -File $script `
               -Action Delete `
               -KeyName 'SISQUALDeployConsole-Spike-${{ github.run_id }}' `
