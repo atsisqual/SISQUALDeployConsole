@@ -70,17 +70,6 @@ jobs:
             -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-reopen.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload copied portable folder and source evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase1b-machine-identity-machine-a
-          path: |
-            ${{ runner.temp }}/portable-replaced
-            machine-identity-source.json
-            report-machine-a-create.json
-            report-machine-a-reopen.json
-          if-no-files-found: error
-
       - name: Clean source test key
         if: always()
         shell: powershell
@@ -95,6 +84,19 @@ jobs:
               -CredentialModulePath $module `
               -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-cleanup.json"
           }
+
+      - name: Upload copied portable folder and source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-machine-identity-machine-a
+          path: |
+            ${{ runner.temp }}/portable-replaced
+            machine-identity-source.json
+            report-machine-a-create.json
+            report-machine-a-reopen.json
+            report-machine-a-cleanup.json
+          if-no-files-found: warn
 
   machine-b:
     name: Machine B - copied folder has no source private key
@@ -141,14 +143,6 @@ jobs:
             -ReportPath "$env:GITHUB_WORKSPACE\report-machine-b.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload Machine B evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase1b-machine-identity-machine-b
-          path: report-machine-b.json
-          if-no-files-found: warn
-
       - name: Clean destination test key
         if: always()
         shell: powershell
@@ -163,3 +157,13 @@ jobs:
               -CredentialModulePath $module `
               -ReportPath "$env:GITHUB_WORKSPACE\report-machine-b-cleanup.json"
           }
+
+      - name: Upload Machine B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-machine-identity-machine-b
+          path: |
+            report-machine-b.json
+            report-machine-b-cleanup.json
+          if-no-files-found: warn
