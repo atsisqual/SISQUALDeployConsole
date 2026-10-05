@@ -28,10 +28,6 @@ function Get-Sha256Hex {
     return [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 
-function New-CheckList {
-    return [System.Collections.Generic.List[object]]::new()
-}
-
 function Add-Check {
     param(
         [Parameter(Mandatory)][System.Collections.Generic.List[object]]$List,
@@ -39,7 +35,7 @@ function Add-Check {
         [Parameter(Mandatory)][bool]$Passed,
         [Parameter(Mandatory)][string]$Detail
     )
-    $List.Add([pscustomobject]@{
+    [void]$List.Add([pscustomobject]@{
         id = $Id
         status = $(if ($Passed) { 'PASS' } else { 'FAIL' })
         detail = $Detail
@@ -184,13 +180,14 @@ function Write-Report {
     if ([string]::IsNullOrWhiteSpace($ReportPath)) { return }
     $parent = Split-Path -Parent $ReportPath
     if ($parent -and -not (Test-Path -LiteralPath $parent)) { [void](New-Item -ItemType Directory -Path $parent -Force) }
+    $failed = @($Checks | Where-Object { $_.status -eq 'FAIL' })
     $report = [ordered]@{
         schema = 'SISQUAL_PHASE1B_MACHINE_IDENTITY_SPIKE_V1'
         action = $Mode
         utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
         machineName = [Environment]::MachineName
         powerShell = $PSVersionTable.PSVersion.ToString()
-        overall = $(if (@($Checks | Where-Object status -eq 'FAIL').Count -eq 0) { 'PASS' } else { 'FAIL' })
+        overall = $(if ($failed.Count -eq 0) { 'PASS' } else { 'FAIL' })
         fingerprint = $(if ($null -ne $Identity) { [string]$Identity.keyFingerprint } else { $null })
         checks = @($Checks)
     }
@@ -201,7 +198,7 @@ if (-not (Test-Path -LiteralPath $CredentialModulePath -PathType Leaf)) {
     throw "Credential module not found: $CredentialModulePath"
 }
 
-$checks = New-CheckList
+$checks = [System.Collections.Generic.List[object]]::new()
 $identity = $null
 $key = $null
 $ecdh = $null
@@ -215,7 +212,7 @@ try {
             $identity = Get-KeyIdentity $ecdh $key
             Add-Check $checks 'MACHINE_SCOPE' ([bool]$identity.machineKey) 'The CNG key must be in the machine key store.'
             Add-Check $checks 'SOFTWARE_KSP' ([string]$identity.provider -ceq $provider.Provider) 'The spike uses Microsoft Software Key Storage Provider.'
-            Add-Check $checks 'ECDH_P256' (([string]$identity.algorithm -match 'ECDH') -and [int]$identity.keySize -eq 256) 'The machine key must be ECDH P-256.'
+            Add-Check $checks 'ECDH_P256' ((([string]$identity.algorithm -match 'ECDH') -and ([int]$identity.keySize -eq 256))) 'The machine key must be ECDH P-256.'
             Add-Check $checks 'EXPORT_POLICY_NONE' ([string]$identity.exportPolicy -eq 'None') 'The CNG export policy must be None.'
             Add-Check $checks 'PUBLIC_EXPORT' (-not [string]::IsNullOrWhiteSpace([string]$identity.publicKeySpki)) 'Public SPKI export must succeed.'
             Assert-PrivateExportBlocked $ecdh $key $checks
