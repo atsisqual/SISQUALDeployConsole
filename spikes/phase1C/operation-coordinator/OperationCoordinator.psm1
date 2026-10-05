@@ -6,7 +6,7 @@ function ConvertTo-Sha256Hex {
 
     $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
     try {
-        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
     }
     finally {
         [Array]::Clear($bytes, 0, $bytes.Length)
@@ -115,11 +115,12 @@ function Update-SisqualOperationCoordinator {
 
     $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         foreach ($operation in @($Coordinator.Operations.Values)) {
-            if ((Test-TerminalStatus -Status $operation.Status) -or $null -eq $operation.AsyncResult) {
+            if ((Test-TerminalStatus -Status $operation.Status) -or $null -eq $operation.AsyncResult -or $operation.Finalizing) {
                 continue
             }
 
             if ($operation.AsyncResult.IsCompleted) {
+                $operation.Finalizing = $true
                 $completed.Add($operation) | Out-Null
             }
         }
@@ -179,7 +180,7 @@ function Start-SisqualOperation {
     param(
         [Parameter(Mandatory = $true)][ValidatePattern('^[A-Z0-9_]+$')][string]$EngineCode,
         [string]$InstanceCode,
-        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$PlanFingerprint,
+        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PlanFingerprint,
         [Parameter(Mandatory = $true)][ValidateLength(16, 256)][string]$IdempotencyKey,
         [ValidateSet('COOPERATIVE', 'NONE')][string]$CancellationMode = 'COOPERATIVE',
         [string[]]$LockKeys = @(),
@@ -194,7 +195,7 @@ function Start-SisqualOperation {
         throw 'At least one instance or explicit lock key is required.'
     }
 
-    $requestFingerprint = Get-RequestFingerprint -EngineCode $EngineCode -InstanceCode $InstanceCode -PlanFingerprint $PlanFingerprint.ToUpperInvariant() -CancellationMode $CancellationMode -LockKeys $canonicalLocks
+    $requestFingerprint = Get-RequestFingerprint -EngineCode $EngineCode -InstanceCode $InstanceCode -PlanFingerprint $PlanFingerprint -CancellationMode $CancellationMode -LockKeys $canonicalLocks
     $idempotencyHash = ConvertTo-Sha256Hex -Value $IdempotencyKey
 
     $decision = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
@@ -238,7 +239,7 @@ function Start-SisqualOperation {
             OperationId = $operationId
             EngineCode = $EngineCode
             InstanceCode = [string]$InstanceCode
-            PlanFingerprint = $PlanFingerprint.ToUpperInvariant()
+            PlanFingerprint = $PlanFingerprint
             RequestFingerprint = $requestFingerprint
             IdempotencyKeyHash = $idempotencyHash
             CancellationMode = $CancellationMode
@@ -248,6 +249,7 @@ function Start-SisqualOperation {
             StartedAt = $null
             FinishedAt = $null
             ErrorType = $null
+            Finalizing = $false
             CancellationSource = $cancellationSource
             PowerShell = $null
             AsyncResult = $null
