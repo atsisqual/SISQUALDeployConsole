@@ -29,7 +29,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 3. Conventions for all tables [PROPOSED]
 
-- Text is UTF-8. Dates and times are ISO 8601 text in UTC (`YYYY-MM-DDTHH:MM:SSZ`); the conversion of SQL Server `datetime`/`datetime2` is defined in the conversion plan.
+- Text is UTF-8. Dates and times converted from SQL Server `datetime2` are ISO 8601 text kept exactly as in the source, WITHOUT a time zone: the source values come from `SYSDATETIME()` (server local time), so they are not UTC and must not be treated as UTC. Only values created by the new tools (`built_at_utc`, manifest times) are UTC with a `Z`. See `docs/migration/catalog-conversion-plan.md` section 1.1.
 - Booleans (SQL Server `bit`) are INTEGER 0 or 1 with a `CHECK`.
 - Identity columns keep their source values so that origin and destination rows can be compared by key.
 - Binary content (`varbinary`) is excluded from catalogs unless the conversion plan lists a table explicitly; `Content` of `cfg.LinksPageAsset` is a candidate [PENDING].
