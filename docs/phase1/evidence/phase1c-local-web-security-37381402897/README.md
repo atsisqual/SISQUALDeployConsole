@@ -1,91 +1,52 @@
-# Phase 1C local web security - accepted run 37381402897
+# Phase 1C local web security - superseded run 37381402897
 
 **Workflow:** `phase1c-local-web-security`
 **Workflow ID:** `375855729`
 **Run ID:** `37381402897`
 **Run number:** `3`
 **Attempt:** `1`
-**Event:** `push`
 **Tested commit:** `9c27190bc1616278e59de5391425f66ea72fa747`
-**Conclusion:** [CONFIRMED] `success`
-**Created:** `2026-10-05T22:16:32Z`
-**Completed:** `2026-10-05T22:19:51Z`
+**GitHub conclusion:** [CONFIRMED] `success`
+**Security classification:** [CONFIRMED] superseded design; not accepted evidence after PR review.
 
-This is the accepted technical-evidence run for the Phase 1C local browser/HTTP boundary. Both Windows jobs executed the full probe. Each secret-safe report records `PassCount=27`, `FailCount=0`, `Fatal=null`.
+Both Windows jobs executed the original cookie-based probe and each report records `27 PASS / 0 FAIL`. Those execution facts remain valid and are preserved. The product-security conclusion is not valid because the test model omitted a cross-port cookie threat identified during review.
 
-## Windows Server 2022
+## Original execution identifiers
 
-- job ID: `112004092392`
-- runner label: `windows-2022`
-- runner: `GitHub Actions 1000000558`
-- runner ID: `1000000558`
-- job created: `2026-10-05T22:16:44Z`
-- job started: `2026-10-05T22:16:46Z`
-- job completed: `2026-10-05T22:19:33Z`
-- runtime verification completed: `2026-10-05T22:19:15Z`
-- security probe: `2026-10-05T22:19:15Z` to `2026-10-05T22:19:28Z`, success
-- artifact name: `phase1c-local-web-security-windows-2022`
-- artifact ID: `11374356055`
-- artifact size: `1859` bytes
-- artifact digest: `sha256:12ea9164fb9a66d4c4d04ce0bc5be090bb6b0450db308b8a27b02957d70b4fe8`
-- artifact created: `2026-10-05T22:19:29Z`
-- artifact expires: `2027-01-03T22:16:33Z`
-- report: `report-windows-2022.json`
+Windows 2022:
 
-[CONFIRMED] The report used PowerShell `7.6.6`; all 27 gates passed. The non-loopback reachability negative test used runner address `10.1.1.55`; this is ephemeral GitHub-runner evidence, not SISQUAL network data.
+- job `112004092392`;
+- runner `GitHub Actions 1000000558`, runner ID `1000000558`;
+- artifact ID `11374356055`, size `1859` bytes;
+- digest `sha256:12ea9164fb9a66d4c4d04ce0bc5be090bb6b0450db308b8a27b02957d70b4fe8`;
+- artifact expires `2027-01-03T22:16:33Z`;
+- exact report: `report-windows-2022.json`.
 
-## Windows Server 2025
+Windows 2025:
 
-- job ID: `112004092351`
-- runner label: `windows-2025`
-- runner: `GitHub Actions 1000000559`
-- runner ID: `1000000559`
-- job created: `2026-10-05T22:16:44Z`
-- job started: `2026-10-05T22:16:52Z`
-- job completed: `2026-10-05T22:19:50Z`
-- runtime verification completed: `2026-10-05T22:19:20Z`
-- security probe: `2026-10-05T22:19:20Z` to `2026-10-05T22:19:43Z`, success
-- artifact name: `phase1c-local-web-security-windows-2025`
-- artifact ID: `11375770246`
-- artifact size: `1860` bytes
-- artifact digest: `sha256:1b61967c89885f88817f902b1faa15748c25de60d9f8501cd41bc42b41ac964a`
-- artifact created: `2026-10-05T22:19:44Z`
-- artifact expires: `2027-01-03T22:16:33Z`
-- report: `report-windows-2025.json`
+- job `112004092351`;
+- runner `GitHub Actions 1000000559`, runner ID `1000000559`;
+- artifact ID `11375770246`, size `1860` bytes;
+- digest `sha256:1b61967c89885f88817f902b1faa15748c25de60d9f8501cd41bc42b41ac964a`;
+- artifact expires `2027-01-03T22:16:33Z`;
+- exact report: `report-windows-2025.json`.
 
-[CONFIRMED] The report used PowerShell `7.6.6`; all 27 gates passed. The non-loopback reachability negative test used runner address `10.1.0.204`; this is ephemeral GitHub-runner evidence, not SISQUAL network data.
+## Why the green result was superseded
 
-## Gate result
+[CONFIRMED] Codex review comment `4189467569` identified that browser cookies are scoped by host/path, not TCP port. A `SISQUAL-SESSION` cookie received from `127.0.0.1:<product-port>` (or `localhost:<product-port>`) can therefore be sent automatically to an unrelated loopback service on another port. A malicious local listener could receive that ambient credential and replay it against the product port.
 
-[CONFIRMED] Both runners passed:
+[CONFIRMED] `HttpOnly` and `SameSite=Strict` do not create port isolation, so the original cookie gates did not test the relevant local-process threat.
 
-- loopback-only listener reachability;
-- protected route requires a session (`401` without it);
-- forged Host rejected (`400`);
-- valid bootstrap accepted (`200`);
-- session cookie is `HttpOnly`, `SameSite=Strict`, `Path=/`;
-- bootstrap is single-use (`403` on replay);
-- valid session accepted (`200`);
-- foreign Origin rejected (`403`);
-- missing/wrong CSRF rejected (`403`);
-- valid same-origin mutation accepted (`200`);
-- foreign CORS preflight rejected (`403`) with no `Access-Control-Allow-Origin`;
-- CSP, `nosniff`, `no-referrer`, `no-store`, COOP and CORP headers;
-- listener disappears when the probe process is stopped;
-- old in-memory session rejected after process restart (`401`);
-- logout returns `204`, expires the cookie and invalidates the session;
-- bootstrap/session/CSRF raw values absent from captured server stdout/stderr.
+[CONFIRMED] The fix removes the session cookie entirely. The replacement candidate returns a random session credential at bootstrap and requires the UI to attach it explicitly as `X-SISQUAL-Session`; it must live only in JavaScript memory, not cookies, localStorage or sessionStorage.
 
-The reports contain no token values or production credentials.
+## Second review finding
 
-## Interpretation boundary
+[CONFIRMED] Review comment `4189467573` found that stdout/stderr capture errors were swallowed, so `NO_TOKEN_LOG_LEAK` could pass without complete observation.
 
-[CONFIRMED] This run proves technical viability of the tested local HTTP/browser boundary on the two GitHub-hosted Windows images.
+[CONFIRMED] The replacement harness makes output capture fail-closed and adds `OUTPUT_CAPTURE_COMPLETE`; `NO_TOKEN_LOG_LEAK` cannot pass when capture is incomplete.
 
-[PROPOSED] It does not by itself approve the bootstrap/session model as the product contract.
+## Historical value
 
-[PENDING] The real vanilla-JS browser flow that receives a bootstrap value through a URL fragment, posts it to the bootstrap endpoint and clears the fragment is not exercised by this backend probe.
+The original reports remain useful evidence that the first harness executed correctly for the checks it contained. They must not be cited as acceptance of the Phase 1C security boundary.
 
-[PENDING] Session lifetime/idle-extension policy is not decided by this run.
-
-[PENDING] Controlled shutdown with active operations and operation idempotency are a separate Phase 1C task. `SERVER_STOPPED` proves only that the listener disappears after the probe process is terminated; it is not evidence of graceful shutdown.
+The next accepted run must use report schema `SISQUAL_PHASE1C_LOCAL_WEB_SECURITY_V2` and prove the non-ambient session-header model plus fail-closed output capture on both Windows runner versions.
