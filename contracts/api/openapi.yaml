@@ -1,0 +1,309 @@
+openapi: 3.1.0
+info:
+  title: SISQUAL Deploy Console local API
+  version: 0.1-proposed
+  description: |
+    [PROPOSED] Skeleton only. Loopback REST API served by the portable application (Pode is only the HTTP adapter).
+    Not approved; no route here is implemented. There are no synchronisation endpoints because there is no sync
+    (ADR-0007, accepted 2026-10-05). Secrets never appear in any request or response except the manual import of a credential
+    package, which is ciphertext.
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Loopback only by default. The port is chosen at startup.
+    variables:
+      port:
+        default: "5180"
+security:
+  - sessionCookie: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and state of the application
+      security: []
+      responses:
+        "200":
+          description: Application state. No catalog data.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, state]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  state:
+                    type: string
+                    description: INITIAL_SETUP when the package integrity check or the catalog is not valid. Operational routes answer 409 in that state.
+                    enum: [READY, INITIAL_SETUP, INTEGRITY_ERROR]
+  /session:
+    post:
+      operationId: createSession
+      summary: Exchange the one-time bootstrap token for a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [bootstrapToken]
+              properties:
+                bootstrapToken:
+                  type: string
+                  minLength: 16
+                  maxLength: 256
+      responses:
+        "204":
+          description: Session cookie set (HttpOnly, SameSite). The response carries the CSRF token in the X-CSRF-Token header.
+        "401":
+          $ref: "#/components/responses/Problem"
+  /catalog/summary:
+    get:
+      operationId: getCatalogSummary
+      summary: Identity and integrity of the loaded catalog
+      responses:
+        "200":
+          description: Source, build time, schema version and integrity result. No table contents.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [serverCode, schemaVersion, builtAtUtc, sourceKind, integrity]
+                properties:
+                  serverCode:
+                    type: string
+                  schemaVersion:
+                    type: integer
+                  builtAtUtc:
+                    type: string
+                  sourceKind:
+                    type: string
+                    enum: [conversion-tool, manual-edit-sealed, build]
+                  integrity:
+                    type: string
+                    enum: [VERIFIED, DEVELOPMENT_OVERRIDE]
+  /instances:
+    get:
+      operationId: listInstances
+      summary: Instances of this machine from the catalog (read only)
+      responses:
+        "200":
+          description: Instance list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [instanceCode]
+                  properties:
+                    instanceCode:
+                      type: string
+                    displayName:
+                      type: string
+  /credentials/status:
+    get:
+      operationId: getCredentialStatus
+      summary: Metadata of the imported credential package
+      responses:
+        "200":
+          description: Metadata only, never secret values.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state]
+                properties:
+                  state:
+                    type: string
+                    enum: [NONE, VALID, EXPIRED, INVALID]
+                  packageId:
+                    type: string
+                  sequence:
+                    type: integer
+                  expiresAt:
+                    type: string
+                  credentialRefs:
+                    type: array
+                    items:
+                      type: string
+  /credentials/import:
+    post:
+      operationId: importCredentialPackage
+      summary: Import a credential package pasted as text
+      description: See contracts/credential-package.md. Validation happens before any decryption. The package is stored as received in a file outside the portable folder (Q3, decided).
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              maxLength: 262144
+      responses:
+        "200":
+          description: Package accepted.
+        "422":
+          description: Package rejected. The body carries a reason code only (FORMAT, VERSION, SIGNATURE, TARGET_SERVER, TARGET_KEY, TIME_WINDOW, REPLAY, DUPLICATE_REF).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /operations:
+    get:
+      operationId: listOperations
+      summary: Operations of the current process (in memory, V1 keeps no database)
+      responses:
+        "200":
+          description: Operation list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OperationStatus"
+    post:
+      operationId: createOperation
+      summary: Start a PREVIEW or APPLY of an engine
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperationRequest"
+      responses:
+        "202":
+          description: Operation accepted and running; poll the operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationStatus"
+        "409":
+          description: Conflict (per-instance or server-wide lock held, or application not READY).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /operations/{operationId}:
+    get:
+      operationId: getOperation
+      summary: Status and, when finished, the engine result
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+      responses:
+        "200":
+          description: Operation status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationStatus"
+        "404":
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sdc_session
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Prevents a retried or double-clicked request from running twice (R-031).
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Problem:
+      description: Error. Never contains secrets or stack traces.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        reasonCode:
+          type: string
+    OperationRequest:
+      type: object
+      additionalProperties: false
+      required: [engineCode, mode]
+      properties:
+        engineCode:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,59}$"
+        mode:
+          type: string
+          enum: [PREVIEW, APPLY]
+        instanceCodes:
+          type: array
+          description: Empty means all enabled instances of this machine. Paths and SQL are never accepted from the client (R-030).
+          items:
+            type: string
+        confirmedPlanFingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: Required for APPLY; the fingerprint of the PREVIEW the operator confirmed (R-032).
+    OperationStatus:
+      type: object
+      additionalProperties: false
+      required: [operationId, engineCode, mode, state]
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        engineCode:
+          type: string
+        mode:
+          type: string
+          enum: [PREVIEW, APPLY]
+        state:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        currentStep:
+          type: string
+        result:
+          description: Present when COMPLETED or FAILED. See contracts/engine-result.schema.json.
+          $ref: "../engine-result.schema.json"

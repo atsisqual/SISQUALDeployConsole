@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sisqual:deploy:contract:engine-result:0.1-proposed",
+  "title": "Engine result",
+  "description": "[PROPOSED] Structured result returned by every engine after a PREVIEW or APPLY. Built from the current SISQUAL_JOB_RESULT_V1 summary (jobId, actionCode, succeeded, exitCode, target and error counts) and from the per-object rows the current engines write with Add-Result (Timestamp, InstanceCode, OperationType, Object, Status, Details). It never contains secrets: every free-text field is written by the engine after redaction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "operationId", "engineCode", "engineVersion", "mode", "startedAt", "completedAt", "succeeded", "exitCode", "summary", "results"],
+  "properties": {
+    "contractVersion": { "const": "0.1-proposed" },
+    "operationId": {
+      "description": "Id of the operation created by the API (replaces jobId).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "engineCode": {
+      "description": "Same codes as the current ops.Engine.EngineCode (for example IIS_RECONCILE), at most 60 characters.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,59}$"
+    },
+    "engineVersion": {
+      "description": "Version of the local engine module that ran.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,40}$"
+    },
+    "mode": { "enum": ["PREVIEW", "APPLY"] },
+    "planFingerprint": {
+      "description": "SHA-256 of the normalised plan. APPLY must carry the fingerprint of the PREVIEW the operator confirmed (R-032).",
+      "$ref": "#/$defs/sha256"
+    },
+    "startedAt": { "$ref": "#/$defs/utcTime" },
+    "completedAt": { "$ref": "#/$defs/utcTime" },
+    "succeeded": { "type": "boolean" },
+    "exitCode": { "type": "integer" },
+    "errorMessage": {
+      "description": "Empty when succeeded. Never contains secrets, connection strings or stack traces with parameters.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetCount", "succeededTargets", "failedTargets", "warningCount", "errorCount"],
+      "properties": {
+        "targetCount": { "type": "integer", "minimum": 0 },
+        "succeededTargets": { "type": "integer", "minimum": 0 },
+        "failedTargets": { "type": "integer", "minimum": 0 },
+        "warningCount": { "type": "integer", "minimum": 0 },
+        "errorCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "backup": {
+      "description": "Present when an APPLY created a backup (R-033). Metadata only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created"],
+      "properties": {
+        "created": { "type": "boolean" },
+        "name": { "type": "string", "maxLength": 200 },
+        "location": { "type": "string", "maxLength": 260 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "restoreHint": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "results": {
+      "description": "One row per object handled, in execution order.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/resultRow" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "utcTime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "resultRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp", "instanceCode", "operationType", "object", "status"],
+      "properties": {
+        "timestamp": { "$ref": "#/$defs/utcTime" },
+        "instanceCode": {
+          "description": "Empty string for machine-wide rows (for example PREREQUISITE).",
+          "type": "string",
+          "maxLength": 60
+        },
+        "operationType": {
+          "description": "Engine specific (IIS_RECONCILE uses PREREQUISITE, DIRECTORY, ACL, APP_POOL, SITE, APPLICATION, APPLICATION_AUTO_START, AUTO_START_PROVIDER, BINDING, SSL_FLAGS, CERTIFICATE, POLICY, IIS_SETTING, START_POOL, START_SITE, START).",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,59}$"
+        },
+        "object": { "type": "string", "maxLength": 400 },
+        "status": {
+          "description": "[PENDING] closed list. Statuses seen in IIS_RECONCILE v16.3: MATCHED, WOULD_CREATE, WOULD_UPDATE, WOULD_INSTALL, WOULD_CONVERT, WOULD_CONFIGURE, CREATED, UPDATED, CONVERTED, INSTALLED, MANAGED, WARNING, UNKNOWN_FEATURE, MISSING_MANUAL_ACTION, MISSING_REQUIRED_PATH, MISSING_APPLICATION, SKIPPED_BY_SQL, SKIPPED_BY_POLICY, SKIPPED_EXISTING_SITE, Started, Stopped. This draft accepts the shape only; the closed enum is set in the Phase 3 engine contract.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{1,59}$"
+        },
+        "details": {
+          "description": "Redacted free text. Must never carry a password, token, private key or connection string.",
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    }
+  },
+  "x-validationRules": [
+    "[PROPOSED] summary.targetCount = succeededTargets + failedTargets. succeeded is true only when failedTargets = 0 and errorCount = 0.",
+    "[PROPOSED] mode PREVIEW never carries a backup with created = true and never has statuses of an executed change (CREATED, UPDATED, CONVERTED, INSTALLED).",
+    "[PROPOSED] A secret-safety test per engine feeds a known marker value as a credential and asserts the marker is absent from this document, the logs and the transcripts.",
+    "[PENDING] Whether results are streamed (events) or returned whole at the end; the API skeleton assumes whole at the end plus progress events."
+  ],
+  "examples": [
+    {
+      "contractVersion": "0.1-proposed",
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "engineCode": "IIS_RECONCILE",
+      "engineVersion": "0.0.0",
+      "mode": "PREVIEW",
+      "planFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:00:05Z",
+      "succeeded": true,
+      "exitCode": 0,
+      "errorMessage": "",
+      "summary": { "targetCount": 1, "succeededTargets": 1, "failedTargets": 0, "warningCount": 0, "errorCount": 0 },
+      "results": [
+        {
+          "timestamp": "2026-01-01T00:00:01Z",
+          "instanceCode": "EXAMPLE_INSTANCE",
+          "operationType": "APP_POOL",
+          "object": "EXAMPLE_POOL",
+          "status": "WOULD_CREATE",
+          "details": "MISSING"
+        }
+      ]
+    }
+  ]
+}

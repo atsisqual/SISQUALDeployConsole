@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sisqual:deploy:contract:package-manifest:0.1-proposed",
+  "title": "Portable package manifest",
+  "description": "[PROPOSED] Signed manifest of one portable package. Lists the SHA-256 of every file, including the catalog, and identifies the catalog it carries. Verified at startup; the application refuses to start on any mismatch except with an explicit, logged development flag (ADR-0007, proposed). Rules that JSON Schema cannot express are listed in the 'x-validationRules' keyword.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "packageId", "productVersion", "builtAt", "catalog", "files", "signature"],
+  "properties": {
+    "contractVersion": {
+      "const": "0.1-proposed"
+    },
+    "packageId": {
+      "description": "Unique id of this package build or seal.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "productVersion": {
+      "description": "Version of the portable application (semantic version).",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "builtAt": {
+      "description": "UTC time of the build or of the last seal, shown in the UI.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverCode", "file", "schemaVersion", "origin"],
+      "properties": {
+        "serverCode": {
+          "description": "ServerCode this catalog was cut for. Must equal the ServerCode recorded inside the catalog file and the identity of the machine running the application (R-036).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,60}$"
+        },
+        "file": {
+          "description": "Relative path of the catalog inside the package. Must also be listed in 'files'.",
+          "$ref": "#/$defs/relativePath"
+        },
+        "schemaVersion": {
+          "description": "Version of the catalog schema (see contracts/catalog-schema.md).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "origin": {
+          "description": "How the catalog came to be.",
+          "enum": ["conversion-tool", "manual-edit-sealed", "build"]
+        },
+        "originReference": {
+          "description": "Free text without secrets: conversion run id, repository commit or seal note.",
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[\\x20-\\x7E]*$"
+        }
+      }
+    },
+    "files": {
+      "description": "Every file of the package except this manifest. Includes the catalog, engines, UI and vendored runtime files.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "size"],
+        "properties": {
+          "path": { "$ref": "#/$defs/relativePath" },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "size": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuerKeyId", "algorithm", "value"],
+      "properties": {
+        "issuerKeyId": {
+          "description": "Fingerprint (SHA-256, lowercase hex) of the public key of the credential tool that signed the manifest.",
+          "$ref": "#/$defs/sha256"
+        },
+        "algorithm": {
+          "description": "Signature algorithm identifier. [DECIDED 2026-10-05, Q2] ECDSA P-256 with SHA-256, identifier ECDSA-P256-SHA256 [PROPOSED]. The schema only checks the shape.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._+-]{3,40}$"
+        },
+        "value": {
+          "description": "Base64 signature over the canonical form of this manifest without the 'signature' member.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+          "minLength": 16,
+          "maxLength": 2048
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "description": "Forward slashes, ASCII, relative, no empty, '.' or '..' segment, no drive letter, no colon.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(^|/)\\.{1,2}(/|$))(?!.*//)[A-Za-z0-9._ \\-/]+$"
+    }
+  },
+  "x-validationRules": [
+    "[PROPOSED] Hashes are computed over the raw bytes of each file as shipped in the package; text files are LF (R-018). Changing a line ending changes the hash.",
+    "[PROPOSED] 'files' paths are unique ignoring case. The manifest does not list itself. Credentials (credentials.pkg) and logs are outside the package and never listed.",
+    "[PROPOSED] Every file inside the package folder must be listed and every listed file must exist with the stated size and hash; an unlisted file is an error.",
+    "[PROPOSED] 'catalog.file' appears in 'files'. 'catalog.serverCode' equals the ServerCode stored inside the catalog and the local machine identity.",
+    "[DECIDED 2026-10-05, Q2] Canonical form for signing, implemented by tools/Seal-Package.ps1 (PR #22): the manifest without 'signature' as compact JSON, object keys in ordinal order, arrays as stored (files sorted by path in ordinal order), every non-ASCII character as \\uXXXX, integers as plain digits. For this manifest this is RFC 8785. [PENDING] owner approval with the trust bootstrap of the issuer public key: see contracts/credential-package.md, open questions Q1 and Q2.",
+    "[PROPOSED] The manifest is the file package-manifest.json at the package root and is not listed in 'files'. The seal log is kept outside the package.",
+    "[PROPOSED] 'builtAt' is the time of the last seal of the whole package. catalog_meta.built_at_utc is the time the catalog content was produced or last sealed after an edit; the two differ when only other files change. The application checks server_code and schema_version against the manifest, and that catalog.origin equals catalog_meta.source_kind, not the times.",
+    "[PENDING] Whether one package carries one catalog (one package per machine) or all catalogs with the application choosing by identity. This draft assumes one catalog per package."
+  ],
+  "examples": [
+    {
+      "contractVersion": "0.1-proposed",
+      "packageId": "00000000-0000-4000-8000-000000000000",
+      "productVersion": "0.0.0",
+      "builtAt": "2026-01-01T00:00:00Z",
+      "catalog": {
+        "serverCode": "EXAMPLE_SERVER",
+        "file": "catalog/catalog-EXAMPLE_SERVER.db",
+        "schemaVersion": 1,
+        "origin": "conversion-tool",
+        "originReference": "conversion run example"
+      },
+      "files": [
+        {
+          "path": "catalog/catalog-EXAMPLE_SERVER.db",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 0
+        }
+      ],
+      "signature": {
+        "issuerKeyId": "0000000000000000000000000000000000000000000000000000000000000000",
+        "algorithm": "PENDING-ALG",
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    }
+  ]
+}
