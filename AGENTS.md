@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build a portable local administration console for SISQUAL WFM without changing the production Management Console. V1 reads central configuration, validates it locally, previews approved operations, and executes on the local Windows server.
+Build a portable local administration console for SISQUAL WFM without changing the production Management Console. V1 reads a read-only configuration catalog (a SQLite file shipped inside the portable package, one per machine), verifies the package integrity locally, previews approved operations, and executes on the local Windows server. There is no central configuration database and no master server (owner decision of 2026-10-05, ADR-0007).
 
 ## Status vocabulary
 
@@ -13,7 +13,7 @@ Use these labels in design, code comments, PRs, and reports:
 - `[PENDING]` - information, decision, or validation still required.
 - `[V]` - implemented or analysed but still requires the specified real Windows/SISQUAL validation.
 
-Never promote an inference to `[CONFIRMED]`.
+Never promote an inference to `[CONFIRMED]`. A decision is recorded as made by the owner only when it can be traced to an owner message or an approved document; otherwise write `[PENDING]` with the supporting evidence and ask.
 
 ## Source-of-truth order
 
@@ -42,6 +42,8 @@ Before work:
 
 Do not push directly to `main`. Do not merge the PR unless the project owner explicitly delegates that action.
 
+[PROPOSED] If a task depends on an open PR, branch from that PR's branch and use it as the base (a stacked PR); state the integration order in the PR body. The reviewer merges in that order.
+
 ## What an agent may decide without new approval
 
 An agent may make implementation choices that do not change an approved public/operational contract, including:
@@ -60,8 +62,8 @@ An agent may make implementation choices that do not change an approved public/o
 Obtain approval before changing:
 
 - cryptographic algorithms, key ownership, trust bootstrap, or credential-envelope semantics;
-- central-authority versus local-cache ownership;
-- sync transport or snapshot authority rules;
+- the long-term authority of the catalog (deferred by the owner) and the package integrity model (manifest, signing, seal tool);
+- anything that makes the application contact a server or write configuration;
 - public REST contracts after approval/versioning;
 - engine input/result contracts after approval;
 - new runtime dependencies or dependency major versions;
@@ -77,14 +79,14 @@ Never:
 - commit credentials, tokens, private keys, production connection strings, or secret values;
 - log decrypted secrets or return them through the REST API;
 - execute raw SQL supplied by a browser client;
-- use `Invoke-Expression` on external or synchronized input;
+- use `Invoke-Expression` on external or catalog-sourced input;
 - accept unvalidated filesystem paths outside approved roots;
 - expose Pode beyond loopback by default;
-- let central `ops.Engine.ScriptText` replace local executable modules at runtime;
+- execute text stored in the catalog or in any data (for example `ops.Action.SqlCommand` or `ops.ReviewDefinition.CommandText`) as code; engine scripts are local versioned files and are never carried in a catalog;
 - modify `atsisqual/SISQUALManagementConsole`;
 - claim real Windows/SISQUAL validation without evidence.
 
-All privileged inputs must come from approved local contracts or validated central snapshot data, never directly from arbitrary browser fields.
+All privileged inputs must come from approved local contracts or from the verified catalog and credential package, never directly from arbitrary browser fields.
 
 ## Engine contract
 
@@ -106,6 +108,8 @@ Errors
 BackupArtifacts
 ```
 
+The draft machine-readable form is `contracts/engine-result.schema.json` ([PROPOSED], PR #13), aligned with the current `SISQUAL_JOB_RESULT_V1`.
+
 Requirements:
 
 - preview is deterministic where technically possible;
@@ -114,16 +118,20 @@ Requirements:
 - destructive work has idempotency expectations and backup/restore evidence;
 - output is structured and secret-safe;
 - engine code does not depend on the HTTP adapter;
-- PowerShell scripts must parse with Windows PowerShell 5.1 until that compatibility requirement is explicitly removed.
+- engine scripts must parse with Windows PowerShell 5.1 until that compatibility requirement is explicitly removed (ADR-0006 keeps a 5.1 fallback); the tools under `tools/` and their tests under `tests/` are PowerShell 7 and are parsed with the PowerShell 7 parser (owner decision of 2026-10-05); whether the engines also move fully to PowerShell 7 is [PENDING].
 
 ## Current architecture constraints
 
 - [CONFIRMED] Portable PowerShell 7.6.6, Pode 2.14.1, SQLite 3.53.4 engine.
 - [CONFIRMED] Pode is an adapter only.
-- [CONFIRMED] Central `_sisqualMANAGEMENT` is authoritative and V1 is read-only toward central configuration.
+- [CONFIRMED] Owner decision of 2026-10-05, recorded in ADR-0007 (status Proposed until formally accepted): `_sisqualMANAGEMENT` ceases to exist; configuration is a read-only SQLite catalog, one per machine, inside the portable package; the application writes no database and makes no runtime connection to any server to obtain configuration.
+- [CONFIRMED] Same decision: the package carries a manifest with the SHA-256 of every file, signed by the credential tool and verified at startup; updating means replacing the whole folder; the owner may edit the catalog by hand and re-seal it with the seal tool.
+- [CONFIRMED] Same decision: credentials are never in the catalog or in the portable folder; a separate credential tool issues a package bound to one machine; there is no permanent master server.
+- [CONFIRMED] The conversion, verification, seal and credential tools live under `tools/`, run on demand by a person, are not part of the portable application and use PowerShell 7 (owner decisions of 2026-10-05).
+- [PENDING] The long-term authority of the catalog (deferred by the owner), the signature algorithm, the canonical form and the trust bootstrap (`contracts/credential-package.md`, questions Q1 and Q2).
 - [CONFIRMED] IIS integration is through `Microsoft.Web.Administration` under PowerShell 7, subject to ADR-0006 conditions.
 - [CONFIRMED] Process lifetime is interactive only; no service or scheduled task.
-- [PENDING] Managed SQLite provider and machine-key implementation are Phase 1B decisions.
+- [PENDING] Managed SQLite provider (it only has to open a file read-only) and machine-key implementation are Phase 1B decisions.
 - [PENDING] Local web security and controlled shutdown are Phase 1C decisions.
 
 ## Completion checklist for every PR
@@ -132,6 +140,6 @@ Requirements:
 - evidence labels are correct;
 - no secrets added;
 - ASCII and LF for changed text files unless an approved evidence file requires otherwise;
-- PowerShell 5.1 parser check passes for changed `.ps1` files;
+- the PowerShell parser check passes for changed `.ps1` files (Windows PowerShell 5.1 for engine scripts, PowerShell 7 for `tools/` and `tests/`);
 - tests and docs updated together when behaviour changes;
 - remaining `[PENDING]` and `[V]` items are stated in the PR body.
