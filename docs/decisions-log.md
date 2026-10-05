@@ -29,3 +29,7 @@ Newest last. Each entry names the decision, who took it and where the evidence i
 | 2026-10-05 | The seven engines outside the earlier plan enter V1; order chosen by the reviewer ("Tanto faz escolhe tu") | Reviewer, on the owner's delegation | docs/roadmap.md section 4 |
 | 2026-10-05 | "Machines without a local database" closed as obsolete: every machine receives its catalog inside the portable | Reviewer, after the owner asked what was left to decide | ADR-0007 |
 | 2026-10-05 | PRs #10 to #23 integrated into `main` in dependency order; temporary `results/*` branches removed (evidence kept under `docs/phase1/evidence/`) | Reviewer | PRs #10 to #23 |
+| 2026-10-05 | Links pages stay as today: the general page lives on the main instance, each instance has an individual page in its own IIS site under `links` | Project owner ("geral fica na main, individual em cada um dos IIS, sub pasta links, tal como acontecia agora") | docs/roadmap.md section 5 |
+| 2026-10-05 | A catalog that hosts a general links page carries a read-only directory of the instances of other machines, because the general page lists every enabled instance of the same country across all machines | Reviewer, derived from the source (`cfg.GetLinksPageItemPlan`) | contracts/catalog-schema.md |
+| 2026-10-05 | The SQL client files go inside the portable and are covered by the manifest | Project owner ("Concordo") | docs/roadmap.md section 5 |
+| 2026-10-05 | The SQLite managed provider is chosen in Phase 1B | Project owner ("Ok") | docs/roadmap.md section 5 |

@@ -33,6 +33,7 @@ About 60 to 90 PRs in total, half of them engines. These are estimates, not comm
 - **B6.** The existing 191 credentials are encrypted with a key protected by a certificate of the live database, so the one-time import must run where that database is reachable [V]. Vault: one encrypted file outside Git and outside the portable (contracts/credential-package.md, Q9).
 - **1B and 1C.** Both can run on GitHub runners; copying the folder between machines is tested with two runner jobs and an artifact.
 - **3.** Packaging includes the SQL client files (see section 5).
+- **Before wave 5.** Extend `Convert-ManagementDb` (cut and new-machine modes) and `Test-CatalogConversion` with the instance directory, and update `contracts/catalog-schema.md`.
 - **7.** The new-server wizard generates scripts and checklists; it never writes to a database.
 - **8.** Includes the ADR-0006 conditions 2 to 4, backup and restore verification, a threat-model review, a signed package, handover documents, and the cutover: the first deployment is on a server without the current system; existing servers are switched when the owner decides.
 
@@ -54,9 +55,10 @@ The order of the seven engines that were outside the earlier plan was chosen by 
 
 ## 5. Open items
 
-- [PENDING] Whether a catalog needs a directory of the instances of other machines (hub link pages). Today nothing is carried from another machine. Decide before wave 5 (`LINKS_PAGES`).
-- [PENDING] How the 25 `Microsoft.Data.SqlClient` files reach the operator. [PROPOSED] they are vendored inside the portable and covered by the manifest; decide in Phase 3.
-- [PENDING] SQLite managed provider (Phase 1B, read-only open only).
+- [DECIDED 2026-10-05] Links pages stay as today: the general page on the main instance, an individual page in each IIS site under `links`. From the source, the general page lists every enabled instance of the same country across all machines, so a catalog that hosts a general page carries a read-only instance directory. [PENDING] Exact columns and which catalogs carry it; [PROPOSED] only catalogs of machines with an instance whose `LinksIncludeAllInstances` is 1, public columns only (codes, names, host name), in a table separate from the instance rows. Tool change needed before wave 5.
+- [PENDING] Pulse: whether a machine's Pulse needs the hub or the instances of other machines (conversion plan section 2). Decide before wave 1 (`PULSE_STATUS`).
+- [DECIDED 2026-10-05] The 25 `Microsoft.Data.SqlClient` files go inside the portable and are covered by the manifest.
+- [PENDING] SQLite managed provider: chosen in Phase 1B (the owner agreed), read-only open only.
 - [PENDING] Whether `DATABASE_SETTINGS` needs a separate port (proposed: no).
 - [CLOSED 2026-10-05] Machines without a local database: obsolete under ADR-0007.
 

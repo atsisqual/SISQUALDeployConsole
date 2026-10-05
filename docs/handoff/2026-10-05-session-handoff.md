@@ -277,3 +277,4 @@ Total after this session: 7 phases, roughly 60 to 90 pull requests, about half o
 ## Later note (2026-10-05, after the integration)
 
 The temporary `results/*` branches mentioned above were removed once all PRs were integrated; the evidence that matters is under `docs/phase1/evidence/`. The statements about machines without a local database are obsolete under ADR-0007 (see `docs/decisions-log.md`).
+The question of a directory of other machines' instances was decided for links pages on 2026-10-05 (see `docs/decisions-log.md`).
