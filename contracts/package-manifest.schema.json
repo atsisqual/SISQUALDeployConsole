@@ -111,7 +111,7 @@
   },
   "x-validationRules": [
     "[PROPOSED] Hashes are computed over the raw bytes of each file as shipped in the package; text files are LF (R-018). Changing a line ending changes the hash.",
-    "[PROPOSED] 'files' paths are unique ignoring case. The manifest does not list itself. Credentials (credentials.db) and logs are outside the package and never listed.",
+    "[PROPOSED] 'files' paths are unique ignoring case. The manifest does not list itself. Credentials (credentials.pkg) and logs are outside the package and never listed.",
     "[PROPOSED] Every file inside the package folder must be listed and every listed file must exist with the stated size and hash; an unlisted file is an error.",
     "[PROPOSED] 'catalog.file' appears in 'files'. 'catalog.serverCode' equals the ServerCode stored inside the catalog and the local machine identity.",
     "[DECIDED 2026-10-05, Q2] Canonical form for signing, implemented by tools/Seal-Package.ps1 (PR #22): the manifest without 'signature' as compact JSON, object keys in ordinal order, arrays as stored (files sorted by path in ordinal order), every non-ASCII character as \\uXXXX, integers as plain digits. For this manifest this is RFC 8785. [PENDING] owner approval with the trust bootstrap of the issuer public key: see contracts/credential-package.md, open questions Q1 and Q2.",

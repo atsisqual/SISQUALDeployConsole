@@ -138,7 +138,7 @@ paths:
     post:
       operationId: importCredentialPackage
       summary: Import a credential package pasted as text
-      description: See contracts/credential-package.md. Validation happens before any decryption. [PENDING] import destination, open question Q3.
+      description: See contracts/credential-package.md. Validation happens before any decryption. The package is stored as received in a file outside the portable folder (Q3, decided).
       parameters:
         - $ref: "#/components/parameters/CsrfToken"
       requestBody:
