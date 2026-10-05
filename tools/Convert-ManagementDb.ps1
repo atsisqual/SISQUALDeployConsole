@@ -5,9 +5,13 @@
 
 .DESCRIPTION
     Step B2 of docs/migration/catalog-conversion-plan.md (approved 2026-10-05).
-    This version implements the NEW-MACHINE mode: all global tables are copied, the cut
-    tables (by ServerCode / InstanceCode) are created EMPTY, and one dbo_ManagedServer row
-    is built from the parameters. The cut mode for existing machines is step B3.
+    Two modes:
+      -NewMachine  all global tables are copied, the cut tables (by ServerCode / InstanceCode)
+                   are created EMPTY, and one dbo_ManagedServer row is built from the parameters.
+      cut mode     (default, step B3) one catalog per existing machine of dbo.ManagedServer:
+                   global tables in full, the machine's own server, policy and instance rows,
+                   and nothing of any other machine. Each instance lands in exactly one catalog;
+                   rows that belong to no machine (orphans) are dropped and reported.
 
     Sources (read only):
       -SyncFile    a ManagementSync.sql file (offline).
@@ -50,8 +54,10 @@ param(
     [Parameter(Mandatory)]
     [string]$Sqlite3Path,
 
+    # Cut mode (default): ServerCode is one or more existing codes, or ALL (also the default).
+    # New-machine mode (-NewMachine): exactly one new code.
     [switch]$NewMachine,
-    [string]$ServerCode,
+    [string[]]$ServerCode,
     [string]$MachineName,
     [string]$ServicesRoot,
     [string]$ConfigBackupRoot,
@@ -67,7 +73,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ToolVersion = '0.2.0'
+$script:ToolVersion = '0.3.0'
 $script:SchemaVersion = 1
 $script:CutRuleVersion = 1
 
@@ -668,6 +674,85 @@ function New-CatalogFile {
     return [pscustomobject]@{ File = $final; Tables = $tables.ToArray(); BuiltAtUtc = $built }
 }
 
+function Get-GlobalRows {
+    # Copies the global tables once (the source rows stay untouched) and redacts literal secrets.
+    param([Parameter(Mandatory)]$Source)
+    $rows = @{}
+    $redacted = [System.Collections.Generic.List[string]]::new()
+    foreach ($table in $script:CarriedTables.Keys) {
+        $list = [System.Collections.Generic.List[object]]::new()
+        if ($script:CarriedTables[$table] -eq 'G') {
+            foreach ($srcRow in $Source.Rows[$table]) {
+                $row = [ordered]@{}
+                foreach ($k in $srcRow.Keys) { $row[$k] = $srcRow[$k] }
+                if ($script:RedactionTables.ContainsKey($table)) {
+                    $spec = $script:RedactionTables[$table]
+                    if (Protect-RuleRow -Row $row -Spec $spec) { $redacted.Add(('{0}:{1}' -f $table, $row[$spec.Id])) }
+                }
+                $list.Add($row)
+            }
+        }
+        $rows[$table] = $list
+    }
+    return [pscustomobject]@{ Rows = $rows; Redacted = $redacted }
+}
+
+function Assert-NoSecretLiterals {
+    param([hashtable]$Rows)
+    $hits = Test-NoSecretLiterals -Rows $Rows
+    if ($hits.Count -gt 0) {
+        $detail = ($hits | ForEach-Object { '{0}.{1} ({2} x {3})' -f $_.Table, $_.Column, $_.Pattern, $_.Count }) -join '; '
+        throw ('Safety net: secret-like literals remain after redaction, nothing was written. Hits: {0}' -f $detail)
+    }
+}
+
+function Get-ExcludedColumnList {
+    $excluded = [System.Collections.Generic.List[string]]::new()
+    foreach ($t in $script:ExcludedColumns.Keys) { foreach ($c in $script:ExcludedColumns[$t]) { $excluded.Add(('{0}.{1}' -f $t, $c)) } }
+    return , $excluded.ToArray()
+}
+
+function New-CatalogManifestEntry {
+    param([string]$Code, $Catalog, $Redacted, $Findings, [hashtable]$Extra = @{})
+    $entry = [ordered]@{
+        serverCode        = $Code
+        file              = (Split-Path -Leaf $Catalog.File)
+        sha256            = (Get-Sha256OfFile -Path $Catalog.File)
+        bytes             = (Get-Item -LiteralPath $Catalog.File).Length
+        schemaVersion     = $script:SchemaVersion
+        cutRuleVersion    = $script:CutRuleVersion
+        tables            = $Catalog.Tables
+        redactedRules     = @($Redacted)
+        redactedRuleCount = @($Redacted).Count
+        excludedColumns   = (Get-ExcludedColumnList)
+        findings          = @($Findings)
+    }
+    foreach ($k in $Extra.Keys) { $entry[$k] = $Extra[$k] }
+    return $entry
+}
+
+function Write-ConversionManifest {
+    param([string]$Folder, [string]$Mode, [string]$BuiltAtUtc, [hashtable]$SourceInfo, [bool]$UseCodeCollation, $Entries, [hashtable]$Extra = @{})
+    $manifest = [ordered]@{
+        contractVersion = '0.1-proposed'
+        tool            = 'Convert-ManagementDb'
+        toolVersion     = $script:ToolVersion
+        mode            = $Mode
+        convertedAtUtc  = $BuiltAtUtc
+        source          = $SourceInfo
+        codeCollation   = $(if ($UseCodeCollation) { 'NOCASE' } else { 'BINARY' })
+        sourceCollation = $(if ($SourceInfo.ContainsKey('collation')) { [string]$SourceInfo['collation'] } else { 'not available from an offline file; the owner states Latin1_General_CI_AS (2026-10-05) [V]' })
+        catalogs        = @($Entries)
+        excludedTableCount = 55
+    }
+    foreach ($k in $Extra.Keys) { $manifest[$k] = $Extra[$k] }
+    $json = ($manifest | ConvertTo-Json -Depth 12 -EscapeHandling EscapeNonAscii)
+    $json = ($json -replace "`r`n", "`n") + "`n"
+    $path = Join-Path $Folder 'conversion-manifest.json'
+    [System.IO.File]::WriteAllBytes($path, [System.Text.UTF8Encoding]::new($false).GetBytes($json))
+    return $path
+}
+
 function Invoke-NewMachineConversion {
     param(
         [Parameter(Mandatory)]$Source,
@@ -687,40 +772,17 @@ function Invoke-NewMachineConversion {
     if (-not (Test-Path -LiteralPath $Sqlite3 -PathType Leaf)) { throw ('sqlite3 was not found at: {0}' -f $Sqlite3) }
 
     foreach ($existing in $Source.Rows['dbo.ManagedServer']) {
-        if ([string]$existing['ServerCode'] -ieq $Code) { throw ('ServerCode {0} already exists in the source. Use the cut mode (step B3), not -NewMachine.' -f $Code) }
+        if ([string]$existing['ServerCode'] -ieq $Code) { throw ('ServerCode {0} already exists in the source. Use the cut mode (no -NewMachine), not -NewMachine.' -f $Code) }
     }
 
-    # Work on copies so the source stays untouched.
-    $rows = @{}
-    $redacted = [System.Collections.Generic.List[string]]::new()
-    foreach ($table in $script:CarriedTables.Keys) {
-        $class = $script:CarriedTables[$table]
-        $list = [System.Collections.Generic.List[object]]::new()
-        if ($class -eq 'G') {
-            foreach ($srcRow in $Source.Rows[$table]) {
-                $row = [ordered]@{}
-                foreach ($k in $srcRow.Keys) { $row[$k] = $srcRow[$k] }
-                if ($script:RedactionTables.ContainsKey($table)) {
-                    $spec = $script:RedactionTables[$table]
-                    if (Protect-RuleRow -Row $row -Spec $spec) { $redacted.Add(('{0}:{1}' -f $table, $row[$spec.Id])) }
-                }
-                $list.Add($row)
-            }
-        }
-        $rows[$table] = $list
-    }
+    $global = Get-GlobalRows -Source $Source
+    $rows = $global.Rows
     $now = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffffff', [System.Globalization.CultureInfo]::InvariantCulture)
-    $serverRow = [ordered]@{
-        ServerCode = $Code; MachineName = $Machine; ServicesRoot = $Services; IsEnabled = 1
-        CreatedAt = $now; ModifiedAt = $now; ConfigBackupRoot = $BackupRoot
-    }
-    $rows['dbo.ManagedServer'].Add($serverRow)
-
-    $hits = Test-NoSecretLiterals -Rows $rows
-    if ($hits.Count -gt 0) {
-        $detail = ($hits | ForEach-Object { '{0}.{1} ({2} x {3})' -f $_.Table, $_.Column, $_.Pattern, $_.Count }) -join '; '
-        throw ('Safety net: secret-like literals remain after redaction, nothing was written. Hits: {0}' -f $detail)
-    }
+    $rows['dbo.ManagedServer'].Add([ordered]@{
+            ServerCode = $Code; MachineName = $Machine; ServicesRoot = $Services; IsEnabled = 1
+            CreatedAt = $now; ModifiedAt = $now; ConfigBackupRoot = $BackupRoot
+        })
+    Assert-NoSecretLiterals -Rows $rows
 
     New-Item -ItemType Directory -Path $Folder -Force | Out-Null
     $catalog = New-CatalogFile -Code $Code -Schema $Source.Schema -Rows $rows -Folder $Folder -Sqlite3 $Sqlite3 -SourceKind 'conversion-tool' -SourceRef $SourceRef -UseCodeCollation $UseCodeCollation
@@ -732,44 +794,231 @@ function Invoke-NewMachineConversion {
             $findings.Add(('{0} is empty: a new machine has no rows to cut. Engines that need it stop with "policy missing" until the owner adds rows and seals the package.' -f (Get-SqliteTableName $t)))
         }
     }
-    $excluded = [System.Collections.Generic.List[string]]::new()
-    foreach ($t in $script:ExcludedColumns.Keys) { foreach ($c in $script:ExcludedColumns[$t]) { $excluded.Add(('{0}.{1}' -f $t, $c)) } }
+    $entry = New-CatalogManifestEntry -Code $Code -Catalog $catalog -Redacted $global.Redacted -Findings $findings
+    $manifestPath = Write-ConversionManifest -Folder $Folder -Mode 'new-machine' -BuiltAtUtc $catalog.BuiltAtUtc -SourceInfo $SourceInfo -UseCodeCollation $UseCodeCollation -Entries @($entry)
+    return [pscustomobject]@{ Catalog = $catalog.File; Manifest = $manifestPath; Redacted = $global.Redacted.Count }
+}
 
-    $manifest = [ordered]@{
-        contractVersion = '0.1-proposed'
-        tool            = 'Convert-ManagementDb'
-        toolVersion     = $script:ToolVersion
-        mode            = 'new-machine'
-        convertedAtUtc  = $catalog.BuiltAtUtc
-        source          = $SourceInfo
-        codeCollation   = $(if ($UseCodeCollation) { 'NOCASE' } else { 'BINARY' })
-        sourceCollation = $(if ($SourceInfo.ContainsKey('collation')) { [string]$SourceInfo['collation'] } else { 'not available from an offline file; the owner states Latin1_General_CI_AS (2026-10-05) [V]' })
-        catalogs        = @([ordered]@{
-                serverCode       = $Code
-                file             = (Split-Path -Leaf $catalog.File)
-                sha256           = (Get-Sha256OfFile -Path $catalog.File)
-                bytes            = (Get-Item -LiteralPath $catalog.File).Length
-                schemaVersion    = $script:SchemaVersion
-                cutRuleVersion   = $script:CutRuleVersion
-                tables           = $catalog.Tables
-                redactedRules    = $redacted.ToArray()
-                redactedRuleCount = $redacted.Count
-                excludedColumns  = $excluded.ToArray()
-                findings         = $findings.ToArray()
-            })
-        excludedTableCount = 55
+# ---------------------------------------------------------------------------
+# Cut mode (step B3)
+# ---------------------------------------------------------------------------
+
+$script:CutKeys = [ordered]@{
+    'dbo.ManagedServer'                = @('Server', 'ServerCode')
+    'cfg.IisServerPolicy'              = @('Server', 'ServerCode')
+    'cfg.WebAccessPolicy'              = @('Server', 'ServerCode')
+    'cfg.LinksPagePolicy'              = @('Server', 'ServerCode')
+    'cfg.DatabaseCopyPolicy'           = @('Server', 'ServerCode')
+    'cfg.PulseProfile'                 = @('Instance', 'HubInstanceCode')
+    'sec.WindowsGroupPolicy'           = @('Machine', 'MachineName')
+    'dbo.ManagedInstance'              = @('Server', 'ServerCode')
+    'cfg.LinksPageInstanceApplication' = @('Instance', 'InstanceCode')
+    'cfg.LinksProfileInstance'         = @('Instance', 'InstanceCode')
+    'ui.PublishedEnvironmentLink'      = @('Instance', 'InstanceCode')
+}
+# Policy tables a machine needs rows in; an empty one is reported as a finding.
+$script:PolicyTables = @('cfg.IisServerPolicy', 'cfg.WebAccessPolicy', 'cfg.LinksPagePolicy', 'cfg.DatabaseCopyPolicy', 'cfg.PulseProfile')
+
+function Invoke-CutConversion {
+    param(
+        [Parameter(Mandatory)]$Source,
+        [Parameter(Mandatory)][hashtable]$SourceInfo,
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [string[]]$Codes = @('ALL'),
+        [string]$SourceRef,
+        [bool]$UseCodeCollation = $false
+    )
+    if (-not (Test-Path -LiteralPath $Sqlite3 -PathType Leaf)) { throw ('sqlite3 was not found at: {0}' -f $Sqlite3) }
+    $servers = @($Source.Rows['dbo.ManagedServer'])
+    if ($servers.Count -eq 0) { throw 'dbo.ManagedServer has no rows: nothing to cut.' }
+
+    # Lookup tables. Matching ignores case on purpose (the source databases are case-insensitive);
+    # a match that needed it is reported, and stored text is never changed.
+    $serverByLower = @{}
+    $serverByMachine = @{}
+    foreach ($srv in $servers) {
+        $code = [string]$srv['ServerCode']
+        if ($code -notmatch '^[A-Za-z0-9_-]{1,30}$') { throw 'A ServerCode in the source is not safe to use as a file name (1 to 30 characters from A-Z, a-z, 0-9, underscore, hyphen).' }
+        $k = $code.ToLowerInvariant()
+        if ($serverByLower.ContainsKey($k)) { throw ('ServerCode {0} appears twice in dbo.ManagedServer (ignoring case).' -f $code) }
+        $serverByLower[$k] = $code
+        $mk = ([string]$srv['MachineName']).ToLowerInvariant()
+        if ($serverByMachine.ContainsKey($mk)) { throw ('MachineName {0} belongs to two servers; the cut would be ambiguous.' -f $srv['MachineName']) }
+        $serverByMachine[$mk] = $code
     }
-    $json = ($manifest | ConvertTo-Json -Depth 10 -EscapeHandling EscapeNonAscii)
-    $json = ($json -replace "`r`n", "`n") + "`n"
-    $manifestPath = Join-Path $Folder 'conversion-manifest.json'
-    [System.IO.File]::WriteAllBytes($manifestPath, [System.Text.UTF8Encoding]::new($false).GetBytes($json))
-    return [pscustomobject]@{ Catalog = $catalog.File; Manifest = $manifestPath; Redacted = $redacted.Count }
+    $serverOfInstance = @{}
+    $exactInstance = @{}
+    foreach ($inst in $Source.Rows['dbo.ManagedInstance']) {
+        $ic = [string]$inst['InstanceCode']
+        $ik = $ic.ToLowerInvariant()
+        if ($serverOfInstance.ContainsKey($ik)) { throw ('InstanceCode {0} appears twice in dbo.ManagedInstance (ignoring case).' -f $ic) }
+        $sk = ([string]$inst['ServerCode']).ToLowerInvariant()
+        if (-not $serverByLower.ContainsKey($sk)) { throw ('Instance {0} has ServerCode {1}, which is not in dbo.ManagedServer. It would belong to no catalog.' -f $ic, $inst['ServerCode']) }
+        $serverOfInstance[$ik] = $serverByLower[$sk]
+        $exactInstance[$ik] = $ic
+    }
+
+    # Which servers to build
+    $selected = [System.Collections.Generic.List[string]]::new()
+    if (@($Codes).Count -eq 0 -or (@($Codes).Count -eq 1 -and $Codes[0] -ieq 'ALL')) {
+        foreach ($srv in $servers) { $selected.Add([string]$srv['ServerCode']) }
+    }
+    else {
+        foreach ($c in $Codes) {
+            if ($c -ieq 'ALL') { throw 'ALL cannot be combined with other server codes.' }
+            $k = $c.ToLowerInvariant()
+            if (-not $serverByLower.ContainsKey($k)) { throw ('ServerCode {0} is not in dbo.ManagedServer. A machine that is not in the source needs -NewMachine.' -f $c) }
+            if (-not $selected.Contains($serverByLower[$k])) { $selected.Add($serverByLower[$k]) }
+        }
+    }
+
+    # Owner of every row of every cut table, for ALL servers (so completeness is judged on the whole source)
+    $owned = @{}
+    $unplaced = [ordered]@{}
+    $caseOnly = @{}
+    # The real source always carries all cut tables; test fixtures may carry a subset.
+    $cutTables = @($script:CutKeys.Keys | Where-Object { $script:CarriedTables.Contains($_) })
+    foreach ($table in $cutTables) {
+        $kind = $script:CutKeys[$table][0]
+        $column = $script:CutKeys[$table][1]
+        $owned[$table] = @{}
+        $lost = [System.Collections.Generic.List[string]]::new()
+        foreach ($srcRow in $Source.Rows[$table]) {
+            $value = $null
+            if ($srcRow.Contains($column) -and $null -ne $srcRow[$column]) { $value = [string]$srcRow[$column] }
+            $owner = $null
+            if (-not [string]::IsNullOrEmpty($value)) {
+                $k = $value.ToLowerInvariant()
+                if ($kind -eq 'Server' -and $serverByLower.ContainsKey($k)) {
+                    $owner = $serverByLower[$k]
+                    if ($owner -cne $value) { $caseOnly[$table + '|' + $owner] = 1 + [int]$caseOnly[$table + '|' + $owner] }
+                }
+                elseif ($kind -eq 'Instance' -and $serverOfInstance.ContainsKey($k)) {
+                    $owner = $serverOfInstance[$k]
+                    if ($exactInstance[$k] -cne $value) { $caseOnly[$table + '|' + $owner] = 1 + [int]$caseOnly[$table + '|' + $owner] }
+                }
+                elseif ($kind -eq 'Machine' -and $serverByMachine.ContainsKey($k)) { $owner = $serverByMachine[$k] }
+            }
+            if ($null -eq $owner) { $lost.Add($(if ($null -eq $value) { '<null>' } else { $value })); continue }
+            $copy = [ordered]@{}
+            foreach ($key in $srcRow.Keys) { $copy[$key] = $srcRow[$key] }
+            if (-not $owned[$table].ContainsKey($owner)) { $owned[$table][$owner] = [System.Collections.Generic.List[object]]::new() }
+            $owned[$table][$owner].Add($copy)
+        }
+        if ($lost.Count -gt 0) { $unplaced[$table] = $lost }
+    }
+
+    # Completeness: every instance in exactly one catalog, and no row lost or counted twice
+    $completeness = [System.Collections.Generic.List[object]]::new()
+    foreach ($table in $cutTables) {
+        $placed = 0
+        foreach ($srvCode in $owned[$table].Keys) { $placed += $owned[$table][$srvCode].Count }
+        $lostCount = 0
+        if ($unplaced.Contains($table)) { $lostCount = $unplaced[$table].Count }
+        # Not named $source: PowerShell variable names ignore case and it would shadow the parameter.
+        $sourceCount = @($Source.Rows[$table]).Count
+        if ($placed + $lostCount -ne $sourceCount) { throw ('Cut error in {0}: {1} source rows, {2} placed and {3} unplaced.' -f $table, $sourceCount, $placed, $lostCount) }
+        $completeness.Add([ordered]@{ table = (Get-SqliteTableName $table); sourceRows = $sourceCount; placedRows = $placed; unplacedRows = $lostCount })
+    }
+    $seenInstances = @{}
+    foreach ($srvCode in $owned['dbo.ManagedInstance'].Keys) {
+        foreach ($r in $owned['dbo.ManagedInstance'][$srvCode]) {
+            $ik = ([string]$r['InstanceCode']).ToLowerInvariant()
+            if ($seenInstances.ContainsKey($ik)) { throw ('Instance {0} was placed in two catalogs.' -f $r['InstanceCode']) }
+            $seenInstances[$ik] = $srvCode
+        }
+    }
+    if ($seenInstances.Count -ne @($Source.Rows['dbo.ManagedInstance']).Count) { throw 'Not every instance of the source was placed in exactly one catalog.' }
+
+    $unplacedFindings = [System.Collections.Generic.List[string]]::new()
+    foreach ($table in $unplaced.Keys) {
+        $list = @($unplaced[$table])
+        $shown = ($list | Select-Object -First 20) -join ', '
+        $more = ''
+        if ($list.Count -gt 20) { $more = ' (and {0} more)' -f ($list.Count - 20) }
+        $unplacedFindings.Add(('{0}: {1} row(s) belong to no machine and were not carried: {2}{3}' -f (Get-SqliteTableName $table), $list.Count, $shown, $more))
+    }
+
+    # Global rows once, safety net once
+    $global = Get-GlobalRows -Source $Source
+    Assert-NoSecretLiterals -Rows $global.Rows
+
+    # Instances referenced by global rows (cfg.Application.LinksHubInstanceCode)
+    $hubCodes = [System.Collections.Generic.List[string]]::new()
+    foreach ($appRow in $Source.Rows['cfg.Application']) {
+        if ($appRow.Contains('LinksHubInstanceCode') -and $null -ne $appRow['LinksHubInstanceCode']) {
+            $hc = [string]$appRow['LinksHubInstanceCode']
+            if ($hc.Length -gt 0 -and -not $hubCodes.Contains($hc)) { $hubCodes.Add($hc) }
+        }
+    }
+
+    New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+    $entries = [System.Collections.Generic.List[object]]::new()
+    $builtAt = ''
+    foreach ($code in $selected) {
+        $rows = @{}
+        foreach ($table in $script:CarriedTables.Keys) {
+            if ($script:CarriedTables[$table] -eq 'G') { $rows[$table] = $global.Rows[$table]; continue }
+            $mine = $null
+            if ($owned.ContainsKey($table) -and $owned[$table].ContainsKey($code)) { $mine = $owned[$table][$code] }
+            if ($null -eq $mine) { $mine = [System.Collections.Generic.List[object]]::new() }
+            $rows[$table] = $mine
+        }
+        $cutOnly = @{}
+        foreach ($table in $cutTables) { $cutOnly[$table] = $rows[$table] }
+        Assert-NoSecretLiterals -Rows $cutOnly
+
+        $findings = [System.Collections.Generic.List[string]]::new()
+        foreach ($f in (Get-NonAsciiCodeFindings -Schema $Source.Schema -Rows $rows -UseCodeCollation $UseCodeCollation)) { $findings.Add($f) }
+        if ($rows['dbo.ManagedInstance'].Count -eq 0) { $findings.Add('This machine has no instances in the source.') }
+        foreach ($t in @($script:PolicyTables | Where-Object { $script:CarriedTables.Contains($_) })) {
+            if ($rows[$t].Count -eq 0) {
+                $findings.Add(('{0} has no row for this machine in the source. Engines that need it stop with "policy missing" until the owner adds the row by hand and seals the package.' -f (Get-SqliteTableName $t)))
+            }
+        }
+        foreach ($hc in $hubCodes) {
+            $hk = $hc.ToLowerInvariant()
+            if (-not $serverOfInstance.ContainsKey($hk)) { $findings.Add(('cfg_Application.LinksHubInstanceCode refers to instance {0}, which is not in the source.' -f $hc)) }
+            elseif ($serverOfInstance[$hk] -cne $code) { $findings.Add(('cfg_Application.LinksHubInstanceCode refers to instance {0}, which belongs to machine {1}, not to this one.' -f $hc, $serverOfInstance[$hk])) }
+        }
+        foreach ($table in $cutTables) {
+            $ck = $table + '|' + $code
+            if ($caseOnly.ContainsKey($ck)) { $findings.Add(('{0}: {1} row(s) matched this machine only by ignoring case (stored text unchanged).' -f (Get-SqliteTableName $table), $caseOnly[$ck])) }
+        }
+
+        $catalog = New-CatalogFile -Code $code -Schema $Source.Schema -Rows $rows -Folder $Folder -Sqlite3 $Sqlite3 -SourceKind 'conversion-tool' -SourceRef $SourceRef -UseCodeCollation $UseCodeCollation
+        $builtAt = $catalog.BuiltAtUtc
+        $extra = @{ instanceCount = $rows['dbo.ManagedInstance'].Count }
+        $entries.Add((New-CatalogManifestEntry -Code $code -Catalog $catalog -Redacted $global.Redacted -Findings $findings -Extra $extra))
+        Write-Host ('  {0}: {1} instance(s), {2} bytes' -f $code, $rows['dbo.ManagedInstance'].Count, $entries[$entries.Count - 1].bytes)
+    }
+
+    $extra = @{
+        completeness = [ordered]@{
+            serversInSource   = $servers.Count
+            serversConverted  = $selected.Count
+            instancesInSource = @($Source.Rows['dbo.ManagedInstance']).Count
+            eachInstanceInExactlyOneCatalog = $true
+            tables            = $completeness.ToArray()
+        }
+        unplaced = @($unplacedFindings)
+    }
+    $manifestPath = Write-ConversionManifest -Folder $Folder -Mode 'cut' -BuiltAtUtc $builtAt -SourceInfo $SourceInfo -UseCodeCollation $UseCodeCollation -Entries $entries.ToArray() -Extra $extra
+    return [pscustomobject]@{ Catalogs = @($entries | ForEach-Object { Join-Path $Folder $_.file }); Manifest = $manifestPath; Redacted = $global.Redacted.Count; Unplaced = $unplacedFindings.ToArray() }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    if (-not $NewMachine) { throw 'Only -NewMachine is implemented in this version. The cut mode for existing machines is step B3.' }
-    foreach ($required in @('ServerCode', 'MachineName', 'ServicesRoot', 'ConfigBackupRoot')) {
-        if ([string]::IsNullOrWhiteSpace((Get-Variable -Name $required -ValueOnly))) { throw ('-{0} is required with -NewMachine.' -f $required) }
+    if ($NewMachine) {
+        if (@($ServerCode | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -ne 1) { throw '-NewMachine needs exactly one -ServerCode.' }
+        foreach ($required in @('MachineName', 'ServicesRoot', 'ConfigBackupRoot')) {
+            if ([string]::IsNullOrWhiteSpace((Get-Variable -Name $required -ValueOnly))) { throw ('-{0} is required with -NewMachine.' -f $required) }
+        }
+    }
+    else {
+        foreach ($notAllowed in @('MachineName', 'ServicesRoot', 'ConfigBackupRoot')) {
+            if (-not [string]::IsNullOrWhiteSpace((Get-Variable -Name $notAllowed -ValueOnly))) { throw ('-{0} is only valid with -NewMachine.' -f $notAllowed) }
+        }
     }
     $tables = @($script:CarriedTables.Keys)
     if ($PSCmdlet.ParameterSetName -eq 'Sync') {
@@ -786,8 +1035,19 @@ if ($MyInvocation.InvocationName -ne '.') {
         $source = Read-SqlServerSource -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath -Tables $tables -TrustCertificate:$TrustServerCertificate
         $info = @{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true; trustServerCertificate = [bool]$TrustServerCertificate; collation = $source.Collation }
     }
-    $result = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Code $ServerCode -Machine $MachineName -Services $ServicesRoot -BackupRoot $ConfigBackupRoot -SourceRef $SourceReference -UseCodeCollation ($CodeCollation -eq 'NoCase')
-    Write-Host ('Catalog: {0}' -f $result.Catalog)
+    $noCase = ($CodeCollation -eq 'NoCase')
+    if ($NewMachine) {
+        $result = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Code $ServerCode[0] -Machine $MachineName -Services $ServicesRoot -BackupRoot $ConfigBackupRoot -SourceRef $SourceReference -UseCodeCollation $noCase
+        Write-Host ('Catalog: {0}' -f $result.Catalog)
+    }
+    else {
+        # An unbound [string[]] parameter is $null, and @($null) has one element: filter it out.
+        $codes = @($ServerCode | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($codes.Count -eq 0) { $codes = @('ALL') }
+        $result = Invoke-CutConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Codes $codes -SourceRef $SourceReference -UseCodeCollation $noCase
+        Write-Host ('Catalogs: {0}' -f @($result.Catalogs).Count)
+        foreach ($u in $result.Unplaced) { Write-Host ('Finding: {0}' -f $u) }
+    }
     Write-Host ('Manifest: {0}' -f $result.Manifest)
     Write-Host ('Redacted rule templates: {0}' -f $result.Redacted)
 }

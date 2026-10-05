@@ -144,8 +144,17 @@ function New-FixtureRows {
                     if ($i -eq 3) { $row['IsSensitive'] = $false }
                 }
                 'dbo.ManagedServer' { $row['ServerCode'] = 'FX_SRV' + $i; $row['MachineName'] = 'FX-HOST' + $i }
+                { $_ -in @('cfg.IisServerPolicy', 'cfg.WebAccessPolicy', 'cfg.LinksPagePolicy', 'cfg.DatabaseCopyPolicy') } { $row['ServerCode'] = 'FX_SRV' + $i }
+                'cfg.PulseProfile' { $row['HubInstanceCode'] = 'FX_INST' + $i }
+                'sec.WindowsGroupPolicy' { $row['MachineName'] = 'FX-HOST' + $i }
+                { $_ -in @('cfg.LinksPageInstanceApplication', 'ui.PublishedEnvironmentLink') } { $row['InstanceCode'] = 'FX_INST' + $i }
+                'cfg.LinksProfileInstance' {
+                    $row['InstanceCode'] = 'FX_INST' + $i
+                    if ($i -eq 3) { $row['InstanceCode'] = 'FX_GHOST' }     # an orphan: belongs to no machine
+                }
                 'dbo.ManagedInstance' {
-                    $row['ServerCode'] = 'FX_SRV1'
+                    $row['InstanceCode'] = 'FX_INST' + $i
+                    $row['ServerCode'] = 'FX_SRV' + $i
                     if ($i -eq 1) { $row['IisIdentityPassword'] = $markerB; $row['WebAccessPassword'] = $markerB; $row['MobileAppToken'] = $markerB }
                 }
                 'ops.Engine' {
@@ -363,8 +372,9 @@ function Get-CatalogDigests {
     # Per table: SHA-256 over the sorted rows, each cell as typeof:hex, so no byte can be altered unseen.
     # The new ManagedServer row gets CreatedAt and ModifiedAt from the clock at conversion time, so those
     # two columns are left out of the comparison (they differ between any two runs by design).
-    param([string]$Db)
+    param([string]$Db, [switch]$IncludeClock)
     $skip = @{ 'dbo_ManagedServer' = @('CreatedAt', 'ModifiedAt') }
+    if ($IncludeClock) { $skip = @{} }
     $digests = [ordered]@{}
     $tables = @((Get-TextFromSqlite $Db "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;") -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_.Trim() })
     foreach ($t in $tables) {
@@ -418,6 +428,28 @@ try {
     $eFile = Invoke-Tool $exportTool @('-SyncFile', $syncPath, '-OutputFolder', $engFile)
     Assert-That 'file path: engine export succeeds with 3 engines' ($eFile.ExitCode -eq 0 -and (@(Get-ChildItem $engFile -Filter 'Invoke-Fixture*.ps1').Count -eq 3)) $eFile.Output
 
+    # 1b. Cut mode, file path ---------------------------------------------------------------
+    $outCutFile = Join-Path $work 'cut-file'
+    $rCutFile = Invoke-Tool $convertTool @('-SyncFile', $syncPath, '-OutputFolder', $outCutFile, '-Sqlite3Path', $Sqlite3Path)
+    Assert-That 'cut, file path: conversion of all machines succeeds' ($rCutFile.ExitCode -eq 0) $rCutFile.Output.Substring(0, [Math]::Min(700, $rCutFile.Output.Length))
+    if ($rCutFile.ExitCode -ne 0) { throw 'cut conversion from the file failed' }
+    $cutManifestFile = [System.IO.File]::ReadAllText((Join-Path $outCutFile 'conversion-manifest.json')) | ConvertFrom-Json
+    Assert-That 'cut, file path: three catalogs, mode cut, each instance in exactly one catalog' ($cutManifestFile.mode -eq 'cut' -and @($cutManifestFile.catalogs).Count -eq 3 -and $cutManifestFile.completeness.eachInstanceInExactlyOneCatalog -and $cutManifestFile.completeness.instancesInSource -eq 3)
+    $cutCounts = @()
+    foreach ($n in 1..3) {
+        $dbc = Join-Path $outCutFile ('catalog-FX_SRV{0}.db' -f $n)
+        $cutCounts += (Get-TextFromSqlite $dbc 'SELECT (SELECT count(*) FROM dbo_ManagedServer) || (SELECT count(*) FROM dbo_ManagedInstance) || (SELECT count(*) FROM cfg_IisServerPolicy) || (SELECT count(*) FROM cfg_PulseProfile) || (SELECT count(*) FROM sec_WindowsGroupPolicy) || (SELECT count(*) FROM ui_PublishedEnvironmentLink) || (SELECT count(*) FROM cfg_LinksPageInstanceApplication) || (SELECT count(*) FROM cfg_LinksProfileInstance);').Trim()
+    }
+    Assert-That 'cut, file path: every machine gets its own rows; the orphan profile link is dropped (machine 3 has none)' (($cutCounts -join ',') -eq '11111111,11111111,11111110') ($cutCounts -join ',')
+    Assert-That 'cut, file path: the orphan is reported with its code' (@($cutManifestFile.unplaced | Where-Object { $_ -like 'cfg_LinksProfileInstance: 1 row(s)*FX_GHOST*' }).Count -eq 1)
+    $g1 = Get-CatalogDigests (Join-Path $outCutFile 'catalog-FX_SRV1.db') -IncludeClock
+    $g2 = Get-CatalogDigests (Join-Path $outCutFile 'catalog-FX_SRV2.db') -IncludeClock
+    $globalDiff = @($classes.Keys | Where-Object { $classes[$_] -eq 'G' } | ForEach-Object { $_ -replace '\.', '_' } | Where-Object { $g1[$_] -ne $g2[$_] })
+    Assert-That 'cut, file path: global tables are identical in every catalog' ($globalDiff.Count -eq 0) ($globalDiff -join ', ')
+    foreach ($m in @($markerA, $markerB)) {
+        Assert-That ('cut, file path: marker not in any catalog: ' + $m.Substring(6, 7)) (-not (@(1..3) | Where-Object { Test-FileContains (Join-Path $outCutFile ('catalog-FX_SRV{0}.db' -f $_)) $m }))
+    }
+
     if (-not $OfflineOnly) {
         # 2. SQL Server ----------------------------------------------------------------
         $dll = Join-Path $SqlClientPath 'Microsoft.Data.SqlClient.dll'
@@ -463,6 +495,27 @@ try {
             Assert-That 'sql: the exported engine files are identical to the file path (CRLF, accents)' $same
             $mSql = [System.IO.File]::ReadAllText((Join-Path $outEng 'engines-export-manifest.json')) | ConvertFrom-Json
             Assert-That 'sql: 3 engines, no hash mismatch' ($mSql.engineCount -eq 3 -and $mSql.hashMismatches -eq 0)
+        }
+
+        # 2b. Cut mode against SQL Server: every catalog must equal the one built from the file ---
+        $outCutSql = Join-Path $work 'cut-sql'
+        $rCutSql = Invoke-Tool $convertTool (@($sqlArgs) + @('-OutputFolder', $outCutSql, '-Sqlite3Path', $Sqlite3Path))
+        Assert-That 'cut, sql: conversion of all machines succeeds' ($rCutSql.ExitCode -eq 0) $rCutSql.Output.Substring(0, [Math]::Min(900, $rCutSql.Output.Length))
+        if ($rCutSql.ExitCode -eq 0) {
+            $cutManifestSql = [System.IO.File]::ReadAllText((Join-Path $outCutSql 'conversion-manifest.json')) | ConvertFrom-Json
+            Assert-That 'cut, sql: the tool read the collation from the database and the completeness check passed' ($cutManifestSql.sourceCollation -eq 'Latin1_General_CI_AS' -and $cutManifestSql.completeness.eachInstanceInExactlyOneCatalog)
+            $cutDiff = @()
+            foreach ($n in 1..3) {
+                $a = Get-CatalogDigests (Join-Path $outCutFile ('catalog-FX_SRV{0}.db' -f $n)) -IncludeClock
+                $b = Get-CatalogDigests (Join-Path $outCutSql ('catalog-FX_SRV{0}.db' -f $n)) -IncludeClock
+                $cutDiff += @($a.Keys | Where-Object { $_ -ne 'catalog_meta' -and $a[$_] -ne $b[$_] } | ForEach-Object { 'FX_SRV{0}:{1}' -f $n, $_ })
+                if ($a.Count -ne $b.Count) { $cutDiff += ('FX_SRV{0}: different table count' -f $n) }
+            }
+            Assert-That 'cut, sql: all three catalogs are identical to the ones built from the file, value by value, clock columns included' ($cutDiff.Count -eq 0) ($cutDiff -join ', ')
+            Assert-That 'cut, sql: the same unplaced rows and the same completeness counts as the file path' ((($cutManifestSql.unplaced | ConvertTo-Json -Compress) -eq ($cutManifestFile.unplaced | ConvertTo-Json -Compress)) -and (($cutManifestSql.completeness.tables | ConvertTo-Json -Depth 5 -Compress) -eq ($cutManifestFile.completeness.tables | ConvertTo-Json -Depth 5 -Compress)))
+            foreach ($m in @($markerA, $markerB)) {
+                Assert-That ('cut, sql: marker not in any catalog or manifest: ' + $m.Substring(6, 7)) (-not (@(1..3) | Where-Object { Test-FileContains (Join-Path $outCutSql ('catalog-FX_SRV{0}.db' -f $_)) $m }) -and -not (Test-FileContains (Join-Path $outCutSql 'conversion-manifest.json') $m))
+            }
         }
 
         # 3. The source must not change -------------------------------------------------

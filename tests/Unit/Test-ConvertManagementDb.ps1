@@ -126,6 +126,41 @@ function New-Source {
     return [pscustomobject]@{ Schema = $schema; Rows = $rows }
 }
 
+# --- cut-mode fixture (step B3): 3 servers, 5 instances, orphans, a case-only match ----------
+$ddlCut = $ddl
+$ddlCut += New-TableDdl 'cfg' 'LinksProfileInstance' @('    [ProfileCode] varchar(30) NOT NULL', '    [InstanceCode] varchar(20) NOT NULL', '    [ModifiedAt] datetime2 NOT NULL', '    CONSTRAINT [PK_LPI_sync] PRIMARY KEY ([ProfileCode], [InstanceCode])')
+$ddlCut += New-TableDdl 'cfg' 'PulseProfile' @('    [HubInstanceCode] varchar(20) NOT NULL', '    [DisplayName] nvarchar(100) NOT NULL', '    CONSTRAINT [PK_PulseProfile_sync] PRIMARY KEY ([HubInstanceCode])')
+$ddlCut += New-TableDdl 'sec' 'WindowsGroupPolicy' @('    [MachineName] sysname NOT NULL', '    [WindowsGroupName] nvarchar(100) NOT NULL', '    [PolicyCode] varchar(30) NOT NULL', '    CONSTRAINT [PK_WGP_sync] PRIMARY KEY ([MachineName], [WindowsGroupName], [PolicyCode])')
+$srvCols = @('ServerCode', 'MachineName', 'ServicesRoot', 'IsEnabled', 'CreatedAt', 'ModifiedAt', 'ConfigBackupRoot', 'ManagementDatabaseName')
+$instCols = @('InstanceCode', 'ServerCode', 'IisIdentityPassword', 'WebAccessPassword', 'MobileAppToken', 'Notes')
+$dataCut = ''
+$dataCut += New-Insert 'cfg' 'ConfigRule' $cr "10, N'PLAIN_RULE', N'PT', N'plain text value', 0, '2026-01-02 03:04:05.1234567'"
+$dataCut += New-Insert 'cfg' 'ConfigRule' $cr "11, N'APP_CLIENT_SECRET', NULL, N'$markerA', 1, '2026-01-02 03:04:05.0000000'"
+$dataCut += New-Insert 'cfg' 'LinksPageAsset' @('AssetCode', 'Content', 'ContentSha256') "N'LOGO', $blobHex, N'$blobSha'"
+$dataCut += New-Insert 'ops' 'Engine' @('EngineCode', 'ScriptText', 'ScriptSha256', 'EngineVersion') "N'E1', N'engine text that must not be carried', N'$('0' * 64)', N'1.0'"
+$dataCut += New-Insert 'ui' 'Resource' @('ResourceCode', 'CultureCode', 'ResourceValue') ("N'MULTI', N'xx-XX', N'" + $multi.Replace("'", "''") + "'")
+foreach ($sv in @(@('SRV_A', 'HOST-A'), @('SRV_B', 'HOST-B'), @('SRV_C', 'HOST-C'))) {
+    $dataCut += New-Insert 'dbo' 'ManagedServer' $srvCols ("N'{0}', N'{1}', N'D:\Services', 1, '2026-01-01 00:00:00.0000000', '2026-01-01 00:00:00.0000000', N'D:\Backups', N'_mgmt'" -f $sv[0], $sv[1])
+}
+foreach ($iv in @(@('A1', 'SRV_A'), @('A2', 'SRV_A'), @('B1', 'SRV_B'), @('B2', 'srv_b'))) {
+    $dataCut += New-Insert 'dbo' 'ManagedInstance' $instCols ("N'{0}', N'{1}', N'{2}', N'{2}', N'{2}', NULL" -f $iv[0], $iv[1], $markerC)
+}
+$dataCut += New-Insert 'cfg' 'IisServerPolicy' @('ServerCode', 'ReconcileMode') "N'SRV_A', N'CREATE_AND_CORRECT'"
+$dataCut += New-Insert 'cfg' 'IisServerPolicy' @('ServerCode', 'ReconcileMode') "N'SRV_B', N'MISSING_SITES_ONLY'"
+foreach ($lp in @(@('P1', 'A1'), @('P1', 'A2'), @('P1', 'B1'), @('P1', 'b2'), @('P2', 'GHOST'))) {
+    $dataCut += New-Insert 'cfg' 'LinksProfileInstance' @('ProfileCode', 'InstanceCode', 'ModifiedAt') ("N'{0}', N'{1}', '2026-01-01 00:00:00.0000000'" -f $lp[0], $lp[1])
+}
+$dataCut += New-Insert 'cfg' 'PulseProfile' @('HubInstanceCode', 'DisplayName') "N'A1', N'Hub A'"
+$dataCut += New-Insert 'cfg' 'PulseProfile' @('HubInstanceCode', 'DisplayName') "N'NOHUB', N'Hub without instance'"
+$dataCut += New-Insert 'sec' 'WindowsGroupPolicy' @('MachineName', 'WindowsGroupName', 'PolicyCode') "N'host-a', N'Admins', N'ADMIN'"
+$dataCut += New-Insert 'sec' 'WindowsGroupPolicy' @('MachineName', 'WindowsGroupName', 'PolicyCode') "N'OTHER-HOST', N'Admins', N'ADMIN'"
+$cutFixture = '/* header */' + $nl + $ddlCut + $dataCut
+$cutTables = [ordered]@{
+    'cfg.ConfigRule' = 'G'; 'cfg.LinksPageAsset' = 'G'; 'ops.Engine' = 'G'; 'ui.Resource' = 'G'
+    'dbo.ManagedServer' = 'S'; 'cfg.IisServerPolicy' = 'S'; 'cfg.PulseProfile' = 'S'; 'sec.WindowsGroupPolicy' = 'S'
+    'dbo.ManagedInstance' = 'I'; 'cfg.LinksProfileInstance' = 'I'
+}
+
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('convert-tests-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
@@ -211,6 +246,53 @@ try {
     Assert-Throws 'a missing sqlite3 is refused' { Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'o3') -Sqlite3 (Join-Path $work 'nope.exe') -Code 'Z1' -Machine 'H' -Services 'S' -BackupRoot 'B' } '*sqlite3 was not found*'
     $noTable = $fixture.Replace('CREATE TABLE [cfg].[IisServerPolicy] (', 'CREATE TABLE [cfg].[Other] (')
     Assert-Throws 'a whitelisted table missing from the source is an error' { New-Source -Text $noTable } '*was not found in the source schema*'
+
+    # 9. Cut mode (step B3) ---------------------------------------------------------------------
+    $script:CarriedTables = $cutTables
+    function Get-TableDigest {
+        param([string]$Db, [string]$Table)
+        $cols = @((Invoke-Query $Db ("SELECT name FROM pragma_table_info('{0}') ORDER BY cid;" -f $Table)) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
+        $expr = ($cols | ForEach-Object { "typeof(`"$_`") || ':' || hex(`"$_`")" }) -join " || '|' || "
+        return Invoke-Query $Db ("SELECT group_concat(r, char(10)) FROM (SELECT {0} AS r FROM `"{1}`" ORDER BY r);" -f $expr, $Table)
+    }
+    $cutSource = New-Source -Text $cutFixture
+    $cutOut = Join-Path $work 'cut'
+    $cr1 = Invoke-CutConversion -Source $cutSource -SourceInfo $info -Folder $cutOut -Sqlite3 $sqlite3 -Codes @('ALL') -SourceRef 'cut test'
+    Assert-That 'cut ALL writes one catalog per server and one manifest' (@($cr1.Catalogs).Count -eq 3 -and (Test-Path (Join-Path $cutOut 'catalog-SRV_A.db')) -and (Test-Path (Join-Path $cutOut 'catalog-SRV_C.db')) -and (Test-Path $cr1.Manifest))
+    $dbA = Join-Path $cutOut 'catalog-SRV_A.db'; $dbB = Join-Path $cutOut 'catalog-SRV_B.db'; $dbC = Join-Path $cutOut 'catalog-SRV_C.db'
+    Assert-That 'machine A: its server, 2 instances, its policy, 2 profile links, its pulse hub and its windows group (name match ignores case)' ((Invoke-Query $dbA 'SELECT (SELECT count(*) FROM dbo_ManagedServer), (SELECT count(*) FROM dbo_ManagedInstance), (SELECT count(*) FROM cfg_IisServerPolicy), (SELECT count(*) FROM cfg_LinksProfileInstance), (SELECT count(*) FROM cfg_PulseProfile), (SELECT count(*) FROM sec_WindowsGroupPolicy);') -eq '1|2|1|2|1|1')
+    Assert-That 'machine B: 2 instances (one matched only by ignoring case), 1 policy, 2 profile links, no pulse, no windows group' ((Invoke-Query $dbB 'SELECT (SELECT count(*) FROM dbo_ManagedInstance), (SELECT count(*) FROM cfg_IisServerPolicy), (SELECT count(*) FROM cfg_LinksProfileInstance), (SELECT count(*) FROM cfg_PulseProfile), (SELECT count(*) FROM sec_WindowsGroupPolicy);') -eq '2|1|2|0|0')
+    Assert-That 'machine C: only its server row; every cut table is empty' ((Invoke-Query $dbC 'SELECT (SELECT count(*) FROM dbo_ManagedServer), (SELECT count(*) FROM dbo_ManagedInstance), (SELECT count(*) FROM cfg_IisServerPolicy), (SELECT count(*) FROM cfg_LinksProfileInstance), (SELECT count(*) FROM cfg_PulseProfile);') -eq '1|0|0|0|0')
+    $allInstances = @(@($dbA, $dbB, $dbC) | ForEach-Object { (Invoke-Query $_ 'SELECT group_concat(InstanceCode) FROM dbo_ManagedInstance;') -split ',' } | Where-Object { $_ })
+    Assert-That 'each of the 4 instances appears in exactly one catalog' ($allInstances.Count -eq 4 -and @($allInstances | Select-Object -Unique).Count -eq 4)
+    Assert-That 'global tables are identical in every catalog' (@(@('cfg_ConfigRule', 'cfg_LinksPageAsset', 'ops_Engine', 'ui_Resource') | Where-Object { $d = Get-TableDigest $dbA $_; $d -ne (Get-TableDigest $dbB $_) -or $d -ne (Get-TableDigest $dbC $_) }).Count -eq 0)
+    Assert-That 'stored text is unchanged: the case-only match keeps its own spelling' (((Invoke-Query $dbB "SELECT ServerCode FROM dbo_ManagedInstance WHERE InstanceCode = 'B2';") -ceq 'srv_b') -and ((Invoke-Query $dbB "SELECT InstanceCode FROM cfg_LinksProfileInstance WHERE InstanceCode = 'b2';") -ceq 'b2'))
+    $cutManifest = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($cr1.Manifest)) | ConvertFrom-Json
+    $entryB = $cutManifest.catalogs | Where-Object serverCode -eq 'SRV_B'
+    $entryC = $cutManifest.catalogs | Where-Object serverCode -eq 'SRV_C'
+    Assert-That 'manifest: mode cut and completeness says each instance is in exactly one catalog' ($cutManifest.mode -eq 'cut' -and $cutManifest.completeness.eachInstanceInExactlyOneCatalog -and $cutManifest.completeness.instancesInSource -eq 4 -and $cutManifest.completeness.serversConverted -eq 3)
+    Assert-That 'manifest: completeness counts add up for every cut table' (@($cutManifest.completeness.tables | Where-Object { $_.placedRows + $_.unplacedRows -ne $_.sourceRows }).Count -eq 0)
+    Assert-That 'manifest: rows that belong to no machine are reported with their codes and not carried' ((@($cutManifest.unplaced | Where-Object { $_ -like 'cfg_LinksProfileInstance: 1 row(s)*GHOST*' }).Count -eq 1) -and (@($cutManifest.unplaced | Where-Object { $_ -like 'cfg_PulseProfile: 1 row(s)*NOHUB*' }).Count -eq 1) -and (@($cutManifest.unplaced | Where-Object { $_ -like 'sec_WindowsGroupPolicy: 1 row(s)*OTHER-HOST*' }).Count -eq 1))
+    Assert-That 'manifest: the case-only match is a finding for the machine that needed it' (@($entryB.findings | Where-Object { $_ -like 'dbo_ManagedInstance: 1 row(s) matched this machine only by ignoring case*' }).Count -eq 1)
+    Assert-That 'manifest: a machine without a policy row gets a finding for it' (@($entryC.findings | Where-Object { $_ -like 'cfg_IisServerPolicy has no row for this machine*' }).Count -eq 1 -and @($entryC.findings | Where-Object { $_ -like 'This machine has no instances*' }).Count -eq 1)
+    $cutAllText = (@($dbA, $dbB, $dbC, $cr1.Manifest) | ForEach-Object { [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($_)) }) -join ''
+    Assert-That 'no marker value in any catalog or in the manifest (secret columns are not carried)' (-not $cutAllText.Contains($markerA) -and -not $cutAllText.Contains($markerC))
+    Assert-That 'the original server rows were not modified in the source (ManagementDatabaseName still there)' ($cutSource.Rows['dbo.ManagedServer'][0].Contains('ManagementDatabaseName'))
+
+    $cr2 = Invoke-CutConversion -Source $cutSource -SourceInfo $info -Folder (Join-Path $work 'cut2') -Sqlite3 $sqlite3 -Codes @('srv_a') -SourceRef 'x'
+    Assert-That 'a subset (code given in other case) builds only that machine, named with the code as stored' (@($cr2.Catalogs).Count -eq 1 -and (Test-Path (Join-Path $work 'cut2' 'catalog-SRV_A.db')) -and -not (Test-Path (Join-Path $work 'cut2' 'catalog-SRV_B.db')))
+    Assert-Throws 'an unknown ServerCode in cut mode is refused' { Invoke-CutConversion -Source $cutSource -SourceInfo $info -Folder (Join-Path $work 'cut3') -Sqlite3 $sqlite3 -Codes @('NOPE') } '*is not in dbo.ManagedServer*'
+    Assert-Throws 'ALL cannot be mixed with codes' { Invoke-CutConversion -Source $cutSource -SourceInfo $info -Folder (Join-Path $work 'cut4') -Sqlite3 $sqlite3 -Codes @('ALL', 'SRV_A') } '*ALL cannot be combined*'
+    $noServer = New-Source -Text $cutFixture.Replace("N'B1', N'SRV_B'", "N'B1', N'SRV_Z'")
+    Assert-Throws 'an instance whose server is not in the source is an error (it would belong to no catalog)' { Invoke-CutConversion -Source $noServer -SourceInfo $info -Folder (Join-Path $work 'cut5') -Sqlite3 $sqlite3 -Codes @('ALL') } '*belong to no catalog*'
+    Assert-That 'nothing is written when the cut stops on an error' (-not (Test-Path (Join-Path $work 'cut5' 'catalog-SRV_A.db')))
+    $dupInst = New-Source -Text $cutFixture.Replace("N'B2', N'srv_b'", "N'a1', N'srv_b'")
+    Assert-Throws 'two instances that differ only by case are refused' { Invoke-CutConversion -Source $dupInst -SourceInfo $info -Folder (Join-Path $work 'cut6') -Sqlite3 $sqlite3 -Codes @('ALL') } '*appears twice*'
+    $dupMachine = New-Source -Text $cutFixture.Replace("N'HOST-C'", "N'host-a'")
+    Assert-Throws 'a MachineName shared by two servers is refused (the cut would be ambiguous)' { Invoke-CutConversion -Source $dupMachine -SourceInfo $info -Folder (Join-Path $work 'cut7') -Sqlite3 $sqlite3 -Codes @('ALL') } '*belongs to two servers*'
+    $leakCut = New-Source -Text $cutFixture.Replace("N'Hub A'", "N'Password = $markerA'")
+    Assert-Throws 'a secret-like literal in a cut table stops the run' { Invoke-CutConversion -Source $leakCut -SourceInfo $info -Folder (Join-Path $work 'cut8') -Sqlite3 $sqlite3 -Codes @('ALL') } '*Safety net*'
+    $script:CarriedTables = $tables
 }
 finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
