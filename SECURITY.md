@@ -22,7 +22,7 @@ Use synthetic fixtures only.
 - [CONFIRMED] Pode binds to loopback only by default.
 - [CONFIRMED] SQLite is local mirror/state and is not central authority.
 - [CONFIRMED] IIS is accessed through `Microsoft.Web.Administration` under PowerShell 7, subject to ADR-0006 conditions.
-- [PROPOSED] Credential packages are encrypted for a machine identity and signed by a trusted central signing identity; the detailed contract remains subject to approval.
+- [PROPOSED] Credential packages are encrypted for a machine identity and signed by the signing identity of the credential tool (separate tool, outside the portable application; no permanent master server); the detailed contract remains subject to approval.
 
 ## Required controls
 
