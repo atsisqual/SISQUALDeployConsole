@@ -13,7 +13,7 @@ Status: [PROPOSED]. Step B of the conversion plan, one small PR per tool.
 | `Convert-ManagementDb.ps1` | B3 | this PR: cut mode (default) - one catalog per existing machine of `dbo.ManagedServer`, each instance in exactly one catalog, orphans dropped and reported, completeness recorded in the manifest |
 | `Test-CatalogConversion.ps1` | B4 | this PR: read-only verification of the catalogs against the source in eight groups (manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash); compares every cell, never prints a value; exit code 1 on any failure |
 | `Seal-Package.ps1` | B5 | this PR: validates the catalog, rehashes every file, writes `package-manifest.json`, has it signed by an external signer (no algorithm in the tool); `-VerifyOnly`, `-DryRun`, `-Unsigned` (development) |
-| credential tool (vault, issuer key, signer, import, issue) | B6 | in progress: B6.1a is the shared module `modules/Sisqual.Credentials` (canonical JSON, signature, credential entries); package format and validation, signer and verifier scripts, vault, one-time import and issue follow in small PRs |
+| credential tool (vault, issuer key, signer, import, issue) | B6 | in progress: B6.1a is the shared module `modules/Sisqual.Credentials` (canonical JSON, signature, credential entries); B6.1b adds the package and machine identity formats and the validation of the eight checks; signer and verifier scripts, vault, one-time import and issue follow in small PRs |
 
 Rules for every tool: read-only toward SQL Server, no secret is ever printed or written,
 ASCII and LF in the repository, output outside the repository when it is not ASCII/LF,

@@ -1,6 +1,6 @@
 # Credential package (envelope)
 
-**Status:** [PROPOSED] draft, version `0.1-proposed`. Not approved. No cryptographic code and no algorithm choice is made here: AGENTS.md requires owner approval for algorithms, key ownership, trust bootstrap and envelope semantics.
+**Status:** [PROPOSED] draft, version `0.1-proposed`. The algorithms and the trust bootstrap were approved by the owner (section 8). Reference implementation: `modules/Sisqual.Credentials` (B6.1a and B6.1b); a difference between this text and the module is fixed in the same PR.
 **Basis:** owner decisions of 2026-10-05 (below), ADR-0007 (accepted 2026-10-05; its credential items 4 and 9 stay [PROPOSED]), risk register R-005, R-006, R-007, R-008, R-036, R-037.
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft design; [PENDING] open decision; [V] only verifiable on a real machine.
 
@@ -42,7 +42,7 @@ Contract: 0.1-proposed
 ServerCode: EXAMPLE_SERVER
 MachineName: EXAMPLE-HOST
 KeyFingerprint: <sha256 of the machine public key, 64 lowercase hex>
-KeyAlgorithm: ECDH-P256 [PROPOSED identifier]
+KeyAlgorithm: ECDH-P256
 PublicKey: <base64>
 CreatedAt: 2026-01-01T00:00:00Z
 -----END SISQUAL MACHINE IDENTITY-----
@@ -74,20 +74,25 @@ The decoded body is JSON (UTF-8 limited to ASCII; non-ASCII is escaped). Unknown
 | `target.serverCode` | string `^[A-Za-z0-9_-]{1,60}$` | Must equal the ServerCode of the catalog in use |
 | `target.keyFingerprint` | 64 lowercase hex | Must equal the fingerprint of the local machine key |
 | `target.machineName` | string, optional | Informational, never used to authorise |
-| `encryption.keyWrap` | string | `ECDH-ES-P256-HKDF-SHA256` [PROPOSED identifier]: the content key of each entry is derived from an ephemeral-static ECDH (P-256) with HKDF-SHA256 against the machine public key |
-| `encryption.content` | string | `AES-256-GCM` [PROPOSED identifier] for the authenticated encryption of each secret |
+| `encryption.keyWrap` | string | Exactly `ECDH-ES-P256-HKDF-SHA256`: the content key of each entry is derived from an ephemeral-static ECDH (P-256) with HKDF-SHA256 against the machine public key; any other value is a `VERSION` failure |
+| `encryption.content` | string | Exactly `AES-256-GCM` for the authenticated encryption of each secret (12-byte nonce, 16-byte tag appended to the ciphertext); any other value is a `VERSION` failure |
 | `entries[]` | array, 1..500 | One per credential |
 | `entries[].credentialRef` | string `^[A-Z0-9_.:-]{1,120}$` | Stable reference used by engines; not secret |
 | `entries[].kind` | enum | `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, `RULE_SECRET` (Q6) |
 | `entries[].instanceCode` | string, optional | Instance the credential belongs to |
-| `entries[].wrappedKey` | base64 | Content key wrapped for the machine key |
-| `entries[].nonce` | base64 | Per-entry nonce |
-| `entries[].ciphertext` | base64 | Authenticated ciphertext of the secret |
-| `entries[].aad` | string | Associated data bound to the entry: `packageId`, `target.serverCode`, `target.keyFingerprint`, `credentialRef`, `sequence` in a fixed order [PENDING exact layout] |
-| `signature.algorithm` | string | `ECDSA-P256-SHA256` [PROPOSED identifier] |
-| `signature.value` | base64 | Signature by the issuer key over the canonical body without `signature` canonical form as in the package manifest (RFC 8785 subset, Q2) |
+| `entries[].wrappedKey` | base64 | The ephemeral public key (SubjectPublicKeyInfo, 91 bytes) of the ECDH-ES key agreement for this entry |
+| `entries[].nonce` | base64 | Per-entry nonce, exactly 12 bytes |
+| `entries[].ciphertext` | base64 | Authenticated ciphertext of the secret followed by the 16-byte tag (17 to 8208 bytes; the secret is 1 to 8192 bytes) |
+| `signature.algorithm` | string | `ECDSA-P256-SHA256` (IEEE P1363, 64 bytes) |
+| `signature.value` | base64 | Signature by the issuer key over the canonical bytes of the body without `signature` (the canonical form of the package manifest, RFC 8785 subset, Q2) |
 
 Metadata (refs, kinds, instance codes) is not secret and is visible; only the secret values are ciphertext. Binding the entry's associated data to the target and `credentialRef` prevents moving an entry to another machine or credential.
+
+[FIXED in B6.1] The body written in the armor is the canonical JSON of the whole object, signature included, so the signed bytes can be recomputed from it. Unknown members are refused at every level, including members that differ from a known one only by case, and so are duplicate members.
+
+[FIXED in B6.1, change from the earlier draft] The field `entries[].aad` is NOT stored. The associated data is derived by both sides from the package fields, in this order, ASCII, separated by a line feed: the label `SISQUAL-CRED-AAD-v1`, `packageId`, `target.serverCode`, `target.keyFingerprint`, `credentialRef` and `sequence` in decimal. Storing a derivable value would only add something that could disagree with the fields.
+
+[FIXED in B6.1] Content key: HKDF-SHA256 with the ECDH shared secret as input key material, salt = SHA-256 of (ephemeral public key || machine public key, both SubjectPublicKeyInfo), info = `SISQUAL credential entry v1`, 32 bytes.
 
 ## 5. What is never in a package
 
@@ -107,6 +112,8 @@ Metadata (refs, kinds, instance codes) is not secret and is visible; only the se
 7. `sequence` greater than the last accepted sequence for this machine (replay protection; storage: Q4).
 8. Every `entries[].credentialRef` unique.
 
+[FIXED in `Test-CredentialPackage`] The result has `Ok`, `Reason` (the code of section 7a) and `Detail`, a field path and never a value. CRLF line endings are accepted (text pasted from a browser), everything else in check 1 is strict. The skew of 15 minutes applies to `issuedAt`; the lifetime limit is 366 days (a year that contains a leap day), and the builder issues 365 days by default.
+
 Decryption happens per entry at use time, in memory, and failure of one entry does not leak which part failed beyond a reason code.
 
 ## 7. Negative tests required before approval
@@ -123,6 +130,8 @@ Decryption happens per entry at use time, in memory, and failure of one entry do
 | Signed by an unknown issuer key | Fails at check 3 |
 | Marker secret planted in the vault | Marker absent from logs, API responses, transcripts and imported files in clear |
 | Portable folder copied to another machine | No usable machine identity travels with it (Phase 1B) |
+
+[IMPLEMENTED in B6.1b] `tests/Unit/Test-CredentialPackage.ps1` covers every row except the last, which belongs to Phase 1B, and checks the reason code of each failure, the order of the checks, the format failures, the machine identity cases and that an entry cannot be moved to another reference, sequence, package or server.
 
 ## 7a. Failure reasons (no secret content)
 

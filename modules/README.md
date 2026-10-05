@@ -9,4 +9,4 @@ Rules:
 
 | Module | State |
 |---|---|
-| `Sisqual.Credentials` | B6.1a: canonical JSON (same as `tools/Seal-Package.ps1`), key fingerprint, ECDSA P-256 signature, ECDH-ES + HKDF + AES-256-GCM credential entries (contract: `contracts/credential-package.md`). |
+| `Sisqual.Credentials` | B6.1a: canonical JSON (same as `tools/Seal-Package.ps1`), key fingerprint, ECDSA P-256 signature, ECDH-ES + HKDF + AES-256-GCM credential entries. B6.1b: machine identity text, credential package builder, the eight-check validator and per-entry decryption. Contract: `contracts/credential-package.md`. |
