@@ -1,0 +1,6310 @@
+{
+ "note": "Shape only (table, column, type, key) of the 62 tables carried into the catalogs, read from ManagementSync.sql (2026-10-05). No data. Used by tests/Integration to build a synthetic SQL Server fixture.",
+ "tables": [
+  {
+   "table": "cfg.Application",
+   "columns": [
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FolderName",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IisPath",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "PhysicalPathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsOptional",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LinksDisplayName",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LinksUrlTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LinksIconCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LinksSortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "PublishInLinks",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LinksOpenInNewTab",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LinksDefaultForIndividualPages",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LinksHubInstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    }
+   ],
+   "primaryKey": [
+    "ApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.ApplicationCopyPolicy",
+   "columns": [
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RelativePath",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CopyBinaries",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CopyStaticAssets",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PreserveDestinationConfig",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExcludePatterns",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "AssociatedServicePattern",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "HealthCheckPath",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UpdateSourceFamily",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "UpdateSourceRelativePath",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    }
+   ],
+   "primaryKey": [
+    "ApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.ConfigFile",
+   "columns": [
+    {
+     "name": "FileID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": true,
+     "nullable": false
+    },
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RelativePath",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FileFormat",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "FileID"
+   ]
+  },
+  {
+   "table": "cfg.ConfigFileRepairPolicy",
+   "columns": [
+    {
+     "name": "FileID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RepairMode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExpectedContentTemplate",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "NormalizeJsonEscapedAmpersand",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RepairGroup",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "FileID"
+   ]
+  },
+  {
+   "table": "cfg.ConfigRule",
+   "columns": [
+    {
+     "name": "RuleID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": true,
+     "nullable": false
+    },
+    {
+     "name": "FileID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CountryCode",
+     "type": "char",
+     "length": 2,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RuleCode",
+     "type": "varchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Category",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SelectorType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Selector",
+     "type": "nvarchar",
+     "length": 2000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExpectedTemplate",
+     "type": "nvarchar",
+     "length": 4000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ValidationType",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AllowEncrypted",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsSensitive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Severity",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreatedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RepairAction",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RepairValueType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RepairGroup",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RepairOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CreateIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "MissingParentSelector",
+     "type": "nvarchar",
+     "length": 2000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "MissingNodeTemplate",
+     "type": "nvarchar",
+     "length": 4000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    }
+   ],
+   "primaryKey": [
+    "RuleID"
+   ]
+  },
+  {
+   "table": "cfg.ConfigurationAdapterDefinition",
+   "columns": [
+    {
+     "name": "AdapterCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SourceType",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "Route",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SupportsPreview",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SupportsApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiresApproval",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "AdapterCode"
+   ]
+  },
+  {
+   "table": "cfg.DatabaseCopyPolicy",
+   "columns": [
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BackupFileNameTemplate",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseCopyOnly",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseCompression",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseChecksum",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "VerifyBackup",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ReplaceExisting",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SetSingleUser",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SetMultiUser",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopDestinationIisDuringCopy",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StartDestinationIisAfterCopy",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SyncDatabaseSettingsAfterCopy",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServerCode"
+   ]
+  },
+  {
+   "table": "cfg.DatabaseDefinition",
+   "columns": [
+    {
+     "name": "DatabaseCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DatabaseName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CopyEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RunPhysicalCheck",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PostRestoreOwner",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "DatabaseCode"
+   ]
+  },
+  {
+   "table": "cfg.DatabaseObjectSettingRule",
+   "columns": [
+    {
+     "name": "ObjectSettingRuleID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": true,
+     "nullable": false
+    },
+    {
+     "name": "SettingCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CountryCode",
+     "type": "char",
+     "length": 2,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "TargetDatabaseName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TargetSchemaName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TargetTableName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TargetColumnName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExpectedTemplate",
+     "type": "nvarchar",
+     "length": 4000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsSensitive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FilterClause",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RuleType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "InsertColumnsJson",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    }
+   ],
+   "primaryKey": [
+    "ObjectSettingRuleID"
+   ]
+  },
+  {
+   "table": "cfg.DatabaseSettingRule",
+   "columns": [
+    {
+     "name": "SettingRuleID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": true,
+     "nullable": false
+    },
+    {
+     "name": "SettingCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CountryCode",
+     "type": "char",
+     "length": 2,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "Application",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SettingUser",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SectionName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SettingKey",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExpectedTemplate",
+     "type": "nvarchar",
+     "length": 4000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsSensitive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TargetTable",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "SettingRuleID"
+   ]
+  },
+  {
+   "table": "cfg.EnvironmentCloneDatabasePolicy",
+   "columns": [
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SourceDatabaseName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DatabaseRole",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DestinationNamePolicy",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IncludeInFull",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IncludeInCore",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "cfg.IisApplicationAutoStartDefinition",
+   "columns": [
+    {
+     "name": "IisApplicationCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ServiceAutoStartEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ServiceAutoStartProvider",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "IisApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.IisApplicationDefinition",
+   "columns": [
+    {
+     "name": "IisApplicationCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ApplicationPath",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PhysicalPathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PoolNameTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ManagedRuntimeVersion",
+     "type": "nvarchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ManagedPipelineMode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Enable32Bit",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PoolAutoStart",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PoolStartMode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "QueueLength",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LoadUserProfile",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IdleTimeoutMinutes",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MaxProcesses",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PingingEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PeriodicRestartMinutes",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "EnabledProtocols",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AnonymousAuthentication",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "WindowsAuthentication",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "BasicAuthentication",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "DefaultDocumentEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "PreloadEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsSiteRoot",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "IisApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.IisBindingDefinition",
+   "columns": [
+    {
+     "name": "BindingCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Protocol",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BindingInformationTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SslFlags",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseCertificate",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsPrimary",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "BindingCode"
+   ]
+  },
+  {
+   "table": "cfg.IisDirectoryDefinition",
+   "columns": [
+    {
+     "name": "DirectoryCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ApplyPoolIdentity",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AclRights",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "DirectoryCode"
+   ]
+  },
+  {
+   "table": "cfg.IisPrerequisiteDefinition",
+   "columns": [
+    {
+     "name": "PrerequisiteCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PrerequisiteType",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PrerequisiteName",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CanAutoInstall",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PrerequisiteCode"
+   ]
+  },
+  {
+   "table": "cfg.IisServerPolicy",
+   "columns": [
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ReconcileMode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DeleteUnmanagedObjects",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PoolIdentityTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreatePoolIdentityIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CertificateSubjectTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CertificateStoreName",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SiteLogDirectoryTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SiteAutoStart",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StartAfterApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServerCode"
+   ]
+  },
+  {
+   "table": "cfg.IisServiceAutoStartProviderDefinition",
+   "columns": [
+    {
+     "name": "ProviderName",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ProviderType",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ProviderNameTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProviderName"
+   ]
+  },
+  {
+   "table": "cfg.KeycloakClientSecretRule",
+   "columns": [
+    {
+     "name": "KeycloakClientId",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SecretRuleCode",
+     "type": "varchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "KeycloakClientId"
+   ]
+  },
+  {
+   "table": "cfg.LinksPageAsset",
+   "columns": [
+    {
+     "name": "AssetCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MimeType",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Content",
+     "type": "varbinary",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "AssetCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksPageInstanceApplication",
+   "columns": [
+    {
+     "name": "InstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsPublished",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "InstanceCode",
+    "ApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksPagePolicy",
+   "columns": [
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RelativePath",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PageTitle",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PageDescription",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ShowSearchWhenMultipleEnvironments",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServerCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksPagePresentationResource",
+   "columns": [
+    {
+     "name": "ResourceCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ResourceType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ResourceText",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsDefault",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ResourceCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksPageTemplate",
+   "columns": [
+    {
+     "name": "TemplateCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentTemplate",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "TemplateCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksProfile",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksProfileApplication",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsPublished",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode",
+    "ApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.LinksProfileInstance",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "InstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode",
+    "InstanceCode"
+   ]
+  },
+  {
+   "table": "cfg.ManagedAssetDestination",
+   "columns": [
+    {
+     "name": "AssetType",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DestinationCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateDirectory",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "AssetType",
+    "DestinationCode"
+   ]
+  },
+  {
+   "table": "cfg.PulseHttpPolicy",
+   "columns": [
+    {
+     "name": "ApplicationCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UrlTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "HttpMethod",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "HealthyStatusCodes",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RespondingStatusCodes",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TreatRespondingAsHealthy",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FollowRedirects",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TimeoutSeconds",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiredForOverallOverride",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ApplicationCode"
+   ]
+  },
+  {
+   "table": "cfg.PulseProfile",
+   "columns": [
+    {
+     "name": "HubInstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PageTitle",
+     "type": "nvarchar",
+     "length": 180,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PageDescription",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RelativeDirectory",
+     "type": "nvarchar",
+     "length": 500,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PublicUrlTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StatusFileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CollectorScriptPath",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScheduledTaskName",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CollectionIntervalMinutes",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RefreshSeconds",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "YellowFailureCount",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RedFailureCount",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StaleAfterSeconds",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScopePolicy",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "HubInstanceCode"
+   ]
+  },
+  {
+   "table": "cfg.PulseResource",
+   "columns": [
+    {
+     "name": "ResourceCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ResourceType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ResourceFileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "TextContent",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "BinaryContent",
+     "type": "varbinary",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ResourceCode"
+   ]
+  },
+  {
+   "table": "cfg.SettingDefinition",
+   "columns": [
+    {
+     "name": "SettingCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SectionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LabelResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "DataType",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ControlType",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsSecret",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiresRestart",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DefaultValue",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ValidationExpression",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "SettingCode"
+   ]
+  },
+  {
+   "table": "cfg.SettingSection",
+   "columns": [
+    {
+     "name": "SectionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LabelResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiredPolicy",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "SectionCode"
+   ]
+  },
+  {
+   "table": "cfg.SettingValue",
+   "columns": [
+    {
+     "name": "SettingCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScopeType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScopeCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SettingValue",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEncrypted",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ChangedBy",
+     "type": "nvarchar",
+     "length": 256,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "SettingCode",
+    "ScopeType",
+    "ScopeCode"
+   ]
+  },
+  {
+   "table": "cfg.WebAccessPolicy",
+   "columns": [
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DataRootTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CredentialFilePathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BackendBaseUrlTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PublicLaunchBaseUrlTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateLocalUserIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "EnforcePasswordOnApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AddToRemoteDesktopUsers",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AddToUsers",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UserDescription",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PasswordNeverExpires",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UserMayNotChangePassword",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BackupExistingRootFiles",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IgnoreBackendCertificateErrors",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServerCode"
+   ]
+  },
+  {
+   "table": "cfg.WebAccessTemplate",
+   "columns": [
+    {
+     "name": "TemplateCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentTemplate",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "TemplateCode"
+   ]
+  },
+  {
+   "table": "cfg.WebsiteBrandingAsset",
+   "columns": [
+    {
+     "name": "AssetCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MimeType",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BinaryContent",
+     "type": "varbinary",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ContentSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "AssetCode"
+   ]
+  },
+  {
+   "table": "cfg.WebsiteBrandingProfile",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DocumentTitleTemplate",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PulseDocumentTitleTemplate",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ThemeColor",
+     "type": "char",
+     "length": 7,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode"
+   ]
+  },
+  {
+   "table": "cfg.WebsiteFolderCopyPolicy",
+   "columns": [
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BackupRoot",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateSourceArchive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateDestinationSafetyArchive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopWindowsServices",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopIisWebsite",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopApplicationPools",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ControlWebAccessForPortable",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "VerifyArchiveHash",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "VerifyDestinationHealth",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RetentionDays",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PlanValidityMinutes",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UpdateRoot",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "cfg.WindowsServiceDefinition",
+   "columns": [
+    {
+     "name": "ServiceCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ServiceNameTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayNameTemplate",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ExecutablePathTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ArgumentsTemplate",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "StartupType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DelayedAutoStart",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StartAfterApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RestartOnApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AccountSource",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateAccountIfMissing",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PasswordNeverExpires",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServiceCode"
+   ]
+  },
+  {
+   "table": "app.ActionRuntimePolicy",
+   "columns": [
+    {
+     "name": "ActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TargetPolicy",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiresActionPayload",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BlockGenericQueue",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MaximumParallelTargets",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "TimeoutSeconds",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ActionCode"
+   ]
+  },
+  {
+   "table": "app.DatabaseCopyDatabaseDefinition",
+   "columns": [
+    {
+     "name": "DatabaseCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SourceNameTemplate",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DestinationNameTemplate",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DatabaseRole",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsSelectable",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "DatabaseCode"
+   ]
+  },
+  {
+   "table": "app.DatabaseCopyPolicy",
+   "columns": [
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BackupRoot",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateDestinationSafetyBackup",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseCompression",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "UseChecksum",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CloseActiveConnections",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RestoreToDefaultFolders",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SynchronizeDatabaseSettings",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "VerifyRestore",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RetentionDays",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DiskSafetyMultiplier",
+     "type": "decimal",
+     "length": 0,
+     "precision": 8,
+     "scale": 3,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PlanValidityMinutes",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateGroupedArchive",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ArchiveCompressionProfile",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "KeepLooseBackups",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "app.EnvironmentCloneProfile",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IncludeApplications",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IncludeDatabases",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IncludeIis",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IncludeServices",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateFileSnapshot",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreateDatabaseSafetyBackups",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode"
+   ]
+  },
+  {
+   "table": "app.VersionBaseline",
+   "columns": [
+    {
+     "name": "BaselineCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CountryCode",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "InstancePattern",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ItemType",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ItemCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ExpectedVersion",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "BaselineCode",
+    "ItemType",
+    "ItemCode"
+   ]
+  },
+  {
+   "table": "app.HousekeepingPolicy",
+   "columns": [
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ArtifactType",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RootPath",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "FilePattern",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ArchiveAfterDays",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DeleteAfterDays",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "QuarantineDays",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MaximumTotalSizeGB",
+     "type": "decimal",
+     "length": 0,
+     "precision": 12,
+     "scale": 2,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RiskLevel",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "app.Product",
+   "columns": [
+    {
+     "name": "ProductCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ProductNameResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ProductVersion",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DefaultCulture",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SupportedCultures",
+     "type": "varchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProductCode"
+   ]
+  },
+  {
+   "table": "dbo.ManagedInstance",
+   "columns": [
+    {
+     "name": "InstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CountryCode",
+     "type": "char",
+     "length": 2,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CultureCode",
+     "type": "nvarchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CustomerCode",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CustomerName",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "HostName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SqlInstanceName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LinkedServer",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "DatabaseName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ChannelID",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "MobileAppToken",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Notes",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CreatedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CustomerLogo",
+     "type": "varbinary",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CustomerLogoFileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CustomerLogoMimeType",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CustomerLogoSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CustomerLogoModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IisIdentityUserName",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IisIdentityPassword",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "WebAccessUserName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "WebAccessPassword",
+     "type": "nvarchar",
+     "length": 255,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "WebAccessModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LinksIncludeAllInstances",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LinksAssignedUserName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "TsplusAdminToolPath",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "TsplusWebControlEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "KeycloakHttpPort",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "KeycloakHttpsPort",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "KeycloakManagementPort",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    }
+   ],
+   "primaryKey": [
+    "InstanceCode"
+   ]
+  },
+  {
+   "table": "dbo.ManagedServer",
+   "columns": [
+    {
+     "name": "ServerCode",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MachineName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ServicesRoot",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CreatedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ConfigBackupRoot",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ManagementDatabaseName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ServerCode"
+   ]
+  },
+  {
+   "table": "ops.Action",
+   "columns": [
+    {
+     "name": "ActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "GroupCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 180,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ActionType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "EngineCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SqlCommand",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "ModePolicy",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiresInstanceSelection",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "InstanceSelectionPolicy",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AllowAllInstances",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "BatchAllEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PassInstanceCode",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PassApply",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ConfirmationText",
+     "type": "nvarchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "CommandTimeoutSeconds",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ShowInMenu",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopOnError",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ActionCode"
+   ]
+  },
+  {
+   "table": "ops.ActionRequirement",
+   "columns": [
+    {
+     "name": "ActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequirementCode",
+     "type": "varchar",
+     "length": 100,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequirementType",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ObjectName",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsRequired",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ActionCode",
+    "RequirementCode"
+   ]
+  },
+  {
+   "table": "ops.ActionStep",
+   "columns": [
+    {
+     "name": "ParentActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StepOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ChildActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StepPhase",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "StopOnError",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ParentActionCode",
+    "StepOrder"
+   ]
+  },
+  {
+   "table": "ops.ActionUiMetadata",
+   "columns": [
+    {
+     "name": "ActionCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LabelResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RiskLevel",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsVisibleInWeb",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ActionCode"
+   ]
+  },
+  {
+   "table": "ops.ConsoleProfile",
+   "columns": [
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "AllowMainMultiSelect",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ProfileCode"
+   ]
+  },
+  {
+   "table": "ops.Engine",
+   "columns": [
+    {
+     "name": "EngineCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SourceFileName",
+     "type": "nvarchar",
+     "length": 260,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "EngineVersion",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScriptText",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ScriptSha256",
+     "type": "char",
+     "length": 64,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "MinimumPowerShell",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiresAdministrator",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "EngineCode"
+   ]
+  },
+  {
+   "table": "ops.MenuGroup",
+   "columns": [
+    {
+     "name": "GroupCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ProfileCode",
+     "type": "varchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 150,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "GroupCode"
+   ]
+  },
+  {
+   "table": "ops.ReviewDefinition",
+   "columns": [
+    {
+     "name": "ReviewCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 180,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CommandText",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiredObjectName",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IncludeInDeploymentPreflight",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ModifiedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ReviewCode"
+   ]
+  },
+  {
+   "table": "sec.Policy",
+   "columns": [
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LabelResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "sec.WindowsGroupPolicy",
+   "columns": [
+    {
+     "name": "MachineName",
+     "type": "sysname",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "WindowsGroupName",
+     "type": "nvarchar",
+     "length": 256,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "PolicyCode",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "MachineName",
+    "WindowsGroupName",
+    "PolicyCode"
+   ]
+  },
+  {
+   "table": "ui.NavigationItem",
+   "columns": [
+    {
+     "name": "NavigationCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Route",
+     "type": "nvarchar",
+     "length": 300,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LabelResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DescriptionResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "Icon",
+     "type": "nvarchar",
+     "length": 40,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RequiredPolicy",
+     "type": "varchar",
+     "length": 80,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "IsEnabled",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsDefaultPage",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "NavigationCode"
+   ]
+  },
+  {
+   "table": "ui.PublishedEnvironmentLink",
+   "columns": [
+    {
+     "name": "InstanceCode",
+     "type": "varchar",
+     "length": 20,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "IsPublished",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "DisplayName",
+     "type": "nvarchar",
+     "length": 200,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "Description",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "GroupCode",
+     "type": "varchar",
+     "length": 60,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "SortOrder",
+     "type": "int",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "AvailabilityPolicy",
+     "type": "varchar",
+     "length": 30,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CustomUrl",
+     "type": "nvarchar",
+     "length": 1000,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "OpenInNewTab",
+     "type": "bit",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "VisibleFrom",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "VisibleUntil",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LogoDataUri",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LastPublishedBy",
+     "type": "nvarchar",
+     "length": 256,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "LastPublishedAt",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": true
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "InstanceCode"
+   ]
+  },
+  {
+   "table": "ui.Resource",
+   "columns": [
+    {
+     "name": "ResourceCode",
+     "type": "varchar",
+     "length": 120,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "CultureCode",
+     "type": "varchar",
+     "length": 10,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "ResourceValue",
+     "type": "nvarchar",
+     "length": -1,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "LastChange",
+     "type": "datetime2",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    },
+    {
+     "name": "RowVersion",
+     "type": "timestamp",
+     "length": 0,
+     "precision": 0,
+     "scale": 0,
+     "identity": false,
+     "nullable": false
+    }
+   ],
+   "primaryKey": [
+    "ResourceCode",
+    "CultureCode"
+   ]
+  }
+ ]
+}
