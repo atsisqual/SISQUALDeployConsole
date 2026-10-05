@@ -38,6 +38,11 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Sql')]
     [string]$SqlClientPath,
 
+    # Off by default: the server certificate is validated. LocalDB and test servers need it on.
+    # The setting for the real SISQUAL servers is decided against a real server [V].
+    [Parameter(ParameterSetName = 'Sql')]
+    [switch]$TrustServerCertificate,
+
     [Parameter(Mandatory)]
     [string]$OutputFolder,
 
@@ -156,7 +161,8 @@ function Read-EnginesFromSqlServer {
     param(
         [Parameter(Mandatory)][string]$Instance,
         [Parameter(Mandatory)][string]$DatabaseName,
-        [Parameter(Mandatory)][string]$ClientPath
+        [Parameter(Mandatory)][string]$ClientPath,
+        [switch]$TrustCertificate
     )
     $dll = $ClientPath
     if (Test-Path -LiteralPath $ClientPath -PathType Container) {
@@ -173,6 +179,7 @@ function Read-EnginesFromSqlServer {
     $builder['Integrated Security'] = $true
     $builder['Application Intent'] = [Microsoft.Data.SqlClient.ApplicationIntent]::ReadOnly
     $builder['Application Name'] = 'Export-ManagementEngines'
+    if ($TrustCertificate) { $builder['Trust Server Certificate'] = $true }
 
     $connection = [Microsoft.Data.SqlClient.SqlConnection]::new($builder.ConnectionString)
     $engines = [System.Collections.Generic.List[object]]::new()
@@ -379,8 +386,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
     }
     else {
-        $engines = Read-EnginesFromSqlServer -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath
-        $info = [ordered]@{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true }
+        $engines = Read-EnginesFromSqlServer -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath -TrustCertificate:$TrustServerCertificate
+        $info = [ordered]@{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true; trustServerCertificate = [bool]$TrustServerCertificate }
     }
     $summary = Invoke-EngineExport -Engines $engines -Folder $OutputFolder -Only $EngineCode -SourceInfo $info -AllowHashMismatch:$AllowMismatch
     Write-Host ('Exported {0} engine(s). Hash mismatches: {1}. Manifest: {2}' -f $summary.Engines, $summary.Mismatches, $summary.ManifestPath)

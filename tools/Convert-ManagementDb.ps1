@@ -39,6 +39,11 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Sql')]
     [string]$SqlClientPath,
 
+    # Off by default: the server certificate is validated. LocalDB and test servers need it on.
+    # The setting for the real SISQUAL servers is decided against a real server [V].
+    [Parameter(ParameterSetName = 'Sql')]
+    [switch]$TrustServerCertificate,
+
     [Parameter(Mandatory)]
     [string]$OutputFolder,
 
@@ -303,7 +308,7 @@ function Read-SyncRows {
 # ---------------------------------------------------------------------------
 
 function Read-SqlServerSource {
-    param([string]$Instance, [string]$DatabaseName, [string]$ClientPath, [string[]]$Tables)
+    param([string]$Instance, [string]$DatabaseName, [string]$ClientPath, [string[]]$Tables, [switch]$TrustCertificate)
     $dll = $ClientPath
     if (Test-Path -LiteralPath $ClientPath -PathType Container) { $dll = Join-Path $ClientPath 'Microsoft.Data.SqlClient.dll' }
     if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw ('Microsoft.Data.SqlClient.dll was not found at: {0}' -f $dll) }
@@ -315,12 +320,17 @@ function Read-SqlServerSource {
     $builder['Integrated Security'] = $true
     $builder['Application Intent'] = [Microsoft.Data.SqlClient.ApplicationIntent]::ReadOnly
     $builder['Application Name'] = 'Convert-ManagementDb'
+    if ($TrustCertificate) { $builder['Trust Server Certificate'] = $true }
 
     $schema = @{}
     $rows = @{}
     $connection = [Microsoft.Data.SqlClient.SqlConnection]::new($builder.ConnectionString)
+    $collation = ''
     try {
         $connection.Open()
+        $collationCmd = $connection.CreateCommand()
+        $collationCmd.CommandText = "SELECT CONVERT(nvarchar(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'));"
+        $collation = [string]$collationCmd.ExecuteScalar()
         foreach ($table in $Tables) {
             $parts = $table.Split('.')
             $cmd = $connection.CreateCommand()
@@ -390,7 +400,7 @@ ORDER BY ic.key_ordinal;
         }
     }
     finally { $connection.Dispose() }
-    return [pscustomobject]@{ Schema = $schema; Rows = $rows }
+    return [pscustomobject]@{ Schema = $schema; Rows = $rows; Collation = $collation }
 }
 
 # ---------------------------------------------------------------------------
@@ -733,7 +743,7 @@ function Invoke-NewMachineConversion {
         convertedAtUtc  = $catalog.BuiltAtUtc
         source          = $SourceInfo
         codeCollation   = $(if ($UseCodeCollation) { 'NOCASE' } else { 'BINARY' })
-        sourceCollation = 'Latin1_General_CI_AS (stated by the owner on 2026-10-05; to be read from the live database [V])'
+        sourceCollation = $(if ($SourceInfo.ContainsKey('collation')) { [string]$SourceInfo['collation'] } else { 'not available from an offline file; the owner states Latin1_General_CI_AS (2026-10-05) [V]' })
         catalogs        = @([ordered]@{
                 serverCode       = $Code
                 file             = (Split-Path -Leaf $catalog.File)
@@ -773,8 +783,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         $info = @{ kind = 'sync-file'; fileName = $item.Name; fileBytes = $item.Length; fileSha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
     else {
-        $source = Read-SqlServerSource -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath -Tables $tables
-        $info = @{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true }
+        $source = Read-SqlServerSource -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath -Tables $tables -TrustCertificate:$TrustServerCertificate
+        $info = @{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true; trustServerCertificate = [bool]$TrustServerCertificate; collation = $source.Collation }
     }
     $result = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Code $ServerCode -Machine $MachineName -Services $ServicesRoot -BackupRoot $ConfigBackupRoot -SourceRef $SourceReference -UseCodeCollation ($CodeCollation -eq 'NoCase')
     Write-Host ('Catalog: {0}' -f $result.Catalog)
