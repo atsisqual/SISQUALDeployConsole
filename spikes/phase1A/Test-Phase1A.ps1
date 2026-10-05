@@ -363,8 +363,21 @@ Start-PodeServer -ScriptBlock {
 
     # 4. IIS WebAdministration and direct Microsoft.Web.Administration, read-only
     if(-not $IisPresent){
-        foreach($id in @('IIS_WEBADMIN_NATIVE','IIS_WEBADMIN_COMPAT','IIS_MUTABLE_COMMAND_SURFACE_COMPAT','IIS_PROVIDER','IIS_ENUMERATION_PERFORMANCE','IIS_SERIALIZED_PROPERTIES','IIS_MICROSOFT_WEB_ADMINISTRATION')){Add-Result $id 'SKIP' 'IIS is not installed on this machine.'}
+        foreach($id in @('IIS_WEBADMIN_NATIVE','IIS_WEBADMIN_COMPAT','IIS_MUTABLE_COMMAND_SURFACE_COMPAT','IIS_PROVIDER','IIS_ENUMERATION_PERFORMANCE','IIS_SERIALIZED_PROPERTIES','IIS_MICROSOFT_WEB_ADMINISTRATION','IIS_BASELINE_WINPS51','IIS_ADMINISTRATION_MODULE')){Add-Result $id 'SKIP' 'IIS is not installed on this machine.'}
     }else{
+        # Control: the same read-only IIS calls in Windows PowerShell 5.1 itself (no PowerShell 7, no compatibility layer).
+        $base=[ordered]@{ImportSuccess=$false;Sites=$null;Applications=$null;Pools=$null;ElapsedMs=$null;PerCmdlet=[ordered]@{};Error=$null}
+        try{
+            Import-Module WebAdministration -ErrorAction Stop
+            $base.ImportSuccess=$true
+            $sw=[Diagnostics.Stopwatch]::StartNew()
+            try{$base.Sites=@(Get-Website -ErrorAction Stop).Count}catch{$base.PerCmdlet['Get-Website']=$_.Exception.GetType().FullName+': '+$_.Exception.Message}
+            try{$base.Applications=@(Get-WebApplication -ErrorAction Stop).Count}catch{$base.PerCmdlet['Get-WebApplication']=$_.Exception.GetType().FullName+': '+$_.Exception.Message}
+            try{$base.Pools=@(Get-ChildItem 'IIS:\AppPools' -ErrorAction Stop).Count}catch{$base.PerCmdlet['IIS:\AppPools']=$_.Exception.GetType().FullName+': '+$_.Exception.Message}
+            $sw.Stop();$base.ElapsedMs=$sw.Elapsed.TotalMilliseconds
+        }catch{$base.Error=$_.Exception.GetType().FullName+': '+$_.Exception.Message}
+        $basePass=([bool]$base.ImportSuccess -and $base.PerCmdlet.Count -eq 0 -and $null -eq $base.Error)
+        Add-Result 'IIS_BASELINE_WINPS51' $(if($basePass){'PASS'}else{'FAIL'}) 'Control: the same IIS reads in Windows PowerShell 5.1 itself (no PowerShell 7 involved).' $base
         $iisScript=Join-Path $TempRoot 'Probe-IIS.ps1'
         @'
 param([string]$OutputPath,[ValidateSet('Native','Compat')][string]$Mode)
@@ -408,6 +421,27 @@ $r|ConvertTo-Json -Depth 14|Set-Content $OutputPath -Encoding utf8
 
         Add-Result 'IIS_ENUMERATION_PERFORMANCE' 'PASS' 'Captured timings/counts for all sites, applications, pools and state calls.' ([ordered]@{NativeTimings=$(if($null -ne $n){$n.TimingsMs}else{$null});NativeCounts=$(if($null -ne $n){$n.Counts}else{$null});CompatTimings=$(if($null -ne $c){$c.TimingsMs}else{$null});CompatCounts=$(if($null -ne $c){$c.Counts}else{$null})})
         Add-Result 'IIS_SERIALIZED_PROPERTIES' 'PASS' 'Captured type names and usable property names only, not site values.' ([ordered]@{Native=$(if($null -ne $n){$n.Samples}else{$null});Compat=$(if($null -ne $c){$c.Samples}else{$null})})
+
+        $iisAdmScript=Join-Path $TempRoot 'Probe-IISAdministration.ps1'
+        @'
+param([string]$OutputPath)
+$ErrorActionPreference='Stop'
+$r=[ordered]@{Success=$false;Module=$null;Version=$null;UsedCompatSession=$false;Sites=$null;Pools=$null;SitesMs=$null;PoolsMs=$null;Error=$null}
+try{
+    Import-Module IISAdministration -ErrorAction Stop
+    $mod=Get-Module IISAdministration
+    $r.Module=$mod.Name;$r.Version=[string]$mod.Version
+    $r.UsedCompatSession=(@(Get-PSSession -ErrorAction SilentlyContinue|Where-Object Name -eq 'WinPSCompatSession').Count -gt 0)
+    $sw=[Diagnostics.Stopwatch]::StartNew();$s=@(Get-IISSite -ErrorAction Stop);$sw.Stop();$r.Sites=$s.Count;$r.SitesMs=$sw.Elapsed.TotalMilliseconds
+    $sw=[Diagnostics.Stopwatch]::StartNew();$p=@(Get-IISAppPool -ErrorAction Stop);$sw.Stop();$r.Pools=$p.Count;$r.PoolsMs=$sw.Elapsed.TotalMilliseconds
+    $r.Success=$true
+}catch{$r.Error=$_.Exception.GetType().FullName+': '+$_.Exception.Message}
+$r|ConvertTo-Json -Depth 6|Set-Content $OutputPath -Encoding utf8
+'@ | Set-Content $iisAdmScript -Encoding UTF8
+        $iisAdmOut=Join-Path $TempRoot 'iisadm.json'
+        $iisAdmRun=Run-ChildJson $pwsh $iisAdmScript $iisAdmOut @()
+        $ia=$iisAdmRun.Payload
+        Add-Result 'IIS_ADMINISTRATION_MODULE' $(if($null -ne $ia -and [bool]$ia.Success){'PASS'}else{'FAIL'}) 'Informational alternative: IISAdministration module read-only (Get-IISSite, Get-IISAppPool) under PowerShell 7.' $ia $iisAdmRun.StdErr
 
         $mwaScript=Join-Path $TempRoot 'Probe-MWA.ps1'
         @'
@@ -477,31 +511,22 @@ finally{
     try{$reportFull=[IO.Path]::GetFullPath($ReportPath)}catch{$diag.Add('ReportPath: '+(Err $_))}
     try{$keepFlag=[bool]$KeepArtifacts}catch{$diag.Add('KeepArtifacts: '+(Err $_))}
     foreach($d in $diag){Write-Host ('REPORT_FIELD_FAILED: '+$d)}
-    $report=$null
-    try{
-        $report=[pscustomobject][ordered]@{
-            Phase='1A'
-            Name='Portable Runtime Compatibility'
-            RunId=$RunId
-            Machine=$env:COMPUTERNAME
-            StartedAtUtc=$startedText
-            CompletedAtUtc=$completedText
-            DurationSeconds=$durationSec
-            Overall=$overall
-            IisInstalled=$IisPresent
-            KeepArtifacts=$keepFlag
-            ArtifactRoot=$artifactFull
-            ReportPath=$reportFull
-            PinnedArtifacts=$Pinned
-            Checks=@($Results)
-            FatalError=$Fatal
-            DecisionHint=$hint
-            ReportDiagnostics=@($diag)
-        }
-    }catch{
-        $diag.Add('ReportObject: '+(Err $_))
-        Write-Host ('REPORT_OBJECT_FAILED: '+(Err $_))
-    }
+    $flatChecks=@($Results|ForEach-Object{
+        $item=$_
+        $dj=$null
+        try{ if($null -ne $item.Data){ $dj=($item.Data|ConvertTo-Json -Depth 10 -Compress) } }catch{ $dj='(data not serializable: '+$_.Exception.Message+')' }
+        [ordered]@{Id=$item.Id;Status=$item.Status;Message=$item.Message;Error=$item.Error;DataJson=$dj}
+    })
+    $report=[ordered]@{}
+    try{$report['Phase']='1A';$report['Name']='Portable Runtime Compatibility'}catch{$diag.Add('basic: '+(Err $_))}
+    try{$report['RunId']=$RunId;$report['Machine']=$env:COMPUTERNAME}catch{$diag.Add('identity: '+(Err $_))}
+    try{$report['StartedAtUtc']=$startedText;$report['CompletedAtUtc']=$completedText;$report['DurationSeconds']=$durationSec}catch{$diag.Add('timing: '+(Err $_))}
+    try{$report['Overall']=$overall;$report['IisInstalled']=$IisPresent;$report['KeepArtifacts']=$keepFlag}catch{$diag.Add('overall: '+(Err $_))}
+    try{$report['ArtifactRoot']=$artifactFull;$report['ReportPath']=$reportFull}catch{$diag.Add('paths: '+(Err $_))}
+    try{$report['PinnedArtifacts']=$Pinned}catch{$diag.Add('PinnedArtifacts: '+(Err $_))}
+    try{$report['Checks']=@($flatChecks)}catch{$diag.Add('Checks: '+(Err $_))}
+    try{$report['FatalError']=$Fatal;$report['DecisionHint']=$hint}catch{$diag.Add('fatal: '+(Err $_))}
+    $report['ReportDiagnostics']=@($diag)
     $dir=Split-Path -Parent $ReportPath
     if($dir -and -not(Test-Path $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
     $json=$null
@@ -509,7 +534,7 @@ finally{
     catch{
         $serr=Err $_
         Write-Host ('REPORT_SERIALIZATION_FAILED: '+$serr)
-        $simple=[pscustomobject][ordered]@{Phase='1A';RunId=$RunId;Machine=$env:COMPUTERNAME;Overall=$overall;FatalError=$Fatal;DecisionHint=$hint;SerializationError=$serr;ReportDiagnostics=@($diag);Checks=@($Results|ForEach-Object{[pscustomobject][ordered]@{Id=$_.Id;Status=$_.Status;Message=$_.Message;Error=$_.Error}})}
+        $simple=[ordered]@{Phase='1A';RunId=$RunId;Machine=$env:COMPUTERNAME;Overall=$overall;FatalError=$Fatal;DecisionHint=$hint;SerializationError=$serr;ReportDiagnostics=@($diag);Checks=@($flatChecks)}
         $json=$simple|ConvertTo-Json -Depth 6
     }
     $json|Set-Content -LiteralPath $ReportPath -Encoding UTF8
