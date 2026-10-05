@@ -1,0 +1,26 @@
+# Runtime and local state
+runtime/
+data/
+logs/
+backups/
+dist/
+
+# Vendored binary payloads are packaged, not committed
+vendor/bin/
+spikes/**/artifacts/
+
+# Local reports and transient output
+*.tmp
+*.log
+*.bak
+Phase1A-Report-*.json
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# PowerShell build/test output
+TestResults/
+coverage/
