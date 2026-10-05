@@ -90,12 +90,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # All test files run even if one fails; the output is kept in unit.log so that the
+          # publish step can put it on the temporary results branch (job logs are not readable
+          # from the agent sandbox).
+          $log = Join-Path $env:RUNNER_TEMP 'unit.log'
+          '' | Set-Content -LiteralPath $log -Encoding ascii
           $tests = @(Get-ChildItem -LiteralPath tests/Unit -Recurse -File -Filter 'Test-*.ps1')
+          $failed = @()
           foreach ($test in $tests) {
-              Write-Host ('=== {0}' -f $test.Name)
-              pwsh -NoProfile -File $test.FullName
-              if ($LASTEXITCODE -ne 0) { throw ('Test failed: {0}' -f $test.Name) }
+              ('=== {0}' -f $test.Name) | Tee-Object -FilePath $log -Append
+              pwsh -NoProfile -File $test.FullName *>&1 | Tee-Object -FilePath $log -Append
+              if ($LASTEXITCODE -ne 0) { $failed += $test.Name }
           }
+          if ($failed.Count -gt 0) { throw ('Test failed: {0}' -f ($failed -join ', ')) }
 
       - name: Restore the pinned SQL client (every file verified against vendor/sqlclient-pin.json)
         shell: pwsh
@@ -111,19 +118,24 @@ jobs:
           pwsh -NoProfile -File tests/Integration/Test-SqlServerPath.ps1 -SqlClientPath (Join-Path $env:RUNNER_TEMP 'sqlclient') -Sqlite3Path $env:SQLITE3_PATH *>&1 | Tee-Object -FilePath $log
           exit $LASTEXITCODE
 
-      - name: Publish the integration log to a temporary results branch
+      - name: Publish the logs to a temporary results branch
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $log = Join-Path $env:RUNNER_TEMP 'integration.log'
-          if (-not (Test-Path -LiteralPath $log)) { 'no log was produced' | Set-Content -LiteralPath $log -Encoding ascii }
-          $text = [IO.File]::ReadAllText($log)
-          $text = [regex]::Replace($text, '[^\x09\x0A\x20-\x7E]', '?')
-          if ($text.Length -gt 200000) { $text = $text.Substring(0, 200000) }
+          function Get-CleanLog {
+              param([string]$Path, [string]$Missing)
+              if (-not (Test-Path -LiteralPath $Path)) { return $Missing }
+              $text = [IO.File]::ReadAllText($Path)
+              $text = [regex]::Replace($text, '[^\x09\x0A\x20-\x7E]', '?')
+              if ($text.Length -gt 200000) { $text = $text.Substring(0, 200000) }
+              return ($text -replace "`r`n", "`n")
+          }
           $stage = Join-Path $env:RUNNER_TEMP 'stage-log'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          [IO.File]::WriteAllText((Join-Path $stage 'integration.log'), ($text -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+          $utf8 = [Text.UTF8Encoding]::new($false)
+          [IO.File]::WriteAllText((Join-Path $stage 'integration.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'integration.log') 'no log was produced'), $utf8)
+          [IO.File]::WriteAllText((Join-Path $stage 'unit.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'unit.log') 'no unit log was produced'), $utf8)
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           $branch = 'results/integration-' + $env:GITHUB_RUN_ID
@@ -132,6 +144,7 @@ jobs:
           $dest = 'docs/phase1/evidence/integration-' + $env:GITHUB_RUN_ID
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           Copy-Item -LiteralPath (Join-Path $stage 'integration.log') -Destination (Join-Path $dest 'integration.log')
+          Copy-Item -LiteralPath (Join-Path $stage 'unit.log') -Destination (Join-Path $dest 'unit.log')
           git add -A
-          git commit -q -m ('results: integration log run ' + $env:GITHUB_RUN_ID)
+          git commit -q -m ('results: logs of run ' + $env:GITHUB_RUN_ID)
           git push origin $branch

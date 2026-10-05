@@ -35,6 +35,7 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 $exportTool = Join-Path $repo 'tools' 'Export-ManagementEngines.ps1'
 $convertTool = Join-Path $repo 'tools' 'Convert-ManagementDb.ps1'
+$verifyTool = Join-Path $repo 'tools' 'Test-CatalogConversion.ps1'
 $schemaFile = Join-Path $repo 'tests' 'Fixtures' 'carried-schema.json'
 # Dot-sourcing binds the tool's parameters into this scope, so keep our own values and restore them.
 $savedSqlite3Path = $Sqlite3Path
@@ -143,6 +144,10 @@ function New-FixtureRows {
                     if ($i -eq 2) { $row['IsSensitive'] = $true; $row['RuleCode'] = 'FX_CLIENT_SECRET'; $row['ExpectedTemplate'] = $markerA }
                     if ($i -eq 3) { $row['IsSensitive'] = $false }
                 }
+                { $_ -in @('cfg.DatabaseObjectSettingRule', 'cfg.DatabaseSettingRule') } {
+                    # A sensitive template is a "secret" for the verification tool: it must be unique, not generic text.
+                    if ($row['IsSensitive'] -eq $true -and $null -ne $row['ExpectedTemplate']) { $row['ExpectedTemplate'] = 'FXRULESECRET-' + ($table.table -replace '[^A-Za-z0-9]', '') + '-' + $i }
+                }
                 'dbo.ManagedServer' { $row['ServerCode'] = 'FX_SRV' + $i; $row['MachineName'] = 'FX-HOST' + $i }
                 { $_ -in @('cfg.IisServerPolicy', 'cfg.WebAccessPolicy', 'cfg.LinksPagePolicy', 'cfg.DatabaseCopyPolicy') } { $row['ServerCode'] = 'FX_SRV' + $i }
                 'cfg.PulseProfile' { $row['HubInstanceCode'] = 'FX_INST' + $i }
@@ -155,7 +160,12 @@ function New-FixtureRows {
                 'dbo.ManagedInstance' {
                     $row['InstanceCode'] = 'FX_INST' + $i
                     $row['ServerCode'] = 'FX_SRV' + $i
-                    if ($i -eq 1) { $row['IisIdentityPassword'] = $markerB; $row['WebAccessPassword'] = $markerB; $row['MobileAppToken'] = $markerB }
+                    # Secret columns get values that occur nowhere else (the generic generator reuses the same text in
+                    # many columns, which would be a false positive for the verification tool); row 3 keeps its NULLs.
+                    foreach ($secretCol in @('IisIdentityPassword', 'WebAccessPassword', 'MobileAppToken')) {
+                        if ($i -eq 1) { $row[$secretCol] = $markerB }
+                        elseif ($i -eq 2) { $row[$secretCol] = 'FXSECRET-' + $secretCol + '-' + $i }
+                    }
                 }
                 'ops.Engine' {
                     $text = "# fixture engine $i`r`nWrite-Host 'it''s $i'`r`n# accent: $eAcute`r`n"
@@ -450,6 +460,12 @@ try {
         Assert-That ('cut, file path: marker not in any catalog: ' + $m.Substring(6, 7)) (-not (@(1..3) | Where-Object { Test-FileContains (Join-Path $outCutFile ('catalog-FX_SRV{0}.db' -f $_)) $m }))
     }
 
+    # 1c. The verification tool, file path ----------------------------------------------------------
+    $vNewFile = Invoke-Tool $verifyTool @('-SyncFile', $syncPath, '-CatalogFolder', $outFile, '-Sqlite3Path', $Sqlite3Path)
+    Assert-That 'verify, file path: Test-CatalogConversion passes on the new-machine catalog' ($vNewFile.ExitCode -eq 0) ($vNewFile.Output -split "`n" | Where-Object { $_ -match '^FAIL' } | Select-Object -First 3 | Out-String)
+    $vCutFile = Invoke-Tool $verifyTool @('-SyncFile', $syncPath, '-CatalogFolder', $outCutFile, '-Sqlite3Path', $Sqlite3Path)
+    Assert-That 'verify, file path: Test-CatalogConversion passes on the three cut catalogs (every cell of every table)' ($vCutFile.ExitCode -eq 0) ($vCutFile.Output -split "`n" | Where-Object { $_ -match '^FAIL' } | Select-Object -First 3 | Out-String)
+
     if (-not $OfflineOnly) {
         # 2. SQL Server ----------------------------------------------------------------
         $dll = Join-Path $SqlClientPath 'Microsoft.Data.SqlClient.dll'
@@ -517,6 +533,12 @@ try {
                 Assert-That ('cut, sql: marker not in any catalog or manifest: ' + $m.Substring(6, 7)) (-not (@(1..3) | Where-Object { Test-FileContains (Join-Path $outCutSql ('catalog-FX_SRV{0}.db' -f $_)) $m }) -and -not (Test-FileContains (Join-Path $outCutSql 'conversion-manifest.json') $m))
             }
         }
+
+        # 2c. The verification tool against the SQL Server source ---------------------------------
+        $vNewSql = Invoke-Tool $verifyTool (@($sqlArgs) + @('-CatalogFolder', $outSql, '-Sqlite3Path', $Sqlite3Path))
+        Assert-That 'verify, sql: Test-CatalogConversion passes on the new-machine catalog, read from SQL Server' ($vNewSql.ExitCode -eq 0) ($vNewSql.Output -split "`n" | Where-Object { $_ -match '^FAIL' } | Select-Object -First 3 | Out-String)
+        $vCutSql = Invoke-Tool $verifyTool (@($sqlArgs) + @('-CatalogFolder', $outCutSql, '-Sqlite3Path', $Sqlite3Path))
+        Assert-That 'verify, sql: Test-CatalogConversion passes on the cut catalogs, read from SQL Server' ($vCutSql.ExitCode -eq 0) ($vCutSql.Output -split "`n" | Where-Object { $_ -match '^FAIL' } | Select-Object -First 3 | Out-String)
 
         # 3. The source must not change -------------------------------------------------
         $after = Get-SourceFingerprint -Name $dbName
