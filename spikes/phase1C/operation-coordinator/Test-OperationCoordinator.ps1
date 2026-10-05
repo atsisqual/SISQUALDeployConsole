@@ -41,7 +41,7 @@ function Get-Sha256Hex {
     param([Parameter(Mandatory = $true)][string]$Value)
     $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
     try {
-        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
     }
     finally {
         [Array]::Clear($bytes, 0, $bytes.Length)
@@ -111,6 +111,7 @@ try {
     $planA = Get-Sha256Hex 'plan-A'
     $planB = Get-Sha256Hex 'plan-B'
     $planC = Get-Sha256Hex 'plan-C'
+    Add-Check 'PLAN_FINGERPRINT_CONTRACT_CASE' ($planA -cmatch '^[0-9a-f]{64}$') 'Test plan fingerprint uses the lowercase SHA-256 representation required by the versioned contract.'
 
     $coordinator = New-SisqualOperationCoordinator -MaxConcurrentOperations 4
     $coordinators.Add($coordinator) | Out-Null
@@ -212,8 +213,18 @@ try {
     Close-SisqualOperationCoordinator -Coordinator $blockingCoordinator
 
     $snapshot = Get-SisqualOperation -Coordinator $coordinator -OperationId $first.OperationId
-    Add-Check 'PLAN_FINGERPRINT_PRESERVED' ($snapshot.PlanFingerprint -eq $planA) 'Operation snapshot preserves the exact validated plan fingerprint.' @{ PlanFingerprint = $snapshot.PlanFingerprint }
+    Add-Check 'PLAN_FINGERPRINT_PRESERVED' ($snapshot.PlanFingerprint -ceq $planA) 'Operation snapshot preserves the exact lowercase validated plan fingerprint.' @{ PlanFingerprint = $snapshot.PlanFingerprint }
     Add-Check 'IDEMPOTENCY_KEY_NOT_EXPOSED' ($null -eq $snapshot.PSObject.Properties['IdempotencyKey'] -and -not [string]::IsNullOrWhiteSpace($snapshot.IdempotencyKeyHash)) 'Snapshot exposes only the idempotency-key hash, not the raw token.'
+
+    $stableFinal = $true
+    for ($i = 0; $i -lt 20; $i++) {
+        $repeatSnapshot = Get-SisqualOperation -Coordinator $coordinator -OperationId $first.OperationId
+        if ($repeatSnapshot.Status -ne 'SUCCEEDED') {
+            $stableFinal = $false
+            break
+        }
+    }
+    Add-Check 'TERMINAL_FINALIZATION_STABLE' $stableFinal 'Repeated terminal reads remain stable after pipeline finalization.'
 
     $shutdownMain = Request-SisqualCoordinatorShutdown -Coordinator $coordinator -WaitMilliseconds 1000
     Add-Check 'DRAINED_COORDINATOR_READY' $shutdownMain.ReadyToExit 'Coordinator with no active work is immediately ready to exit.'
