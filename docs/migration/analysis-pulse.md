@@ -9,7 +9,7 @@ Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs
 
 1. [CONFIRMED] `PULSE_STATUS` needs nothing from another machine. A hub checks only the instances of its own `ServerCode` that are in its own country, writes its page and status file on its own server, and registers a scheduled task there.
 2. [CONFIRMED] No catalog needs the hub of another machine for Pulse itself. The 4 `cfg.PulseProfile` rows are cut to the machine of their hub (already so in the conversion plan); PRESALES and TENDERS have none.
-3. [CONFIRMED] The only cross-machine reference around Pulse is a links-page card: the application row `PULSE_STATUS` in `cfg.Application` carries `LinksHubInstanceCode` = `DEMOPT` and a URL template with the host name placeholder. That is a links-page matter, handled in `instance-directory-design.md` (task 1c), not by the Pulse engine.
+3. [CONFIRMED] There is no cross-machine reference around Pulse. The application row `PULSE_STATUS` in `cfg.Application` carries `LinksHubInstanceCode` = `DEMOPT`; in `cfg.GetLinksPageItemPlan` that code limits the card to the links page of DEMOPT itself, so the pages of other instances and machines do not show it (corrected on 2026-10-05: an earlier version of this document said the opposite).
 4. [PROPOSED] Three parts of the old design cannot be ported as they are, because they used `_sisqualMANAGEMENT` while the collector runs (record of each run, state between runs, plan and snapshot reads). Section 6 proposes replacements that need no database.
 
 ## 2. What Pulse is
@@ -62,7 +62,7 @@ Parameters: the management SQL instance and database (to disappear), an optional
 | Where do page and files live? | [CONFIRMED] On the hub's server: directory = `ServicesRoot` of that server + host name + `RelativeDirectory`. |
 | Does the state or snapshot cross machines? | [CONFIRMED] The state is keyed by hub; it contained only the hub's own instances. |
 | Does the task need anything remote? | [CONFIRMED] Only the hub instance's IIS identity (user and password) of the hub's own machine. |
-| Cross-machine references in the data? | [CONFIRMED] One: `cfg.Application` row `PULSE_STATUS` (display name "System Pulse") has `LinksHubInstanceCode` = `DEMOPT` and a links URL template with the host name placeholder; 17 `cfg.LinksProfileApplication` rows put this card on links pages of profiles such as `ADMIN_BR`, `COMM_ES`, `SANDBOX_MAIN`. So every machine's links pages point to the PT hub's Pulse page. |
+| Cross-machine references in the data? | [CONFIRMED] None. The `cfg.Application` row `PULSE_STATUS` (display name "System Pulse") has `LinksHubInstanceCode` = `DEMOPT`; `cfg.GetLinksPageItemPlan` shows an application with a hub code only on the page of that hub instance and only for the hub itself. 17 `cfg.LinksProfileApplication` rows mention the application (profiles such as `ADMIN_BR`, `COMM_ES`), but that filter keeps the card off every other page. |
 
 **The four hubs** (counts of enabled instances; checked = same server and same country):
 
@@ -103,7 +103,7 @@ Not carried (already excluded by the plan): `ops_PulseCheckState`, `ops_PulseRun
 1. [PROPOSED] Close the Pulse item of the conversion plan 2.4 as "no" (the owner accepted the scope in section 9): a machine's Pulse does not need the hub or the instances of other machines. The catalog cut for `cfg_PulseProfile` stays as it is.
 2. [PROPOSED] Port `PULSE_STATUS` with the three replacements of section 6 and keep the same checks, thresholds and page.
 3. [PROPOSED] On a machine without a Pulse profile, the engine reports "not applicable" and does not fail, so `FULL_DEPLOYMENT` can run on PRESALES and TENDERS.
-4. [PROPOSED] Treat the Pulse card on other machines' links pages as part of the links-page design (task 1c): the card needs the hub's public URL, not the Pulse engine.
+4. [PROPOSED] The Pulse card on the links page belongs to the links-page design (task 1c): it is shown only on the DEMOPT page, so no data of another machine is needed for it.
 
 ## 9. Decisions
 
