@@ -480,7 +480,10 @@ finally{
     }
 
     $critical=@('POWERSHELL_ARTIFACT','PODE_ARTIFACT','SQLITE_ARTIFACT','POWERSHELL_PORTABLE','SQLITE_ARTIFACT_SHA3','PODE_PORTABLE_IMPORT','PODE_LOOPBACK_POSITIVE','PODE_LISTENER_LOOPBACK_ONLY','PODE_NON_LOOPBACK_NEGATIVE','SQLITE_PORTABLE','CLEANUP_PORT','CLEANUP_SHELL_PROCESSES','CLEANUP_TEMP_ROOT')
-    if($IisPresent){$critical+=@('IIS_WEBADMIN_COMPAT','IIS_MUTABLE_COMMAND_SURFACE_COMPAT','IIS_PROVIDER','IIS_MICROSOFT_WEB_ADMINISTRATION')}
+    # Gates per ADR-0006: the Windows PowerShell 5.1 control must pass (otherwise the machine is the problem) and
+    # Microsoft.Web.Administration must work under PowerShell 7. The WebAdministration cmdlets and the IIS:\ provider
+    # under PowerShell 7 (0x8007000D) are a known, documented limitation: they are still recorded as FAIL but do not gate.
+    if($IisPresent){$critical+=@('IIS_BASELINE_WINPS51','IIS_MICROSOFT_WEB_ADMINISTRATION')}
     $fail=@($Results|Where-Object{$critical -contains $_.Id -and $_.Status -eq 'FAIL'})
     $overall='PASS'
     if($fail.Count -gt 0 -or $Fatal){$overall='FAIL'}elseif(-not $IisPresent){$overall='INCOMPLETE_IIS'}elseif(@($Results|Where-Object{$_.Id -eq 'PODE_NON_LOOPBACK_NEGATIVE' -and $_.Status -eq 'SKIP'}).Count -gt 0){$overall='INCOMPLETE_NETWORK'}
