@@ -16,7 +16,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft design; [PENDING] open decisi
 
 | Artefact | Lives where | Written by | Read by | Contains |
 |---|---|---|---|---|
-| Vault | outside Git and outside the portable, on the tool operator's machine | credential tool | credential tool | all credentials, encrypted [PENDING format] |
+| Vault | outside Git and outside the portable, on the tool operator's machine | credential tool | credential tool | all credentials, encrypted with a key derived from the owner's passphrase (Q9) |
 | Issuer key pair | tool operator's machine; private key never leaves it | credential tool | credential tool (private); portable and tool (public) | signing identity |
 | Machine key pair | target machine, outside the portable folder; private key non-exportable (Phase 1B, CNG or machine-scope DPAPI [PENDING]) | portable application, first run | portable application | machine identity |
 | Machine identity text | exported by the application, carried by the operator | portable application | credential tool | public key, fingerprint, ServerCode, machine name (informational) |
@@ -42,7 +42,7 @@ Contract: 0.1-proposed
 ServerCode: EXAMPLE_SERVER
 MachineName: EXAMPLE-HOST
 KeyFingerprint: <sha256 of the machine public key, 64 lowercase hex>
-KeyAlgorithm: <PENDING identifier>
+KeyAlgorithm: ECDH-P256 [PROPOSED identifier]
 PublicKey: <base64>
 CreatedAt: 2026-01-01T00:00:00Z
 -----END SISQUAL MACHINE IDENTITY-----
@@ -69,23 +69,23 @@ The decoded body is JSON (UTF-8 limited to ASCII; non-ASCII is escaped). Unknown
 | `sequence` | integer >= 1 | Strictly increasing per target machine; used for replay protection |
 | `issuedAt` | UTC time `YYYY-MM-DDTHH:MM:SSZ` | Not in the future beyond the allowed skew |
 | `notBefore` | UTC time, optional | Package unusable before this time |
-| `expiresAt` | UTC time | After this time the package is unusable; maximum lifetime [PENDING] |
+| `expiresAt` | UTC time | After this time the package is unusable; maximum lifetime 1 year (Q7) |
 | `issuer.keyId` | 64 lowercase hex | SHA-256 fingerprint of the issuer public key |
 | `target.serverCode` | string `^[A-Za-z0-9_-]{1,60}$` | Must equal the ServerCode of the catalog in use |
 | `target.keyFingerprint` | 64 lowercase hex | Must equal the fingerprint of the local machine key |
 | `target.machineName` | string, optional | Informational, never used to authorise |
-| `encryption.keyWrap` | string | [PENDING] algorithm identifier for wrapping each content key to the machine public key |
-| `encryption.content` | string | [PENDING] algorithm identifier for the authenticated encryption of each secret |
+| `encryption.keyWrap` | string | `ECDH-ES-P256-HKDF-SHA256` [PROPOSED identifier]: the content key of each entry is derived from an ephemeral-static ECDH (P-256) with HKDF-SHA256 against the machine public key |
+| `encryption.content` | string | `AES-256-GCM` [PROPOSED identifier] for the authenticated encryption of each secret |
 | `entries[]` | array, 1..500 | One per credential |
 | `entries[].credentialRef` | string `^[A-Z0-9_.:-]{1,120}$` | Stable reference used by engines; not secret |
-| `entries[].kind` | enum | `SQL_LOGIN`, `WINDOWS_ACCOUNT`, `KEYCLOAK_CLIENT_SECRET`, `OTHER` [PENDING list from the credential inventory] |
+| `entries[].kind` | enum | `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, `RULE_SECRET` (Q6) |
 | `entries[].instanceCode` | string, optional | Instance the credential belongs to |
 | `entries[].wrappedKey` | base64 | Content key wrapped for the machine key |
 | `entries[].nonce` | base64 | Per-entry nonce |
 | `entries[].ciphertext` | base64 | Authenticated ciphertext of the secret |
 | `entries[].aad` | string | Associated data bound to the entry: `packageId`, `target.serverCode`, `target.keyFingerprint`, `credentialRef`, `sequence` in a fixed order [PENDING exact layout] |
-| `signature.algorithm` | string | [PENDING] algorithm identifier |
-| `signature.value` | base64 | Signature by the issuer key over the canonical body without `signature` [PENDING canonical form] |
+| `signature.algorithm` | string | `ECDSA-P256-SHA256` [PROPOSED identifier] |
+| `signature.value` | base64 | Signature by the issuer key over the canonical body without `signature` canonical form as in the package manifest (RFC 8785 subset, Q2) |
 
 Metadata (refs, kinds, instance codes) is not secret and is visible; only the secret values are ciphertext. Binding the entry's associated data to the target and `credentialRef` prevents moving an entry to another machine or credential.
 
@@ -103,7 +103,7 @@ Metadata (refs, kinds, instance codes) is not secret and is visible; only the se
 3. Signature valid, made by a trusted issuer key (trust bootstrap: Q1).
 4. `target.serverCode` equals the catalog ServerCode.
 5. `target.keyFingerprint` equals the local machine key fingerprint (wrong machine or regenerated key fails here).
-6. Time window: `notBefore` <= now <= `expiresAt`, with `issuedAt` not in the future beyond a tolerated skew [PENDING value]. The check needs a trustworthy clock (R-037).
+6. Time window: `notBefore` <= now <= `expiresAt`, with `issuedAt` not in the future beyond a tolerated skew of 15 minutes (Q7). The check needs a trustworthy clock (R-037).
 7. `sequence` greater than the last accepted sequence for this machine (replay protection; storage: Q4).
 8. Every `entries[].credentialRef` unique.
 
@@ -128,13 +128,17 @@ Decryption happens per entry at use time, in memory, and failure of one entry do
 
 [PROPOSED] reason codes: `FORMAT`, `VERSION`, `SIGNATURE`, `TARGET_SERVER`, `TARGET_KEY`, `TIME_WINDOW`, `REPLAY`, `DUPLICATE_REF`.
 
-## 8. Open questions (all [PENDING], need owner approval)
+## 8. Owner answers (2026-10-05)
 
-- **Q1 Trust bootstrap.** How does the application learn which issuer public key to trust? Options: pinned in the signed portable and confirmed once by the operator by comparing a fingerprint out of band; or pinned on the machine at first import in a file outside the portable. A key shipped only inside a replaceable folder protects nothing against someone who can replace the folder.
-- **Q2 Algorithms and canonical form.** Key wrap, authenticated encryption, signature, hash for fingerprints, canonicalisation of the signed body. To be proposed in the machine-key ADR (Phase 1B).
-- **Q3 Import destination.** The owner's decision says the package is imported as text; ADR-0007 item 4 and the conversion plan speak of the tool issuing a `credentials.db`. Is `credentials.db` the same envelope rows written by an import step, or a file the tool produces and the operator copies? ADR-0007 also says the application writes no database, so a text import that writes a file needs an explicit exception or an import step in a tool.
-- **Q4 Replay state.** `sequence` needs persistent storage outside the portable folder. This conflicts with "application writes no database" unless the import step owns it.
-- **Q5 Key loss and rotation.** A recreated machine key changes the fingerprint and invalidates the package; the reissue procedure and the rotation of issuer keys must be defined.
-- **Q6 Credential inventory.** The list of credential kinds depends on the conversion plan (sec.ManagedCredential and equivalents).
-- **Q7 Lifetime and skew.** Maximum package lifetime and tolerated clock skew.
-- **Q8 One package per machine or per instance.** This draft uses one package per machine with many entries.
+Each answer is traceable to the owner's reply of 2026-10-05 ("Q1. A", "Q2. A", and so on, to the questions listed in the conversation). Tags: [DECIDED] answered by the owner; [PROPOSED] detail that follows from the answer and still needs the implementation to prove it; [PENDING] not answered.
+
+- **Q1 Trust bootstrap [DECIDED, option A].** The issuer public key is pinned on the machine, outside the portable folder, at the first import, after the operator confirms the issuer key fingerprint shown by the credential tool against the one shown by the application (out of band). A key shipped only inside the replaceable portable folder is not trusted.
+- **Q2 Algorithms [DECIDED, option A].** Signature: ECDSA P-256 with SHA-256. Credential entries: a content key derived by ephemeral-static ECDH (P-256) against the machine key, then AES-256-GCM. Fingerprints: SHA-256. All of it is in .NET, no new dependency. [PROPOSED] the key derivation step uses HKDF-SHA256 and the algorithm identifiers in section 4; the exact associated-data layout is fixed by the implementation and covered by the negative tests. The canonical form of the signed bytes is the RFC 8785 subset implemented by `tools/Seal-Package.ps1` (the owner answered "A" to Q2, which asked to approve it; if that was not meant, say so).
+- **Q3 Import destination [PENDING].** Explained to the owner on 2026-10-05; options and a recommendation are in the conversation and in the handoff note.
+- **Q4 Replay protection [DECIDED, option A].** The sequence number of the package already installed on the machine is the reference: a new package is accepted only with a greater sequence. No extra state is stored.
+- **Q5 Key loss and rotation [DECIDED, option A].** Everything is manual: a new machine identity, a new package, and the issuer public key is pinned again on each machine (six machines).
+- **Q6 Credential kinds [DECIDED, option A].** Four kinds: `IIS_IDENTITY` (76), `WEB_ACCESS` (76), `MOBILE_APP_TOKEN` (39) and `RULE_SECRET` (the 16 literal secrets found in `cfg.ConfigRule`). [PENDING] The same question asked whether the 16 exposed secrets are rotated after the cutover (yes, no or later); it was not answered.
+- **Q7 Lifetime and clock [DECIDED, option A].** Maximum package lifetime 1 year; tolerated clock skew 15 minutes.
+- **Q8 Granularity [DECIDED, option A].** One package per machine, with the credentials of that machine's instances (and the `RULE_SECRET` entries its engines need).
+- **Q9 Vault protection [DECIDED, option A].** One encrypted file outside Git, protected by the owner's passphrase through PBKDF2-HMAC-SHA256 [PROPOSED: the iteration count is fixed at implementation, at least the current OWASP guidance], two encrypted backups kept in two places, restore tested. No binding to a Windows account.
+- **Q10 Names and places [DECIDED, option A, read as "they fit"].** The manifest is `package-manifest.json` at the package root; the seal log is `<package folder>.seal.log` next to the folder, outside the package. (The question offered Sim/Non; the owner answered "A". Read as yes.)
