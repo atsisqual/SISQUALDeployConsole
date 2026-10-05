@@ -1,0 +1,22 @@
+# Repository policy: text files are LF in the working tree on every platform.
+# Without this, actions/checkout on Windows runners may check out CRLF
+# (core.autocrlf=true) and the ASCII/LF check in CI fails on every text file.
+* text=auto eol=lf
+
+*.ps1 text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cmd text eol=lf
+*.txt text eol=lf
+
+*.db binary
+*.sqlite binary
+*.dll binary
+*.exe binary
+*.zip binary
+*.png binary
+*.ico binary
