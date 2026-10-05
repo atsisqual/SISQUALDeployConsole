@@ -1,7 +1,7 @@
 # Catalog conversion plan (task 4, step A)
 
-**Status:** [PROPOSED] plan only. No code. Nothing here is approved; step B (implementation) starts only after the owner approves this plan.
-**Update 2026-10-05 (owner answers, [CONFIRMED]):** (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
+**Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
+**Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
 Tags: [CONFIRMED] read from the source or decided by the owner; [PROPOSED] design proposal; [PENDING] open decision; [V] only verifiable on a real server.
@@ -250,7 +250,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 
 - [CONFIRMED] PRESALES and TENDERS exist in `dbo.ManagedServer` and have instances (8 and 6), but have NO rows in the four server policy tables (`cfg.IisServerPolicy`, `cfg.WebAccessPolicy`, `cfg.LinksPagePolicy`, `cfg.DatabaseCopyPolicy`), which exist only for BR_DEMO, ES_DEMO, PT_DEMO and SANDBOX_HUB.
 - [CONFIRMED] Owner answer of 2026-10-05: there is no template server. Machines without policy rows, and the pilot, are cut exactly as they are in the source: empty policy tables, nothing copied from another server. The owner's reason is that the engines already create these settings.
-- [CONFIRMED, from the source] This is NOT what the reference system does today: `cfg.GetIisDeploymentPlan` stops with error 50010 when the machine is not an enabled `ManagedServer` and with error 50011 ("No enabled IIS server policy exists for the resolved ManagedServer") when the server has no row in `cfg.IisServerPolicy`. No stored procedure and none of the 19 engine scripts inserts rows into the four policy tables; the only rows are the data rows of the sync file. So the defaults would have to come from the new engines. [PENDING] the owner confirms that the ported engines carry built-in defaults (and which), or that the first run on a machine without policy rows reports "policy missing" and stops. The converter and tests make no assumption: an empty policy table is valid and is reported as a finding, never filled.
+- [CONFIRMED, from the source] This is NOT what the reference system does today: `cfg.GetIisDeploymentPlan` stops with error 50010 when the machine is not an enabled `ManagedServer` and with error 50011 ("No enabled IIS server policy exists for the resolved ManagedServer") when the server has no row in `cfg.IisServerPolicy`. No stored procedure and none of the 19 engine scripts inserts rows into the four policy tables; the only rows are the data rows of the sync file. So the defaults would have to come from the new engines. [CONFIRMED] Owner answer of 2026-10-05: the ported engines have NO built-in defaults; on a machine without a policy row they stop and report "policy missing" (like the reference procedures do with errors 50010 and 50011). The converter and tests make no assumption: an empty policy table is valid and is reported as a finding, never filled.
 - [PROPOSED] The pilot server has no row in `dbo.ManagedServer`, so it cannot be cut. The converter gets a new-machine mode: all global tables, one `dbo_ManagedServer` row built from parameters (`ServerCode`, `MachineName`, roots), no instances and no policy rows. Because the pilot comes first, this mode is built before the cut mode (step B order).
 - [PENDING] Machines without a local database: not decided; nothing is assumed.
 
@@ -320,7 +320,7 @@ A scan of the carried tables found literal secret values in a global rule table,
 All tools live under `tools/`, are run on demand by a person, and are not part of the portable application. [CONFIRMED] Owner answer of 2026-10-05: they run on PowerShell 7 with a SQL client shipped with them. [PROPOSED] consequences:
 
 - The SQL client is a new vendored runtime dependency, so under AGENTS.md it needs explicit owner approval: package (for example `Microsoft.Data.SqlClient`, the maintained client for PowerShell 7), exact version, SHA-256 and licence, added to `vendor/manifest.json` and verified before use. The sandbox of this session could not reach NuGet, so the hash must be taken from the official package on a Windows runner [PENDING]. The tools use PowerShell 7 from the pinned `vendor/` ZIP (7.6.6), not a machine installation.
-- The CI parser step of PR #10 parses every `.ps1` with the Windows PowerShell 5.1 parser. A tool that uses PowerShell 7 only syntax (`??`, `?:`, `&&`, `||`) would fail it. [PENDING] either the tools keep to syntax both parsers accept, or CI adds a PowerShell 7 parse step for `tools/` and keeps the 5.1 step for engines.
+- [CONFIRMED] Owner answer of 2026-10-05: everything in the latest PowerShell. The CI parser step of PR #10 parses every `.ps1` with the Windows PowerShell 5.1 parser, which rejects PowerShell 7 syntax. [PROPOSED] CI parses `tools/` with the PowerShell 7 parser (`pwsh`) and keeps the 5.1 parser only for files that must run in 5.1 (the engines, because ADR-0006 keeps a 5.1 fallback). [PENDING] the owner confirms whether the engines also move fully to PowerShell 7.
 - Integrated authentication to SQL Server works with the client from PowerShell 7; encryption and certificate trust settings of the connection are decided with the live server [V].
 
 All output is ASCII with LF except where a tool copies bytes it must not change (5.4).
@@ -402,13 +402,13 @@ Only on the real servers [V]:
 | C-06 | Case and collation differences between SQL Server and SQLite break joins silently | read the collation, `COLLATE NOCASE` on code columns, tests with mixed-case codes |
 | C-07 | Source times have no zone | keep as text, document, never assume UTC |
 | C-08 | The sync file has no foreign keys; relations are implicit; hidden orphans (5 found) | derived relationship list, orphan report, live metadata when available |
-| C-09 | PRESALES, TENDERS and the pilot have no policy rows, and the reference plan procedures fail (errors 50010, 50011) without them | no template (owner); empty policy tables are valid and reported; the ported engines must supply defaults or stop with a clear message [PENDING owner] |
+| C-09 | PRESALES, TENDERS and the pilot have no policy rows, and the reference plan procedures fail (errors 50010, 50011) without them | no template and no built-in defaults (owner): empty policy tables are valid and reported; the ported engines stop with a clear "policy missing" result. Consequence: those machines cannot run policy-driven engines until their policy rows are added by hand to the catalog and the package is sealed |
 | C-10 | Template expansion lives in a SQL function (`cfg.ExpandTemplate`) | port with tests before any engine that uses templates |
 | C-11 | Executable SQL text in `ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` | carried as data, never executed (R-019, R-027) |
 | C-12 | A conversion bug lets a secret column or value through | explicit whitelist, exclusion by name, scan, marker tests, review of every PR of step B |
 | C-13 | 11.5 MB of global images duplicated in six catalogs (owner chose BLOB in every catalog) | accept about 80 MB in total; measure real sizes; read BLOBs on demand; verify each against `ContentSha256` |
-| C-16 | The SQL client is a new vendored dependency of the tools and is not yet pinned | owner approval, pin version and SHA-256 in `vendor/manifest.json`, verify before use |
-| C-17 | PowerShell 7 syntax in `tools/` breaks the 5.1 parser step of CI | keep syntax compatible or add a PowerShell 7 parse step for `tools/` |
+| C-16 | The SQL client (`Microsoft.Data.SqlClient`, approved by the owner) is not yet pinned | pin version and SHA-256 in `vendor/manifest.json`, verify before use (step B2) |
+| C-17 | PowerShell 7 syntax in `tools/` breaks the 5.1 parser step of CI | CI parses `tools/` with the PowerShell 7 parser; the 5.1 parser stays for the engines [PENDING owner on engines] |
 | C-14 | The old database changes between the snapshot (2026-10-05 02:00) and the conversion | convert from the live database, record read time, compare counts with the snapshot |
 | C-15 | Reading credentials through the old procedure may write audit rows or fail on permissions | verify on the live server before the import [V] |
 
@@ -416,12 +416,12 @@ Only on the real servers [V]:
 
 1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
 2. [DECIDED 2026-10-05] Binary content: BLOB in every catalog (global assets duplicated; per-instance logos in their machine catalog).
-3. [DECIDED 2026-10-05] No template server for policy rows. Still to confirm: where the defaults come from when a machine has no policy rows (built into the ported engines, or stop with a message), because the reference procedures fail in that case (2.6).
+3. [DECIDED 2026-10-05] No template server for policy rows and no built-in defaults: engines stop when the policy row is missing (2.6). Open consequence for the owner: how policy rows for the pilot and for PRESALES and TENDERS are authored (manual edit and seal, ADR-0007 item 7).
 4. Whether a catalog needs a directory of instances of other machines (cross-machine operations), and what a machine's Pulse needs of other hubs.
 5. `COLLATE NOCASE` on code columns, after the collation of the live database is read.
 6. Whether the four pure-read views are recreated.
 7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.
-8. [DECIDED 2026-10-05] Tool runtime: PowerShell 7 with a SQL client shipped with the tools. Still to approve: which SQL client package and version, its SHA-256 and licence, and how CI parses `tools/` (see section 5).
+8. [DECIDED 2026-10-05] Tool runtime: PowerShell 7 with `Microsoft.Data.SqlClient` shipped with the tools; everything, including CI parsing of the tools, in the latest PowerShell (7). Still to do: pin the exact package version and SHA-256 and check the licence (step B2).
 9. Vault format, protection (passphrase and Windows identity) and where the two backups are kept.
 10. The credential contract questions Q1 to Q8, especially Q3 (text package or `credentials.db`) and Q6 (kinds, including `RULE_SECRET`).
 11. Whether the seal tool and the credential tool are the same program.
