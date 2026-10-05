@@ -377,7 +377,7 @@ function Invoke-CatalogConversionTest {
         $okHash = $exists -and ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -eq [string]$entry.sha256) -and ((Get-Item -LiteralPath $path).Length -eq [long]$entry.bytes)
         Add-Check 'manifest' ('{0}: SHA-256 and size equal the manifest' -f $entry.serverCode) $okHash
         if ($exists) {
-            $meta = (Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $path, 'SELECT server_code || "|" || schema_version || "|" || cut_rule_version FROM catalog_meta;')).Trim()
+            $meta = (Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $path, 'SELECT server_code || ''|'' || schema_version || ''|'' || cut_rule_version FROM catalog_meta;')).Trim()
             Add-Check 'manifest' ('{0}: catalog_meta agrees with the manifest' -f $entry.serverCode) ($meta -eq ('{0}|{1}|{2}' -f $entry.serverCode, $entry.schemaVersion, $entry.cutRuleVersion)) $meta
         }
     }
