@@ -25,6 +25,14 @@ if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) { $ArtifactRoot = Join-Path $Sc
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Last-resort diagnostics for terminating errors raised outside the try/catch below (for example in finally).
+trap {
+    Write-Host ('UNHANDLED_ERROR: ' + $_.Exception.GetType().FullName + ': ' + $_.Exception.Message)
+    if ($null -ne $_.InvocationInfo) { Write-Host ([string]$_.InvocationInfo.PositionMessage) }
+    Write-Host ([string]$_.ScriptStackTrace)
+    break
+}
+
 $Pinned = [ordered]@{
     PowerShell = [ordered]@{
         Version = '7.6.6'
@@ -88,10 +96,17 @@ function Add-Result {
 
 function Err([System.Management.Automation.ErrorRecord]$E) {
     if ($null -eq $E) { return $null }
+    $s = [string]$E
     if ($null -ne $E.Exception) {
-        return ($E.Exception.GetType().FullName + ': ' + $E.Exception.Message)
+        $s = ($E.Exception.GetType().FullName + ': ' + $E.Exception.Message)
     }
-    return [string]$E
+    if ($null -ne $E.InvocationInfo -and $E.InvocationInfo.PositionMessage) {
+        $s += ' | AT ' + ($E.InvocationInfo.PositionMessage -replace '\s+',' ')
+    }
+    if ($E.ScriptStackTrace) {
+        $s += ' | STACK ' + ($E.ScriptStackTrace -replace '\s+',' ')
+    }
+    return $s
 }
 
 function Is-Admin {
@@ -432,6 +447,9 @@ finally{
     $overall='PASS'
     if($fail.Count -gt 0 -or $Fatal){$overall='FAIL'}elseif(-not $IisPresent){$overall='INCOMPLETE_IIS'}elseif(@($Results|Where-Object{$_.Id -eq 'PODE_NON_LOOPBACK_NEGATIVE' -and $_.Status -eq 'SKIP'}).Count -gt 0){$overall='INCOMPLETE_NETWORK'}
 
+    foreach($c in $Results){Write-Host ('CHECK {0,-5} {1,-36} {2}' -f $c.Status,$c.Id,$c.Message)}
+    if($Fatal){Write-Host ('FATAL: '+$Fatal)}
+
     $hint='At least one architecture gate failed. Reopen ADR-0001 before continuing.'
     if($overall -eq 'PASS'){$hint='ADR-0001 Phase 1A runtime gate passed on this machine.'}
     elseif($overall -eq 'INCOMPLETE_IIS'){$hint='Repeat the same script on the IIS sandbox before closing Phase 1A.'}
@@ -458,7 +476,14 @@ finally{
     }
     $dir=Split-Path -Parent $ReportPath
     if($dir -and -not(Test-Path $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
-    $json=$report|ConvertTo-Json -Depth 20
+    $json=$null
+    try{ $json=$report|ConvertTo-Json -Depth 20 }
+    catch{
+        $serr=Err $_
+        Write-Host ('REPORT_SERIALIZATION_FAILED: '+$serr)
+        $simple=[pscustomobject][ordered]@{Phase='1A';RunId=$RunId;Machine=$env:COMPUTERNAME;Overall=$overall;FatalError=$Fatal;DecisionHint=$hint;SerializationError=$serr;Checks=@($Results|ForEach-Object{[pscustomobject][ordered]@{Id=$_.Id;Status=$_.Status;Message=$_.Message;Error=$_.Error}})}
+        $json=$simple|ConvertTo-Json -Depth 6
+    }
     $json|Set-Content -LiteralPath $ReportPath -Encoding UTF8
     Write-Host ''
     Write-Host '========== SISQUALDeployConsole PHASE 1A REPORT =========='
