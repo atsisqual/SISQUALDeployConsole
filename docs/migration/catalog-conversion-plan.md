@@ -448,7 +448,7 @@ Not decided and not assumed anywhere in this plan: the long-term authority of th
 [CONFIRMED] CI run 37323153083: 37 checks passed, including the cut on SQL Server (LocalDB) equal to the cut from the file, value by value.
 
 Findings in the real data:
-- [PENDING owner] 5 `cfg.LinksProfileInstance` rows link the hub profiles `SANDBOX_BR_HUB`, `SANDBOX_EN_HUB`, `SANDBOX_ES_HUB`, `SANDBOX_MX_HUB` and `SANDBOX_PT_HUB` to codes `SANDBOXBR`, `SANDBOXEN`, `SANDBOXES`, `SANDBOXMX` and `SANDBOXPT`, which are not instances (modified 2026-09-11). They belong to no machine and are not carried. Are they obsolete?
+- [DECIDED 2026-10-05, owner: "Sao obsoletas"] 5 `cfg.LinksProfileInstance` rows link the hub profiles `SANDBOX_BR_HUB`, `SANDBOX_EN_HUB`, `SANDBOX_ES_HUB`, `SANDBOX_MX_HUB` and `SANDBOX_PT_HUB` to codes `SANDBOXBR`, `SANDBOXEN`, `SANDBOXES`, `SANDBOXMX` and `SANDBOXPT`, which are not instances (modified 2026-09-11). The owner confirmed they are obsolete. They belong to no machine, are not carried and are only counted and reported by the tools.
 - [CONFIRMED] PRESALES and TENDERS carry empty policy tables, as decided in 2.6; each catalog records a finding.
 - [CONFIRMED] `cfg.Application.LinksHubInstanceCode` refers to `DEMOPT` (on PT_DEMO); the other five catalogs carry the value and a finding.
 - [V] The live database may differ from the 2026-10-05 snapshot.
@@ -461,4 +461,4 @@ Defects found by the tamper tests in the tool itself (fixed): putting the origin
 
 Lesson, recorded for every future SQL in these tools [CONFIRMED by CI]: the Linux `sqlite3` accepts a double-quoted word that is not a column as a string (a legacy fallback); the pinned Windows `sqlite3` 3.53.4 does not ("no such column"). A separator written as `"|"` passed every Linux run and failed on Windows. Text values in SQL use single quotes only; double quotes are for identifiers. `tests/Unit/Test-SqlStrictness.ps1` now enforces the most common form of the mistake.
 
-The 5 hub links of section 9 are still [PENDING owner]. The data supports "obsolete" (the sandbox instances are now `SANDBOX1` to `SANDBOX5` and `SANDBOXMAIN`), but no confirmation by the owner was found, so it is not recorded as a decision.
+The 5 hub links of section 9 are [DECIDED 2026-10-05]: the owner confirmed in the conversation that they are obsolete (the data agrees: the sandbox instances are now `SANDBOX1` to `SANDBOX5` and `SANDBOXMAIN`). They stay unplaced and are not carried.
