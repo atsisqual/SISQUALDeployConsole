@@ -1,6 +1,7 @@
 # Catalog conversion plan (task 4, step A)
 
 **Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
+**Owner answers of 2026-10-05, second round ([CONFIRMED]): the SQL client is pinned with a Windows-runner workflow (spike PR, see section 5); `dbo.ManagedServer.ManagementDatabaseName` is dropped; collation is `Latin1_General_CI_AS` in every database.**
 **Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16); B3 to B6 not started.**
 **Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
@@ -55,7 +56,7 @@ Important limits of this source [CONFIRMED]:
 
 Warning on time values [CONFIRMED]: the sampled values come from `SYSDATETIME()` (the server's local time, for example `2026-10-03 01:18:15.8109469`), so they carry no time zone and are not UTC. Converting them as UTC would be wrong. [PROPOSED] keep them as text without a zone and say so in the catalog documentation. This corrects the draft text of `contracts/catalog-schema.md` (section 3), which said UTC; the correction is made in PR #13.
 
-Collation [PENDING]: SQL Server comparisons depend on the database collation (usually case-insensitive). SQLite compares text case-sensitively by default. The conversion tool must read the collation (`DATABASEPROPERTYEX`) and the plan is to declare key columns (`ServerCode`, `InstanceCode`, `ApplicationCode` and other code columns used in joins) `COLLATE NOCASE`. `NOCASE` only folds ASCII; accented codes would differ. The collation of the live database is not in the file and must be read [V].
+Collation [CONFIRMED, owner 2026-10-05]: every database uses `Latin1_General_CI_AS` (case-insensitive, accent-sensitive). SQLite compares text case-sensitively by default, so every text column whose name ends in `Code` is declared `COLLATE NOCASE` (the tool switch `-NoCodeCollation` turns it off). `NOCASE` folds ASCII letters only, while the SQL Server collation folds all of Latin1; they agree as long as the code values are ASCII. [CONFIRMED] in the 2026-10-05 snapshot all 10,165 code values checked (62 carried tables and the history tables) are ASCII. The converter reports, as a finding with counts only, any non-ASCII value in a `NOCASE` column. Other text columns (names, descriptions, paths) are NOT case-insensitive in SQLite: the engine ports must not rely on SQL Server's case-insensitive comparison for them. [V] the live collation is still read by the tool from the live database and compared with the value stated by the owner.
 
 ### 1.2 Constraints
 
@@ -269,7 +270,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 ### 3.2 Columns and views
 
 - `dbo.ManagedInstance.IisIdentityPassword`, `WebAccessPassword` and `MobileAppToken` are not carried. [CONFIRMED] they are NULL in all 76 rows of the sync file (the sync already empties them), but the live table may differ, so the tool excludes them by name and not by value.
-- `rowversion` columns (7 in carried tables) and `ops.Engine.ScriptText` / `ScriptSha256`.
+- `rowversion` columns (7 in carried tables), `ops.Engine.ScriptText` / `ScriptSha256`, and `dbo.ManagedServer.ManagementDatabaseName` ([DECIDED 2026-10-05]: it names the old central database, which ceases to exist).
 - View `cfg.ManagedInstanceRuntime` (decrypts `MobileAppToken`, `IisIdentityPassword`, `WebAccessPassword` through the certificate; referenced 25 times in the file). [PROPOSED] replaced by a plain view `cfg_ManagedInstanceCatalog` over `dbo_ManagedInstance` without the three secret columns. Every code path that read secrets through the old view or through `app.GetManagedCredentialRuntime` must ask the credential package instead (engine ports).
 
 ### 3.3 Secrets found INSIDE carried tables [CONFIRMED]
@@ -317,6 +318,8 @@ A scan of the carried tables found literal secret values in a global rule table,
 [PROPOSED] When a machine has run the portable once and its machine identity text (public key and fingerprint, `contracts/credential-package.md` 3a) has been carried to the credential tool, the tool selects from the vault the entries of the instances in that machine's catalog plus the `RULE_SECRET` entries its engines need, encrypts them for that machine key, signs the package with the tool key and issues it with `sequence` greater than the previous one. Whether the result is a text package imported by the operator or a `credentials.db` file is the open question Q3 of the credential contract and is not decided here. The same issuer key signs the package manifest (ADR-0007 item 3).
 
 ## 5. Tools
+
+Where SQL Server appears in this plan [CONFIRMED, answer to an owner question of 2026-10-05]: ONLY as the source of the one-off conversion (reading `_sisqualMANAGEMENT`, read-only) and of the one-time credential import. The catalogs, the application and its tests use SQLite only; nothing in the portable application talks to SQL Server for configuration. The SQL Server code path of the tools is optional: the same conversion also works offline from `ManagementSync.sql`, which is what the tests and CI use. The credential import is the exception, because the ciphertext can only be read through the live database (4.2).
 
 All tools live under `tools/`, are run on demand by a person, and are not part of the portable application. [CONFIRMED] Owner answer of 2026-10-05: they run on PowerShell 7 with a SQL client shipped with them. [PROPOSED] consequences:
 
@@ -419,7 +422,7 @@ Only on the real servers [V]:
 2. [DECIDED 2026-10-05] Binary content: BLOB in every catalog (global assets duplicated; per-instance logos in their machine catalog).
 3. [DECIDED 2026-10-05] No template server for policy rows and no built-in defaults: engines stop when the policy row is missing (2.6). Open consequence for the owner: how policy rows for the pilot and for PRESALES and TENDERS are authored (manual edit and seal, ADR-0007 item 7).
 4. Whether a catalog needs a directory of instances of other machines (cross-machine operations), and what a machine's Pulse needs of other hubs.
-5. `COLLATE NOCASE` on code columns, after the collation of the live database is read.
+5. [DECIDED 2026-10-05] `COLLATE NOCASE` on code columns; the databases use `Latin1_General_CI_AS`. Still to do [V]: read the live collation and compare.
 6. Whether the four pure-read views are recreated.
 7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.
 8. [DECIDED 2026-10-05] Tool runtime: PowerShell 7 with `Microsoft.Data.SqlClient` shipped with the tools; everything, including CI parsing of the tools, in the latest PowerShell (7). Still to do: pin the exact package version and SHA-256 and check the licence (step B2).
