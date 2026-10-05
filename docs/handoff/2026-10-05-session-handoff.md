@@ -12,7 +12,7 @@ Tags: [CONFIRMED] verified in this session; [PROPOSED] design proposal; [PENDING
 2. Read, in this order: `docs/decisions-log.md`, `docs/architecture/ADR-0001-*.md`, `ADR-0006-*.md`, the ADR-0007 branch (PR #11), `docs/roadmap.md`, and from PR #10: `AGENTS.md`, `CLAUDE.md`.
 3. List open PRs (rule of the project) and the branches. Reuse an existing branch for the same work after any timeout.
 4. Read `docs/migration/catalog-conversion-plan.md` (PR #14) section 8 and section 7 of this file: they hold the open decisions.
-5. Do not start step B of the conversion until the owner approves the plan (PR #14). The owner answered three questions on 2026-10-05 but has not yet said "approved"; ask.
+5. The owner APPROVED the plan (PR #14) on 2026-10-05 and answered: no template server and no built-in defaults (engines stop when a policy row is missing); `Microsoft.Data.SqlClient` for the SQL client; everything on the latest PowerShell (7), including CI parsing of `tools/`. Step B is in progress: see section 12.
 
 ## 2. Project in one paragraph
 
@@ -49,7 +49,9 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 | #12 | `phase1/iis-reconcile-mwa-equivalence` | Task 2: `docs/phase1/iis-reconcile-mwa-equivalence.md` | open, complete (draft for review) |
 | #13 | `phase2/contracts-draft` | Task 3: `contracts/` (README, `package-manifest.schema.json`, `catalog-schema.md`, `engine-result.schema.json`, `credential-package.md`, `api/openapi.yaml`) | open, complete (draft, all PROPOSED) |
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
-| (this) | `docs/handoff-2026-10-05` | this file | open |
+| #15 | `docs/handoff-2026-10-05` | this file | open |
+| #16 | `tools/export-management-engines` | Step B1: `tools/Export-ManagementEngines.ps1`, unit tests, `tools-tests.yml` workflow, `tools/README.md` | open; CI green on windows-2022 |
+| #17 | `tools/convert-management-db` | Step B2: `tools/Convert-ManagementDb.ps1` (new-machine mode), unit tests, pinned `sqlite3` download in CI | open, STACKED on #16 (base branch is #16's); CI green. Merge #16 first |
 
 No PR of this session has CI yet except #10, because `ci.yml` lives only on #10's branch until it is merged. After #10 merges, re-run or rebase the others to get CI.
 
@@ -122,3 +124,31 @@ Sandbox: a Linux container; `/home/claude` is lost between sessions; the shell i
 3. After ADR-0007 and the conversion plan are approved: audit `AGENTS.md`, `README.md`, `CLAUDE.md`, `SECURITY.md` against ADR-0007 and fix them in a small PR.
 4. Step B in the order of the plan (5.5): B1 engine export, B2 converter in new-machine mode, B3 cut mode, B4 test tool, B5 seal tool, B6 vault import and credential issue.
 5. Answer the credential contract questions (Phase 1B machine-key ADR) before B6.
+
+## 12. Step B progress (added later the same day)
+
+State: B1 (PR #16) and B2 (PR #17) are done and green in CI. B3 to B6 are not started.
+
+What exists:
+- `tools/Export-ManagementEngines.ps1`: exports the 19 engines of `ops.Engine` to files plus `engines-export-manifest.json`. [CONFIRMED] on the real sync file: 19 engines, 0 hash mismatches (stored hash = SHA-256 of the UTF-16LE text), 0 secret-pattern hits, about 6 s.
+- `tools/Convert-ManagementDb.ps1`: new-machine mode only. [CONFIRMED] on the real sync file: a catalog for a new machine in about 27 s, 6.85 MB, 63 STRICT tables, 16 rule templates redacted, none of the original secret values anywhere in the file, 45 of 45 image BLOBs match their stored SHA-256, read-only open refuses writes.
+- Tests in `tests/Unit/` (21 and 41 checks), plain PowerShell, no Pester. The converter tests need `SQLITE3_PATH`. Workflow `.github/workflows/tools-tests.yml` parses `tools/` and `tests/` with the PowerShell 7 parser, checks ASCII/LF, downloads the pinned sqlite3 3.53.4 (SHA-256 verified) and runs the tests.
+
+Known gaps:
+- [V] The SQL Server source path (`-SqlInstance`) of both tools is written but untested: no SQL Server was available.
+- [PENDING] `Microsoft.Data.SqlClient` is approved but not pinned (version, SHA-256, licence) in `vendor/manifest.json`; NuGet is not reachable from the sandbox, get the hash on a Windows runner.
+- [PENDING] `ManagementDatabaseName` (NOT NULL, meaningless after the cutover) is written as an empty string for a new machine; decide whether to drop the column.
+- [PENDING] `COLLATE NOCASE` on `*Code` columns is on by default; confirm against the live collation [V].
+- B3 (cut mode for the six existing machines), B4 (`Test-CatalogConversion.ps1`), B5 (seal tool) and B6 (vault import and credential issue) are next, in that order, one PR each. B6 needs the credential contract questions answered first.
+- PR #10 CI (`ci.yml`) has a simple secret scan that flags any `Pwd = '...'` style line of 8 or more characters; keep variable names in tools free of that shape.
+
+Lessons that cost time (do not repeat):
+- In PowerShell an `if` expression (`$x = if (...) { $bytes } else { ... }`) unrolls a `byte[]` into an `object[]`. Assign inside the branches. The STRICT SQLite table caught it; the converter now throws if a binary column does not receive bytes.
+- The safety-net scan must ignore `{{...}}` reference tokens, otherwise it flags the redaction output.
+- The hashes file of a PowerShell release is UTF-16; decode it before comparing.
+
+How to get a test environment in a fresh sandbox (no root needed):
+- PowerShell 7.6.6: download `powershell-7.6.6-linux-x64.tar.gz` and `hashes.sha256` from the PowerShell GitHub release `v7.6.6`, verify the SHA-256 (the hashes file is UTF-16), extract and run `pwsh`.
+- sqlite3 CLI: download `sqlite3_3.45.1-1ubuntu2_amd64.deb` from `http://archive.ubuntu.com/ubuntu/pool/main/s/sqlite3/`, `dpkg -x` it, set `SQLITE3_PATH` to the extracted `usr/bin/sqlite3`. This is 3.45.1, not the pinned 3.53.4; CI uses the pinned one.
+- Run: `pwsh -NoProfile -File tests/Unit/Test-ExportManagementEngines.ps1` and `pwsh -NoProfile -File tests/Unit/Test-ConvertManagementDb.ps1`.
+- To redo the real runs, download `ManagementSync.sql` as described in section 10 and run each tool with the output folder OUTSIDE the repository.
