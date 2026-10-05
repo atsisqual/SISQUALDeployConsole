@@ -423,6 +423,11 @@ finally{
     $overall='PASS'
     if($fail.Count -gt 0 -or $Fatal){$overall='FAIL'}elseif(-not $IisPresent){$overall='INCOMPLETE_IIS'}elseif(@($Results|Where-Object{$_.Id -eq 'PODE_NON_LOOPBACK_NEGATIVE' -and $_.Status -eq 'SKIP'}).Count -gt 0){$overall='INCOMPLETE_NETWORK'}
 
+    $hint='At least one architecture gate failed. Reopen ADR-0001 before continuing.'
+    if($overall -eq 'PASS'){$hint='ADR-0001 Phase 1A runtime gate passed on this machine.'}
+    elseif($overall -eq 'INCOMPLETE_IIS'){$hint='Repeat the same script on the IIS sandbox before closing Phase 1A.'}
+    elseif($overall -eq 'INCOMPLETE_NETWORK'){$hint='Repeat on a machine with a non-loopback IPv4 address before closing Phase 1A.'}
+
     $done=[DateTime]::UtcNow
     $report=[pscustomobject][ordered]@{
         Phase='1A'
@@ -440,7 +445,7 @@ finally{
         PinnedArtifacts=$Pinned
         Checks=@($Results)
         FatalError=$Fatal
-        DecisionHint=$(switch($overall){'PASS'{'ADR-0001 Phase 1A runtime gate passed on this machine.';break};'INCOMPLETE_IIS'{'Repeat the same script on the IIS sandbox before closing Phase 1A.';break};'INCOMPLETE_NETWORK'{'Repeat on a machine with a non-loopback IPv4 address before closing Phase 1A.';break};default{'At least one architecture gate failed. Reopen ADR-0001 before continuing.'}})
+        DecisionHint=$hint
     }
     $dir=Split-Path -Parent $ReportPath
     if($dir -and -not(Test-Path $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
