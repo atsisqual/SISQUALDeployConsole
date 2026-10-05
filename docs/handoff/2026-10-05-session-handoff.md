@@ -51,6 +51,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
 | #15 | `docs/handoff-2026-10-05` | this file | open |
 | #16 | `tools/export-management-engines` | Step B1: `tools/Export-ManagementEngines.ps1`, unit tests, `tools-tests.yml` workflow, `tools/README.md` | open; CI green on windows-2022 |
+| #18 | `spike/sqlclient-pin` | SQL client pin spike: workflow `sqlclient-pin.yml`, script, evidence `docs/phase1/evidence/sqlclient-pin-37314406178/`, `docs/phase1/sqlclient-pin.md` | open; run PASS. Temporary branch `results/sqlclient-pin-37314406178` can be deleted after review |
 | #17 | `tools/convert-management-db` | Step B2: `tools/Convert-ManagementDb.ps1` (new-machine mode), unit tests, pinned `sqlite3` download in CI | open, STACKED on #16 (base branch is #16's); CI green. Merge #16 first |
 
 No PR of this session has CI yet except #10, because `ci.yml` lives only on #10's branch until it is merged. After #10 merges, re-run or rebase the others to get CI.
@@ -152,3 +153,23 @@ How to get a test environment in a fresh sandbox (no root needed):
 - sqlite3 CLI: download `sqlite3_3.45.1-1ubuntu2_amd64.deb` from `http://archive.ubuntu.com/ubuntu/pool/main/s/sqlite3/`, `dpkg -x` it, set `SQLITE3_PATH` to the extracted `usr/bin/sqlite3`. This is 3.45.1, not the pinned 3.53.4; CI uses the pinned one.
 - Run: `pwsh -NoProfile -File tests/Unit/Test-ExportManagementEngines.ps1` and `pwsh -NoProfile -File tests/Unit/Test-ConvertManagementDb.ps1`.
 - To redo the real runs, download `ManagementSync.sql` as described in section 10 and run each tool with the output folder OUTSIDE the repository.
+
+## 13. Second round of owner answers and the SQL client pin (added later the same day)
+
+Owner answers ([CONFIRMED]):
+- Yes to pinning the SQL client with a Windows-runner workflow, and to documenting it (PR #18, `docs/phase1/sqlclient-pin.md`).
+- `dbo.ManagedServer.ManagementDatabaseName` is dropped (done in PR #17, commit 95ea485).
+- Every database uses the collation `Latin1_General_CI_AS`. Code columns stay `COLLATE NOCASE` (ASCII-only folding); in the snapshot all 10,165 code values are ASCII; the converter reports any non-ASCII code value as a finding. Other text columns are case-sensitive in SQLite, so the engine ports must not rely on SQL Server's case-insensitive comparison for them.
+- The owner asked why SQL Server appears at all, since the product uses SQLite. Answer given and recorded in the plan (section 5): SQL Server is ONLY the source of the one-off conversion and of the one-time credential import; the catalogs, the application and the tests use SQLite only; the same conversion also works offline from `ManagementSync.sql`.
+
+SQL client pin ([CONFIRMED] by run 37314406178):
+- `Microsoft.Data.SqlClient` 7.1.1, nupkg SHA-256 `1da22a633fb44406d9a9400b00471039e8895ac3e717afe2e3beedba2f049e37`, signed by Microsoft, MIT, closure of 25 files, loads in the pinned PowerShell 7.6.6 on .NET 10.0.12.
+- The `windows-2022` runner carries SQL Server LocalDB (15.0.4382.1, default collation `SQL_Latin1_General_CP1_CI_AS`). A read-only query through the pinned client worked with data source `(localdb)\MSSQLLocalDB`; `.\SQLEXPRESS` and `localhost,1433` did not answer. This means the SQL Server path of both tools CAN be tested in CI.
+
+Suggested next steps (in this order):
+1. Integration test on LocalDB: create a database with `Latin1_General_CI_AS`, create the table shapes (generated from the sync file; the real file must not enter the repository, it holds the 16 literal secrets), insert synthetic rows, and run `Export-ManagementEngines.ps1` and `Convert-ManagementDb.ps1` with `-SqlInstance`. Compare the catalog with the one built offline from the same fixture: they must be identical.
+2. B3: cut mode for the six existing machines.
+3. B4: `Test-CatalogConversion.ps1`. B5: seal tool. B6: vault import and credential issue (needs the credential contract questions answered).
+4. Decide how the 25 closure files reach the operator machine, and the connection encryption defaults for the real servers [V].
+
+Reminder: the GitHub token pasted in the first message was still valid at the end of this session and was used throughout. It must be revoked.
