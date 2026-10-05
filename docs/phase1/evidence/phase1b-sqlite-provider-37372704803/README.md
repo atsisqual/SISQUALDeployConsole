@@ -13,7 +13,7 @@
 **Completed UTC:** `2026-10-05T21:10:20Z`
 **Status:** [CONFIRMED] infrastructure cancellation. This attempt is not technical compatibility evidence.
 
-## Why this is the candidate evidence run
+## Why this is the corrected-workflow run
 
 [CONFIRMED] The earlier run `37370494285` used the first version of the workflow. Both of its attempts were cancelled without a runner and zero steps executed. A later review also found that its NuGet evidence step could emit a null SHA-256 when the global package cache did not retain a `.nupkg` archive.
 
@@ -38,7 +38,7 @@ This run remains the first run with the corrected workflow, but attempt 1 cannot
 
 [CONFIRMED] No workflow artifacts were produced by this attempt.
 
-## Required artifacts
+## Required artifacts for future validation
 
 A successful executed attempt must upload:
 
@@ -78,9 +78,13 @@ A failure must stay visible as evidence. It must not be relabelled PASS because 
 
 [PROPOSED] A candidate is accepted only from one explicitly named run/attempt combination whose exact commit SHA is recorded here.
 
-## Current next step
+## Handoff
 
-[PENDING] Re-run this corrected workflow because attempt 1 was an infrastructure cancellation. The next attempt must receive actual GitHub-hosted runners and execute the probe before any compatibility conclusion can be made.
+[CONFIRMED] Per owner direction on 2026-10-05, no additional runner retry is being spent on this spike now. Three recorded attempts across runs `37370494285` and `37372704803` all ended without a Windows runner and with zero executed steps.
+
+[PENDING] Another AI/reviewer may re-run the corrected workflow later. The next accepted attempt must receive actual GitHub-hosted runners and execute the probe before any compatibility conclusion can be made.
+
+This handoff is caused by runner infrastructure and is not a rejection of `Microsoft.Data.Sqlite`.
 
 ## Decision boundary
 
