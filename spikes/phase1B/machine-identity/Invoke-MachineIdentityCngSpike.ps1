@@ -30,7 +30,7 @@ function Get-Sha256Hex {
 
 function Add-Check {
     param(
-        [Parameter(Mandatory)][System.Collections.Generic.List[object]]$List,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$List,
         [Parameter(Mandatory)][string]$Id,
         [Parameter(Mandatory)][bool]$Passed,
         [Parameter(Mandatory)][string]$Detail
@@ -173,7 +173,7 @@ function Test-WrongMachineCannotDecrypt {
 
 function Write-Report {
     param(
-        [Parameter(Mandatory)][System.Collections.Generic.List[object]]$Checks,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Checks,
         [Parameter(Mandatory)][string]$Mode,
         $Identity
     )
