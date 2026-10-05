@@ -1,0 +1,100 @@
+name: phase1a-spike
+
+# Runs the Phase 1A portable-runtime spike on ephemeral GitHub-hosted Windows Server runners.
+# The runners are disposable VMs: nothing here touches any SISQUAL server.
+on:
+  push:
+    branches: ['spike/phase1a-**']
+    paths:
+      - 'spikes/phase1A/**'
+      - '.github/workflows/phase1a-spike.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase1a:
+    name: Phase 1A on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write   # only to publish the report to a results/* branch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure IIS with management scripts (ephemeral runner)
+        shell: powershell
+        run: |
+          Write-Host ("OS: " + (Get-CimInstance Win32_OperatingSystem).Caption + " build " + (Get-CimInstance Win32_OperatingSystem).BuildNumber)
+          $before = Get-WindowsFeature Web-Server, Web-Scripting-Tools | Select-Object Name, InstallState
+          $before | Format-Table | Out-String | Write-Host
+          $r = Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+          Write-Host ("Install-WindowsFeature Success=" + $r.Success + " ExitCode=" + $r.ExitCode + " RestartNeeded=" + $r.RestartNeeded)
+          Get-Module -ListAvailable WebAdministration | Select-Object Name, Version, Path | Format-Table | Out-String | Write-Host
+
+      - name: Download pinned artifacts (hashes are enforced by the script)
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $dir = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1A\artifacts'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $files = @(
+            @{ Name = 'PowerShell-7.6.6-win-x64.zip';      Url = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip' },
+            @{ Name = '2.14.1-Binaries.zip';               Url = 'https://github.com/Badgerati/Pode/releases/download/v2.14.1/2.14.1-Binaries.zip' },
+            @{ Name = 'sqlite-tools-win-x64-3530400.zip';  Url = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip' }
+          )
+          foreach ($f in $files) {
+            Invoke-WebRequest -Uri $f.Url -OutFile (Join-Path $dir $f.Name) -UseBasicParsing
+            Write-Host ("{0}: {1} bytes" -f $f.Name, (Get-Item (Join-Path $dir $f.Name)).Length)
+          }
+
+      - name: Run Phase 1A spike (Windows PowerShell 5.1, elevated)
+        shell: powershell
+        working-directory: spikes/phase1A
+        run: |
+          $ErrorActionPreference = 'Continue'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Phase1A.ps1 -ReportPath "$env:GITHUB_WORKSPACE\report-${{ matrix.os }}.json" 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\console-${{ matrix.os }}.txt"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1a-report-${{ matrix.os }}
+          path: report-${{ matrix.os }}.json
+          if-no-files-found: warn
+
+      - name: Summarize report
+        if: always()
+        shell: powershell
+        run: |
+          $p = Join-Path $env:GITHUB_WORKSPACE 'report-${{ matrix.os }}.json'
+          if (-not (Test-Path $p)) { Write-Host 'No report was produced.'; exit 1 }
+          $r = Get-Content $p -Raw | ConvertFrom-Json
+          $lines = @('### Phase 1A - ${{ matrix.os }} - **' + $r.Overall + '**', '', '| Check | Status | Message |', '|---|---|---|')
+          foreach ($c in $r.Checks) { $lines += ('| {0} | {1} | {2} |' -f $c.Id, $c.Status, ([string]$c.Message -replace '\|', '/')) }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($r.Overall -eq 'FAIL') { exit 1 }
+
+      - name: Publish results to a results/* branch (readable through the API)
+        if: always()
+        shell: powershell
+        run: |
+          $branch = 'results/phase1a-${{ github.run_id }}-${{ matrix.os }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --orphan $branch
+          git rm -rf --cached . | Out-Null
+          $files = @('report-${{ matrix.os }}.json', 'console-${{ matrix.os }}.txt') | Where-Object { Test-Path $_ }
+          if (-not $files) { Write-Host 'Nothing to publish.'; exit 1 }
+          git add -f -- $files
+          git commit -m 'phase1a results ${{ matrix.os }} run ${{ github.run_id }}'
+          git push origin $branch
