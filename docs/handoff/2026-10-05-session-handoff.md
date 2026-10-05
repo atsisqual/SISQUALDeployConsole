@@ -205,7 +205,7 @@ Recovery note: the execution that opened PR #20 timed out while its CI was runni
 
 Lessons: (1) PowerShell variable names ignore case, so a local `$source` silently replaced the parameter `$Source` and the second loop failed; avoid names that differ from a parameter only by case. (2) `@($null).Count` is 1 and an unbound `[string[]]` parameter is `$null`; filter empty values. (3) Under strict mode `.Count` on an empty pipeline result fails; wrap the whole pipeline in `@()`. (4) SQLite `LIKE` ignores ASCII case, so a case-sensitivity test must use `=`.
 
-Open for the owner: the 5 hub links to non-existent instances (`SANDBOXBR` and four more), whether a catalog needs a directory of other machines' instances, and the live data [V].
+Open for the owner: whether a catalog needs a directory of other machines' instances, and the live data [V]. The 5 hub links to non-existent instances (`SANDBOXBR` and four more) are DECIDED: obsolete (owner, 2026-10-05, after section 17).
 
 Next: B4 `Test-CatalogConversion.ps1` (value-level comparison source against catalogs, using the stored SHA-256 columns; completeness of the cut), B5 the seal tool, B6 vault import and credential issue (needs the credential contract questions answered).
 
@@ -218,3 +218,7 @@ How this part was recovered after a timeout: the next execution found PR #21 ope
 IMPORTANT correction: the description of PR #21 had claimed that the owner confirmed the 5 `SANDBOX_*_HUB` links are obsolete. No such message exists in the conversation that could be inspected, so the claim was removed and the question stays [PENDING owner]. Rule for the next session: never record an owner decision that cannot be traced to a message; write it as [PENDING] with the evidence instead, and ask.
 
 Next: B5 the seal tool (recompute manifest hashes, validate, sign with the credential tool key), then B6 (vault import and credential issue, needs the credential contract questions answered). Still [V]: the live database (counts, orphans, collation, certificate trust and encryption defaults).
+
+## 18. Owner decision on the hub links (added later the same day)
+
+[DECIDED 2026-10-05, owner: "Sao obsoletas"] The 5 `cfg.LinksProfileInstance` rows that link `SANDBOX_BR_HUB`, `SANDBOX_EN_HUB`, `SANDBOX_ES_HUB`, `SANDBOX_MX_HUB` and `SANDBOX_PT_HUB` to `SANDBOXBR`, `SANDBOXEN`, `SANDBOXES`, `SANDBOXMX` and `SANDBOXPT` are obsolete. They stay unplaced and are not carried; the converter and the verification tool count them and compare the count with the manifest. Nothing in the tools changes. Step B5 (seal tool) follows.
