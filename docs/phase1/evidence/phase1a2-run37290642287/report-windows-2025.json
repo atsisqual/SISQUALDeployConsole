@@ -1,0 +1,177 @@
+﻿{
+    "Phase":  "1A-2",
+    "Name":  "IIS write path: PowerShell 7 + MWA vs current approach",
+    "RunId":  "a5bdd00d5e9d457db75752c07ca9ca23",
+    "Machine":  "runnervmfi6oq",
+    "StartedAtUtc":  "2026-10-05T09:37:19.0259301Z",
+    "CompletedAtUtc":  "2026-10-05T09:40:28.6843067Z",
+    "DurationSeconds":  189.658,
+    "Overall":  "PASS",
+    "ScaleSites":  8,
+    "ScaleAppsPerSite":  25,
+    "PinnedArtifacts":  {
+                            "PowerShell":  {
+                                               "Version":  "7.6.6",
+                                               "FileName":  "PowerShell-7.6.6-win-x64.zip",
+                                               "Sha256":  "02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860",
+                                               "PublishedBy":  "official hashes.sha256 of the PowerShell v7.6.6 release"
+                                           }
+                        },
+    "Checks":  [
+                   {
+                       "Id":  "HOST_INFO",
+                       "Status":  "PASS",
+                       "Message":  "Host inventory.",
+                       "Error":  "",
+                       "DataJson":  "{\"ComputerName\":\"runnervmfi6oq\",\"Caption\":\"Microsoft Windows Server 2025 Datacenter\",\"Build\":\"26100\",\"HostPowerShell\":\"5.1.26100.33438\"}"
+                   },
+                   {
+                       "Id":  "HOST_ADMINISTRATOR",
+                       "Status":  "PASS",
+                       "Message":  "Process is elevated.",
+                       "Error":  "",
+                       "DataJson":  "{\"IsAdministrator\":true}"
+                   },
+                   {
+                       "Id":  "HOST_IIS_PRESENT",
+                       "Status":  "PASS",
+                       "Message":  "IIS detected.",
+                       "Error":  "",
+                       "DataJson":  "{\"Version\":\"10.0\",\"Appcmd\":true}"
+                   },
+                   {
+                       "Id":  "POWERSHELL_ARTIFACT",
+                       "Status":  "PASS",
+                       "Message":  "SHA-256 matches pinned published value.",
+                       "Error":  "",
+                       "DataJson":  "{\"Path\":\"D:\\\\a\\\\SISQUALDeployConsole\\\\SISQUALDeployConsole\\\\spikes\\\\phase1A-iis\\\\artifacts\\\\PowerShell-7.6.6-win-x64.zip\",\"Version\":\"7.6.6\",\"Sha256\":\"02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860\",\"PublishedBy\":\"official hashes.sha256 of the PowerShell v7.6.6 release\"}"
+                   },
+                   {
+                       "Id":  "FIXTURES",
+                       "Status":  "PASS",
+                       "Message":  "Fixtures created (directories, local user, self-signed certificate).",
+                       "Error":  "",
+                       "DataJson":  "{\"LocalUserCreated\":true,\"CertificateThumbprint\":\"3C8935B22A34D7FE1DB319E6F5921F44B53A65F0\"}"
+                   },
+                   {
+                       "Id":  "RESET_INITIAL",
+                       "Status":  "PASS",
+                       "Message":  "Spike objects removed before starting.",
+                       "Error":  "",
+                       "DataJson":  "{\"SitesRemoved\":0,\"PoolsRemoved\":0}"
+                   },
+                   {
+                       "Id":  "M5_CREATE",
+                       "Status":  "PASS",
+                       "Message":  "Current approach (Windows PowerShell 5.1 + cmdlets + MWA like IIS_RECONCILE) applied the scenario and PowerShell 7 + MWA read it back.",
+                       "Error":  "",
+                       "DataJson":  "{\"ApplyMs\":39446.9089,\"SnapshotBytes\":10433}"
+                   },
+                   {
+                       "Id":  "M5_MODIFY",
+                       "Status":  "PASS",
+                       "Message":  "Current approach (Windows PowerShell 5.1 + cmdlets + MWA like IIS_RECONCILE) applied the scenario and PowerShell 7 + MWA read it back.",
+                       "Error":  "",
+                       "DataJson":  "{\"ApplyMs\":17192.4624,\"SnapshotBytes\":10709}"
+                   },
+                   {
+                       "Id":  "M7_CREATE",
+                       "Status":  "PASS",
+                       "Message":  "PowerShell 7 + Microsoft.Web.Administration created pools, site, bindings (with certificate), applications and location settings and committed.",
+                       "Error":  "",
+                       "DataJson":  "{\"ApplyMs\":392.7417}"
+                   },
+                   {
+                       "Id":  "M7_HTTP_SERVES",
+                       "Status":  "PASS",
+                       "Message":  "Site and application created by MWA answer HTTP 200 through the primary and the extra binding.",
+                       "Error":  "",
+                       "DataJson":  "{\"Primary\":{\"Status\":200,\"Content\":\"sp1-wfm\",\"Attempts\":1,\"Error\":null},\"ExtraBinding\":{\"Status\":200,\"Content\":\"sp1-wfm\",\"Attempts\":1,\"Error\":null}}"
+                   },
+                   {
+                       "Id":  "M7_SSL_BINDING",
+                       "Status":  "PASS",
+                       "Message":  "The https binding created by MWA registered the certificate in http.sys.",
+                       "Error":  "",
+                       "DataJson":  "{\"ThumbprintFound\":true}"
+                   },
+                   {
+                       "Id":  "M7_INTEROP_CMDLET_READ",
+                       "Status":  "PASS",
+                       "Message":  "Windows PowerShell 5.1 WebAdministration cmdlets read the objects written by MWA from PowerShell 7.",
+                       "Error":  "exit code 0, no payload",
+                       "DataJson":  "{\"Success\":true,\"PoolState\":\"Started\",\"SiteState\":\"Started\",\"Applications\":[\"/sisqualWFM\",\"/V8/api\",\"/V8/idn\"],\"Bindings\":[\"http *:8101:sp1.local\",\"http *:8111:sp1.alt.local\",\"https *:8443:sp1.local\"],\"Pools\":[\"sp_api\",\"sp_idn\",\"sp_wfm\"],\"Error\":null}"
+                   },
+                   {
+                       "Id":  "M7_STATE_OPERATIONS",
+                       "Status":  "PASS",
+                       "Message":  "MWA stop/start/recycle of a pool and a site, confirmed by the 5.1 cmdlets.",
+                       "Error":  "",
+                       "DataJson":  "{\"Stop\":{\"Mwa\":{\"Success\":true,\"Action\":\"Stop\",\"PoolStateAfter\":\"Stopped\",\"SiteStateAfter\":\"Stopped\",\"Reached\":true,\"Error\":null},\"Cmdlets\":{\"Pool\":\"Stopped\",\"Site\":\"Stopped\"}},\"Start\":{\"Mwa\":{\"Success\":true,\"Action\":\"Start\",\"PoolStateAfter\":\"Started\",\"SiteStateAfter\":\"Started\",\"Reached\":true,\"Error\":null},\"Cmdlets\":{\"Pool\":\"Started\",\"Site\":\"Started\"}},\"Recycle\":{\"Mwa\":{\"Success\":true,\"Action\":\"Recycle\",\"PoolStateAfter\":\"Started\",\"SiteStateAfter\":\"Started\",\"Reached\":true,\"Error\":null},\"Cmdlets\":{\"Pool\":\"Started\",\"Site\":\"Started\"}}}"
+                   },
+                   {
+                       "Id":  "M7_MODIFY",
+                       "Status":  "PASS",
+                       "Message":  "MWA applied the modified scenario on top of the existing state (drift correction path).",
+                       "Error":  "",
+                       "DataJson":  "{\"ApplyMs\":227.8019}"
+                   },
+                   {
+                       "Id":  "M7_IDEMPOTENT",
+                       "Status":  "PASS",
+                       "Message":  "Applying the same scenario twice with MWA changes nothing.",
+                       "Error":  "",
+                       "DataJson":  "{\"Compared\":242,\"DiffCount\":0,\"IgnoredVolatile\":8,\"Notes\":[],\"Diffs\":[]}"
+                   },
+                   {
+                       "Id":  "EQUIVALENCE_CREATE",
+                       "Status":  "PASS",
+                       "Message":  "Effective configuration (pools, site, bindings, applications, virtual directories, location settings) is identical between the current approach and PowerShell 7 + MWA.",
+                       "Error":  "",
+                       "DataJson":  "{\"Compared\":236,\"DiffCount\":0,\"IgnoredVolatile\":4,\"Notes\":[\"certificateStoreName differs only by case: .Sites.sp1.bindings.https *:8443:sp1.local.certificateStoreName current=MY mwa=My\"],\"Diffs\":[]}"
+                   },
+                   {
+                       "Id":  "EQUIVALENCE_MODIFY",
+                       "Status":  "PASS",
+                       "Message":  "Effective configuration (pools, site, bindings, applications, virtual directories, location settings) is identical between the current approach and PowerShell 7 + MWA.",
+                       "Error":  "",
+                       "DataJson":  "{\"Compared\":242,\"DiffCount\":0,\"IgnoredVolatile\":8,\"Notes\":[\"certificateStoreName differs only by case: .Sites.sp1.bindings.https *:8443:sp1.local.certificateStoreName current=MY mwa=My\"],\"Diffs\":[]}"
+                   },
+                   {
+                       "Id":  "SCALE_CURRENT",
+                       "Status":  "PASS",
+                       "Message":  "Created and enumerated 8 sites x 25 applications (one pool per application).",
+                       "Error":  "",
+                       "DataJson":  "{\"Result\":{\"Success\":true,\"Sites\":8,\"AppsPerSite\":25,\"Pools\":208,\"Applications\":200,\"CreateMs\":38517.8454,\"EnumSitesMs\":142.4229,\"EnumAppsMs\":33.1895,\"EnumPoolsMs\":588.0883,\"PoolStatesMs\":313.18690000000004,\"Error\":null},\"ResetMs\":16435.1356,\"Removed\":{\"SitesRemoved\":8,\"PoolsRemoved\":208}}"
+                   },
+                   {
+                       "Id":  "SCALE_MWA",
+                       "Status":  "PASS",
+                       "Message":  "Created and enumerated 8 sites x 25 applications (one pool per application).",
+                       "Error":  "",
+                       "DataJson":  "{\"Result\":{\"Success\":true,\"Sites\":8,\"AppsPerSite\":25,\"Pools\":208,\"Applications\":200,\"CreateMs\":147.741,\"EnumSitesMs\":63.9624,\"EnumAppsMs\":10.494,\"EnumPoolsMs\":9.1784,\"PoolStatesMs\":246.9945,\"Error\":null},\"ResetMs\":20010.238,\"Removed\":{\"SitesRemoved\":8,\"PoolsRemoved\":208}}"
+                   },
+                   {
+                       "Id":  "CLEANUP_IIS_OBJECTS",
+                       "Status":  "PASS",
+                       "Message":  "No spike site or application pool may remain.",
+                       "Error":  "",
+                       "DataJson":  "{\"Sites\":0,\"Pools\":0}"
+                   },
+                   {
+                       "Id":  "CLEANUP_SSL_BINDING",
+                       "Status":  "PASS",
+                       "Message":  "No http.sys certificate binding may remain.",
+                       "Error":  "",
+                       "DataJson":  "{\"StillBound\":false}"
+                   },
+                   {
+                       "Id":  "CLEANUP_TEMP_ROOT",
+                       "Status":  "PASS",
+                       "Message":  "Temporary directory removed.",
+                       "Error":  "",
+                       "DataJson":  "{\"Path\":\"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\SISQUALDeployConsole-IisWrite-a5bdd00d5e9d457db75752c07ca9ca23\"}"
+                   }
+               ],
+    "FatalError":  null
+}
