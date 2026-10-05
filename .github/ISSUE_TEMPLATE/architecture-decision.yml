@@ -1,0 +1,31 @@
+name: Architecture decision
+description: Propose or reopen an architectural decision
+title: "adr: "
+labels: []
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Separate [CONFIRMED] evidence from [PROPOSED] recommendations.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options and tradeoffs
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision requested
+      description: State what requires project-owner approval and what remains [PENDING] or [V].
+    validations:
+      required: true
