@@ -274,7 +274,11 @@ try{
     # 2. Pode portable + loopback isolation
     $podeRoot=Join-Path $TempRoot 'pode'
     Expand-Archive -LiteralPath $podeZip -DestinationPath $podeRoot -Force
-    $podeManifest=Get-ChildItem $podeRoot -Filter Pode.psd1 -File -Recurse | Select-Object -First 1 -ExpandProperty FullName
+    $podeManifest=Join-Path $podeRoot 'Pode.psd1'
+    if (-not (Test-Path -LiteralPath $podeManifest -PathType Leaf)) {
+        # Locales\<culture>\Pode.psd1 are message tables, not the module manifest.
+        $podeManifest=Get-ChildItem $podeRoot -Filter Pode.psd1 -File -Recurse | Where-Object { $_.FullName -notmatch '[\\/]Locales[\\/]' } | Select-Object -First 1 -ExpandProperty FullName
+    }
     if (-not $podeManifest) { throw 'Pode.psd1 not found.' }
 
     $podeProbe=Join-Path $TempRoot 'Probe-Pode.ps1'
@@ -282,7 +286,7 @@ try{
 param([string]$OutputPath,[string]$Manifest)
 $ErrorActionPreference='Stop'
 try{
-    Import-Module -LiteralPath $Manifest -Force
+    Import-Module -Name $Manifest -Force
     $m=Get-Module Pode
     [pscustomobject]@{Success=$true;Name=$m.Name;Version=$m.Version.ToString();Path=$m.Path}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
 }catch{
@@ -303,7 +307,7 @@ try{
     $serverText=@'
 param([string]$Manifest)
 $ErrorActionPreference='Stop'
-Import-Module -LiteralPath $Manifest -Force
+Import-Module -Name $Manifest -Force
 Start-PodeServer -ScriptBlock {
     Add-PodeEndpoint -Address '127.0.0.1' -Port __PORT__ -Protocol Http
     Add-PodeRoute -Method Get -Path '/health' -ScriptBlock {
@@ -447,7 +451,15 @@ finally{
     $overall='PASS'
     if($fail.Count -gt 0 -or $Fatal){$overall='FAIL'}elseif(-not $IisPresent){$overall='INCOMPLETE_IIS'}elseif(@($Results|Where-Object{$_.Id -eq 'PODE_NON_LOOPBACK_NEGATIVE' -and $_.Status -eq 'SKIP'}).Count -gt 0){$overall='INCOMPLETE_NETWORK'}
 
-    foreach($c in $Results){Write-Host ('CHECK {0,-5} {1,-36} {2}' -f $c.Status,$c.Id,$c.Message)}
+    foreach($c in $Results){
+        Write-Host ('CHECK {0,-5} {1,-36} {2}' -f $c.Status,$c.Id,$c.Message)
+        if($c.Status -eq 'FAIL' -or $c.Status -eq 'WARN'){
+            try{
+                if($null -ne $c.Error -and [string]$c.Error -ne ''){Write-Host ('      ERROR: '+([string]$c.Error))}
+                if($null -ne $c.Data){Write-Host ('      DATA : '+(($c.Data|Format-List|Out-String).Trim() -replace '\s*\r?\n\s*',' ; '))}
+            }catch{Write-Host ('      (could not print details: '+(Err $_)+')')}
+        }
+    }
     if($Fatal){Write-Host ('FATAL: '+$Fatal)}
 
     $hint='At least one architecture gate failed. Reopen ADR-0001 before continuing.'
@@ -456,32 +468,48 @@ finally{
     elseif($overall -eq 'INCOMPLETE_NETWORK'){$hint='Repeat on a machine with a non-loopback IPv4 address before closing Phase 1A.'}
 
     $done=[DateTime]::UtcNow
-    $report=[pscustomobject][ordered]@{
-        Phase='1A'
-        Name='Portable Runtime Compatibility'
-        RunId=$RunId
-        Machine=$env:COMPUTERNAME
-        StartedAtUtc=$StartedUtc.ToString('o')
-        CompletedAtUtc=$done.ToString('o')
-        DurationSeconds=[math]::Round(($done-$StartedUtc).TotalSeconds,3)
-        Overall=$overall
-        IisInstalled=$IisPresent
-        KeepArtifacts=[bool]$KeepArtifacts
-        ArtifactRoot=[IO.Path]::GetFullPath($ArtifactRoot)
-        ReportPath=[IO.Path]::GetFullPath($ReportPath)
-        PinnedArtifacts=$Pinned
-        Checks=@($Results)
-        FatalError=$Fatal
-        DecisionHint=$hint
+    $diag=New-Object 'System.Collections.Generic.List[string]'
+    $startedText=$null;$completedText=$null;$durationSec=$null;$artifactFull=[string]$ArtifactRoot;$reportFull=[string]$ReportPath;$keepFlag=$false
+    try{$startedText=$StartedUtc.ToString('o')}catch{$diag.Add('StartedAtUtc: '+(Err $_))}
+    try{$completedText=$done.ToString('o')}catch{$diag.Add('CompletedAtUtc: '+(Err $_))}
+    try{$durationSec=[math]::Round(($done-$StartedUtc).TotalSeconds,3)}catch{$diag.Add('DurationSeconds: '+(Err $_))}
+    try{$artifactFull=[IO.Path]::GetFullPath($ArtifactRoot)}catch{$diag.Add('ArtifactRoot: '+(Err $_))}
+    try{$reportFull=[IO.Path]::GetFullPath($ReportPath)}catch{$diag.Add('ReportPath: '+(Err $_))}
+    try{$keepFlag=[bool]$KeepArtifacts}catch{$diag.Add('KeepArtifacts: '+(Err $_))}
+    foreach($d in $diag){Write-Host ('REPORT_FIELD_FAILED: '+$d)}
+    $report=$null
+    try{
+        $report=[pscustomobject][ordered]@{
+            Phase='1A'
+            Name='Portable Runtime Compatibility'
+            RunId=$RunId
+            Machine=$env:COMPUTERNAME
+            StartedAtUtc=$startedText
+            CompletedAtUtc=$completedText
+            DurationSeconds=$durationSec
+            Overall=$overall
+            IisInstalled=$IisPresent
+            KeepArtifacts=$keepFlag
+            ArtifactRoot=$artifactFull
+            ReportPath=$reportFull
+            PinnedArtifacts=$Pinned
+            Checks=@($Results)
+            FatalError=$Fatal
+            DecisionHint=$hint
+            ReportDiagnostics=@($diag)
+        }
+    }catch{
+        $diag.Add('ReportObject: '+(Err $_))
+        Write-Host ('REPORT_OBJECT_FAILED: '+(Err $_))
     }
     $dir=Split-Path -Parent $ReportPath
     if($dir -and -not(Test-Path $dir)){New-Item -ItemType Directory -Path $dir -Force|Out-Null}
     $json=$null
-    try{ $json=$report|ConvertTo-Json -Depth 20 }
+    try{ if($null -eq $report){throw 'report object could not be built (see ReportDiagnostics)'}; $json=$report|ConvertTo-Json -Depth 20 }
     catch{
         $serr=Err $_
         Write-Host ('REPORT_SERIALIZATION_FAILED: '+$serr)
-        $simple=[pscustomobject][ordered]@{Phase='1A';RunId=$RunId;Machine=$env:COMPUTERNAME;Overall=$overall;FatalError=$Fatal;DecisionHint=$hint;SerializationError=$serr;Checks=@($Results|ForEach-Object{[pscustomobject][ordered]@{Id=$_.Id;Status=$_.Status;Message=$_.Message;Error=$_.Error}})}
+        $simple=[pscustomobject][ordered]@{Phase='1A';RunId=$RunId;Machine=$env:COMPUTERNAME;Overall=$overall;FatalError=$Fatal;DecisionHint=$hint;SerializationError=$serr;ReportDiagnostics=@($diag);Checks=@($Results|ForEach-Object{[pscustomobject][ordered]@{Id=$_.Id;Status=$_.Status;Message=$_.Message;Error=$_.Error}})}
         $json=$simple|ConvertTo-Json -Depth 6
     }
     $json|Set-Content -LiteralPath $ReportPath -Encoding UTF8
