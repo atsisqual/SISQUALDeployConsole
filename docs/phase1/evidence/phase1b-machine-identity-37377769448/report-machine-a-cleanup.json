@@ -1,0 +1,12 @@
+{
+  "schema": "SISQUAL_PHASE1B_MACHINE_IDENTITY_SPIKE_V1",
+  "action": "Delete",
+  "utc": "2026-10-05T21:46:20Z",
+  "machineName": "runnervmdlhio",
+  "powerShell": "7.6.6",
+  "overall": "PASS",
+  "fingerprint": null,
+  "checks": [
+    {"id":"KEY_REMOVED","status":"PASS","detail":"The test key must be deleted during cleanup."}
+  ]
+}

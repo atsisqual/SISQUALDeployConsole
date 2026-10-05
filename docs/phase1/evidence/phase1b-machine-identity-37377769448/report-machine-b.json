@@ -1,0 +1,17 @@
+{
+  "schema": "SISQUAL_PHASE1B_MACHINE_IDENTITY_SPIKE_V1",
+  "action": "Destination",
+  "utc": "2026-10-05T21:48:11Z",
+  "machineName": "runnervmfi6oq",
+  "powerShell": "7.6.6",
+  "overall": "PASS",
+  "fingerprint": "5dd23d9e5557c9289dc9b8ccb922e7b67b4c9678822905798201a36c83a33bc0",
+  "checks": [
+    {"id":"COPIED_FOLDER_HAS_NO_PRIVATE_KEY","status":"PASS","detail":"The same logical key name must not exist on the second VM before local creation."},
+    {"id":"DESTINATION_IDENTITY_DIFFERENT","status":"PASS","detail":"Creating the same logical identity on a second VM must create a different key."},
+    {"id":"PRIVATE_EXPORT_PKCS8_BLOCKED","status":"PASS","detail":"PKCS#8 private-key export must be rejected."},
+    {"id":"PRIVATE_EXPORT_CNG_BLOCKED","status":"PASS","detail":"CNG ECC private-blob export must be rejected."},
+    {"id":"CREDENTIAL_MODULE_INTEROP","status":"PASS","detail":"Existing Sisqual.Credentials entry encryption/decryption must work with the non-exportable CNG key."},
+    {"id":"SOURCE_ENTRY_REJECTED_ON_DESTINATION","status":"PASS","detail":"An entry encrypted for machine A must not decrypt with machine B private key."}
+  ]
+}

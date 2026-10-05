@@ -1,0 +1,16 @@
+{
+  "schema": "SISQUAL_PHASE1B_MACHINE_IDENTITY_SPIKE_V1",
+  "action": "SourceReopen",
+  "utc": "2026-10-05T21:46:19Z",
+  "machineName": "runnervmdlhio",
+  "powerShell": "7.6.6",
+  "overall": "PASS",
+  "fingerprint": "03fa38e72a84862634a18c2e4d49d61171e2f4cd2a9c9a11714a18f2e528778b",
+  "checks": [
+    {"id":"KEY_PRESENT_AFTER_FOLDER_REPLACEMENT","status":"PASS","detail":"The machine key must remain after the portable folder is replaced."},
+    {"id":"FINGERPRINT_STABLE","status":"PASS","detail":"Reopening by name must return the same machine identity."},
+    {"id":"PRIVATE_EXPORT_PKCS8_BLOCKED","status":"PASS","detail":"PKCS#8 private-key export must be rejected."},
+    {"id":"PRIVATE_EXPORT_CNG_BLOCKED","status":"PASS","detail":"CNG ECC private-blob export must be rejected."},
+    {"id":"CREDENTIAL_MODULE_INTEROP","status":"PASS","detail":"Existing Sisqual.Credentials entry encryption/decryption must work with the non-exportable CNG key."}
+  ]
+}
