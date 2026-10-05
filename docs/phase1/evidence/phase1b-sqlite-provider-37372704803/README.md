@@ -10,7 +10,8 @@
 **Commit:** `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3`
 **PR:** #36
 **Created UTC:** `2026-10-05T20:55:17Z`
-**Status:** [PENDING] technical evidence. Both Windows jobs must execute before this run can support a compatibility conclusion.
+**Completed UTC:** `2026-10-05T21:10:20Z`
+**Status:** [CONFIRMED] infrastructure cancellation. This attempt is not technical compatibility evidence.
 
 ## Why this is the candidate evidence run
 
@@ -24,22 +25,22 @@
 4. compares the downloaded archive SHA-512 with the lock-file `contentHash`;
 5. fails if an archive, SHA-256, lock hash or hash match is missing.
 
-This run is therefore the first run eligible to become the accepted provider evidence.
+This run remains the first run with the corrected workflow, but attempt 1 cannot establish compatibility because neither job received a runner.
 
 ## Execution ledger
 
-| Attempt | Job | Job ID | Current state | Result |
-|---|---|---:|---|---|
-| 1 | windows-2022 | `111973546139` | queued; no executed steps at latest check | [PENDING] |
-| 1 | windows-2025 | `111973546324` | queued; no executed steps at latest check | [PENDING] |
+| Attempt | Job | Job ID | Runner state | Started UTC | Completed UTC | Result |
+|---|---|---:|---|---|---|---|
+| 1 | windows-2022 | `111973546139` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
+| 1 | windows-2025 | `111973546324` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
 
-[CONFIRMED] At the latest recorded check, both jobs were still queued. No workflow artifact existed for this run yet. A queued job is not technical evidence.
+[CONFIRMED] GitHub records the run as `status=completed`, `conclusion=failure`. That run-level failure is the aggregate result of the cancelled jobs; no provider step executed, so this is not a technical provider failure.
 
-When either job changes state, this ledger must be updated with runner identity when available, start/completion timestamps, conclusion, executed step results and artifact IDs.
+[CONFIRMED] No workflow artifacts were produced by this attempt.
 
 ## Required artifacts
 
-Each operating-system job must upload:
+A successful executed attempt must upload:
 
 - `report-<os>-original.json`
 - `report-<os>-copy.json`
@@ -55,7 +56,7 @@ The final evidence record must also preserve each GitHub artifact ID, not only i
 
 ## Acceptance rule
 
-The run can be recorded as [CONFIRMED] technical viability only when all of these are true:
+The provider can be recorded as [CONFIRMED] technically viable only when all of these are true:
 
 1. both Windows jobs actually execute and complete successfully;
 2. both original-folder probes report `overall = PASS`;
@@ -77,9 +78,13 @@ A failure must stay visible as evidence. It must not be relabelled PASS because 
 
 [PROPOSED] A candidate is accepted only from one explicitly named run/attempt combination whose exact commit SHA is recorded here.
 
+## Current next step
+
+[PENDING] Re-run this corrected workflow because attempt 1 was an infrastructure cancellation. The next attempt must receive actual GitHub-hosted runners and execute the probe before any compatibility conclusion can be made.
+
 ## Decision boundary
 
-Even if all gates pass:
+Even if a later attempt passes all gates:
 
 - [CONFIRMED] may be used only for technical viability on the tested runner images;
 - [PROPOSED] remains the status of adopting `Microsoft.Data.Sqlite` 10.0.12;
