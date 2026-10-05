@@ -1,6 +1,6 @@
 # ADR-0007: Embedded read-only catalog, no runtime sync, text logs
 
-**Status:** Proposed (2026-10-05). Direction given by the project owner in conversation; The owner answered the open questions on 2026-10-05; explicit acceptance is still needed before it becomes Accepted.
+**Status:** Accepted (2026-10-05). Direction given by the project owner in conversation; the owner answered the open questions and explicitly accepted the ADR on 2026-10-05. Decision items 4 and 9 (credentials) keep their [PROPOSED] label until the credential contract (`contracts/credential-package.md`, PR #13) is approved. The reviewer records the acceptance in `docs/decisions-log.md`.
 **Supersedes in part:** ADR-0001 (SQLite as a local cache synchronised from the central database) and the decision of 2026-10-05 "central sync transport: direct read-only SQL" (there is no central database to read from any more; a one-time migration tool reads `_sisqualMANAGEMENT` read-only to produce the initial catalog source). The planned ADR on the central sync model is replaced by this one.
 
 ## Context
