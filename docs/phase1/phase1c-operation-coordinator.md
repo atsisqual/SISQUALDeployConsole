@@ -36,9 +36,9 @@ Reference repository is read-only: `atsisqual/SISQUALManagementConsole` at commi
 
 [CONFIRMED] `Jobs.razor` exposes durable job states/history and allows an operator to cancel a job only while its status is `QUEUED`. Running jobs are observed through the central job/worker model; this is not a generic proof of safe mid-operation cancellation.
 
-[CONFIRMED] the old web layer commonly passes `CancellationToken.None` when queueing or querying jobs. Repository method cancellation tokens therefore demonstrate request cancellation plumbing, not engine-level rollback semantics.
+[CONFIRMED] The old web layer commonly passes `CancellationToken.None` when queueing or querying jobs. Repository method cancellation tokens therefore demonstrate request cancellation plumbing, not engine-level rollback semantics.
 
-[CONFIRMED] the old folder-copy UI explicitly asks the operator to confirm controlled runtime shutdown and revalidation before replacement. This is useful behavioral evidence for a safe-stop requirement, but that workflow depends on the old durable SQL plan/job system.
+[CONFIRMED] The old folder-copy UI explicitly asks the operator to confirm controlled runtime shutdown and revalidation before replacement. This is useful behavioral evidence for a safe-stop requirement, but that workflow depends on the old durable SQL plan/job system.
 
 ### What ports and what does not
 
@@ -110,9 +110,9 @@ Files:
 - `.github/workflows/phase1c-operation-coordinator.yml`;
 - `docs/phase1/evidence/phase1c-operation-coordinator/README.md`.
 
-[CONFIRMED by code review] The spike uses PowerShell runspaces from the portable PowerShell process; it adds no runtime dependency and does not reference Pode.
+[CONFIRMED] By code review, the spike uses PowerShell runspaces from the portable PowerShell process; it adds no runtime dependency and does not reference Pode.
 
-[CONFIRMED by code review] Worker scriptblocks in the spike are local test code. Product code must invoke versioned local engine functions; browser/catalog text must never become executable script.
+[CONFIRMED] By code review, worker scriptblocks in the spike are local test code. Product code must invoke versioned local engine functions; browser/catalog text must never become executable script.
 
 ## 10. Required gates
 
