@@ -1,6 +1,6 @@
 # Per-machine catalog schema
 
-**Status:** [PROPOSED] draft, version `0.1-proposed`. Only the frame is defined here. The table-by-table content is [PENDING] the conversion plan (`docs/migration/catalog-conversion-plan.md`, task 4 step A) and ADR-0007 (proposed, PR #11).
+**Status:** [PROPOSED] draft, version `0.1-proposed`. Only the frame is defined here. The table-by-table content is [PENDING] the conversion plan (`docs/migration/catalog-conversion-plan.md`, task 4 step A) and ADR-0007 (accepted 2026-10-05).
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 1. What a catalog is

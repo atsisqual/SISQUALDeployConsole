@@ -1,7 +1,7 @@
 # Credential package (envelope)
 
 **Status:** [PROPOSED] draft, version `0.1-proposed`. Not approved. No cryptographic code and no algorithm choice is made here: AGENTS.md requires owner approval for algorithms, key ownership, trust bootstrap and envelope semantics.
-**Basis:** owner decisions of 2026-10-05 (below), ADR-0007 (proposed), risk register R-005, R-006, R-007, R-008, R-036, R-037.
+**Basis:** owner decisions of 2026-10-05 (below), ADR-0007 (accepted 2026-10-05; its credential items 4 and 9 stay [PROPOSED]), risk register R-005, R-006, R-007, R-008, R-036, R-037.
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft design; [PENDING] open decision; [V] only verifiable on a real machine.
 
 ## 1. Owner decisions that shape this contract

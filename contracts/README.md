@@ -15,7 +15,7 @@ Tags: [CONFIRMED] confirmed by evidence or owner decision; [PROPOSED] draft for 
 
 ## Why there is no sync contract
 
-[CONFIRMED] Owner decision of 2026-10-05: there is no master server and `_sisqualMANAGEMENT` ceases to exist; the application never contacts a server to obtain configuration (ADR-0007, proposed). The planned sync manifest is therefore replaced by two things: the signed package manifest (hashes of all files) and the per-machine catalog schema.
+[CONFIRMED] Owner decision of 2026-10-05: there is no master server and `_sisqualMANAGEMENT` ceases to exist; the application never contacts a server to obtain configuration (ADR-0007, accepted 2026-10-05). The planned sync manifest is therefore replaced by two things: the signed package manifest (hashes of all files) and the per-machine catalog schema.
 
 ## Rules for every contract here
 

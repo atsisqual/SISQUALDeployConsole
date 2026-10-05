@@ -5,7 +5,7 @@ info:
   description: |
     [PROPOSED] Skeleton only. Loopback REST API served by the portable application (Pode is only the HTTP adapter).
     Not approved; no route here is implemented. There are no synchronisation endpoints because there is no sync
-    (ADR-0007, proposed). Secrets never appear in any request or response except the manual import of a credential
+    (ADR-0007, accepted 2026-10-05). Secrets never appear in any request or response except the manual import of a credential
     package, which is ciphertext.
 servers:
   - url: http://127.0.0.1:{port}
