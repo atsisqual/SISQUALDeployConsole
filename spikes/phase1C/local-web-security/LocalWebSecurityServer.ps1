@@ -143,13 +143,12 @@ Start-PodeServer -Threads 1 -ScriptBlock {
         $state.SessionExpiresUtc = [DateTime]::UtcNow.AddSeconds($state.SessionSeconds)
         $state.BootstrapConsumed = $true
 
-        Add-PodeHeader -Name 'Set-Cookie' -Value ("SISQUAL-SESSION={0}; Path=/; HttpOnly; SameSite=Strict; Max-Age={1}" -f $sessionToken, $state.SessionSeconds)
-        Write-PodeJsonResponse -Value @{ csrf = $csrfToken }
+        Write-PodeJsonResponse -Value @{ session = $sessionToken; csrf = $csrfToken }
     }
 
     Add-PodeRoute -Method Get -Path '/api/protected' -ScriptBlock {
         $state = Get-PodeState -Name 'Phase1CSecurity'
-        $sessionToken = Get-PodeCookieValue -Name 'SISQUAL-SESSION'
+        $sessionToken = [string]$WebEvent.Request.Headers['X-SISQUAL-Session']
         $sessionHash = ConvertTo-TokenHash -Value $sessionToken
         if (([DateTime]::UtcNow -gt $state.SessionExpiresUtc) -or -not (Test-HashEqual -Left $sessionHash -Right $state.SessionHash)) {
             Set-PodeResponseStatus -Code 401 -NoErrorPage
@@ -171,7 +170,7 @@ Start-PodeServer -Threads 1 -ScriptBlock {
             return
         }
 
-        $sessionToken = Get-PodeCookieValue -Name 'SISQUAL-SESSION'
+        $sessionToken = [string]$WebEvent.Request.Headers['X-SISQUAL-Session']
         $sessionHash = ConvertTo-TokenHash -Value $sessionToken
         if (([DateTime]::UtcNow -gt $state.SessionExpiresUtc) -or -not (Test-HashEqual -Left $sessionHash -Right $state.SessionHash)) {
             Set-PodeResponseStatus -Code 401 -NoErrorPage
@@ -197,7 +196,7 @@ Start-PodeServer -Threads 1 -ScriptBlock {
             return
         }
 
-        $sessionToken = Get-PodeCookieValue -Name 'SISQUAL-SESSION'
+        $sessionToken = [string]$WebEvent.Request.Headers['X-SISQUAL-Session']
         $sessionHash = ConvertTo-TokenHash -Value $sessionToken
         $csrfToken = [string]$WebEvent.Request.Headers['X-SISQUAL-CSRF']
         $csrfHash = ConvertTo-TokenHash -Value $csrfToken
@@ -209,7 +208,6 @@ Start-PodeServer -Threads 1 -ScriptBlock {
         $state.SessionHash = ''
         $state.CsrfHash = ''
         $state.SessionExpiresUtc = [DateTime]::MinValue
-        Add-PodeHeader -Name 'Set-Cookie' -Value 'SISQUAL-SESSION=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
         Set-PodeResponseStatus -Code 204 -NoErrorPage
     }
 }
