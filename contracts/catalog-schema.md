@@ -32,7 +32,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 - Text is UTF-8. Dates and times converted from SQL Server `datetime2` are ISO 8601 text kept exactly as in the source, WITHOUT a time zone: the source values come from `SYSDATETIME()` (server local time), so they are not UTC and must not be treated as UTC. Only values created by the new tools (`built_at_utc`, manifest times) are UTC with a `Z`. See `docs/migration/catalog-conversion-plan.md` section 1.1.
 - Booleans (SQL Server `bit`) are INTEGER 0 or 1 with a `CHECK`.
 - Identity columns keep their source values so that origin and destination rows can be compared by key.
-- Binary content (`varbinary`) is excluded from catalogs unless the conversion plan lists a table explicitly; `Content` of `cfg.LinksPageAsset` is a candidate [PENDING].
+- Binary content (`varbinary`) is stored as BLOB in every catalog (owner answer of 2026-10-05), together with its SHA-256 column where the source has one; BLOBs are read on demand. Secret-bearing binary content never enters a catalog.
 - Foreign keys are declared and checked at build time (`PRAGMA foreign_key_check` must return no rows).
 - Every table that is cut per machine carries the key it is cut by (`ServerCode` or `InstanceCode`) so completeness of the cut can be tested.
 
@@ -44,5 +44,6 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 - [PENDING] Final table list and DDL (conversion plan).
 - [PENDING] Whether the long-term authority for the catalog is a declarative source in this repository compiled by a build tool, or an editor tool (deferred by the owner, ADR-0007 item 1).
+- [CONFIRMED] Machines without policy rows in the server policy tables are cut as they are (empty tables, no template server); see the conversion plan section 2.6.
 - [PENDING] Behaviour for machines that have no local database: not decided, nothing is assumed here.
 - [PENDING] Whether a package contains one catalog or all catalogs (see the manifest schema).
