@@ -36,32 +36,34 @@ jobs:
           Write-Host ('Changed files: ' + $files.Count)
           $files | ForEach-Object { Write-Host ('  ' + $_) }
 
-      - name: Parse changed PowerShell with Windows PowerShell 5.1
+      - name: Parse all PowerShell with Windows PowerShell 5.1
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
-          $files = @(Get-Content -LiteralPath changed-files.txt | Where-Object { $_ -like '*.ps1' -and (Test-Path -LiteralPath $_) })
+          $files = @(Get-ChildItem -LiteralPath . -Recurse -File -Filter '*.ps1' | Where-Object {
+              $_.FullName -notmatch '[\\/]\.git[\\/]'
+          })
           foreach ($file in $files) {
               $tokens = $null
               $errors = $null
               [void][System.Management.Automation.Language.Parser]::ParseFile(
-                  (Resolve-Path -LiteralPath $file).Path,
+                  $file.FullName,
                   [ref]$tokens,
                   [ref]$errors
               )
               if (@($errors).Count -gt 0) {
                   $failed = $true
-                  Write-Error ("PowerShell 5.1 parse failure in {0}" -f $file) -ErrorAction Continue
+                  Write-Error ("PowerShell 5.1 parse failure in {0}" -f $file.FullName) -ErrorAction Continue
                   foreach ($parseError in @($errors)) {
                       Write-Host ("  line {0}: {1}" -f $parseError.Extent.StartLineNumber, $parseError.Message)
                   }
               }
               else {
-                  Write-Host ("PASS parser: {0}" -f $file)
+                  Write-Host ("PASS parser: {0}" -f $file.FullName)
               }
           }
-          if ($failed) { throw 'One or more changed PowerShell files failed the Windows PowerShell 5.1 parser.' }
+          if ($failed) { throw 'One or more PowerShell files failed the Windows PowerShell 5.1 parser.' }
 
       - name: Verify ASCII and LF on changed text files
         shell: powershell
