@@ -1,0 +1,105 @@
+name: phase1c-local-web-security
+
+on:
+  push:
+    branches: ['spike/phase1c-local-web-security']
+    paths:
+      - 'spikes/phase1C/local-web-security/**'
+      - '.github/workflows/phase1c-local-web-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1c-local-web-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: Local web security on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify pinned portable runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $downloads = Join-Path $env:RUNNER_TEMP 'phase1c-downloads'
+          New-Item -ItemType Directory -Path $downloads -Force | Out-Null
+
+          $items = @(
+            @{
+              Name = 'PowerShell-7.6.6-win-x64.zip'
+              Uri = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip'
+              Sha256 = '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860'
+            },
+            @{
+              Name = '2.14.1-Binaries.zip'
+              Uri = 'https://github.com/Badgerati/Pode/releases/download/v2.14.1/2.14.1-Binaries.zip'
+              Sha256 = '85CCA8D0446E5D57F57BA9FD859166845D4997A28B71142912B6B648A3F152C6'
+            }
+          )
+
+          foreach ($item in $items) {
+            $path = Join-Path $downloads $item.Name
+            Invoke-WebRequest -UseBasicParsing -Uri $item.Uri -OutFile $path
+            $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToUpperInvariant()
+            if ($actual -ne $item.Sha256) {
+              throw "SHA-256 mismatch for $($item.Name): $actual"
+            }
+          }
+
+          Expand-Archive (Join-Path $downloads 'PowerShell-7.6.6-win-x64.zip') -DestinationPath (Join-Path $env:RUNNER_TEMP 'pwsh') -Force
+          Expand-Archive (Join-Path $downloads '2.14.1-Binaries.zip') -DestinationPath (Join-Path $env:RUNNER_TEMP 'pode') -Force
+
+          $manifest = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'pode') -Filter 'Pode.psd1' -File -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $manifest) { throw 'Pode.psd1 not found after extraction.' }
+          "PODE_MANIFEST=$manifest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run Phase 1C local web security spike
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1C\local-web-security\Test-LocalWebSecurity.ps1'
+          $report = Join-Path $env:GITHUB_WORKSPACE 'report-${{ matrix.os }}.json'
+          & $pwsh -NoLogo -NoProfile -NonInteractive -File $script -PodeModulePath $env:PODE_MANIFEST -ReportPath $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1c-local-web-security-${{ matrix.os }}
+          path: report-${{ matrix.os }}.json
+          if-no-files-found: error
+
+      - name: Summarize checks
+        if: always()
+        shell: powershell
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'report-${{ matrix.os }}.json'
+          if (-not (Test-Path $path)) { Write-Host 'No report was produced.'; exit 1 }
+          $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $lines = @(
+            '### Phase 1C local web security - ${{ matrix.os }}',
+            '',
+            ('Pass: **{0}** / Fail: **{1}**' -f $report.PassCount, $report.FailCount),
+            '',
+            '| Check | Status | Message |',
+            '|---|---|---|'
+          )
+          foreach ($check in $report.Checks) {
+            $lines += ('| {0} | {1} | {2} |' -f $check.Id, $check.Status, ([string]$check.Message -replace '\|', '/'))
+          }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($report.Fatal -or $report.FailCount -gt 0) { exit 1 }
