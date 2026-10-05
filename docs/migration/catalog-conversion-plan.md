@@ -2,7 +2,7 @@
 
 **Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
 **Owner answers of 2026-10-05, second round ([CONFIRMED]): the SQL client is pinned with a Windows-runner workflow (spike PR, see section 5); `dbo.ManagedServer.ManagementDatabaseName` is dropped; collation is `Latin1_General_CI_AS` in every database.**
-**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16), the SQL client pin is PR #18, the LocalDB integration test of the SQL Server path is PR #19 (stacked on #17); B3 to B6 not started.**
+**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16), the SQL client pin is PR #18, the LocalDB integration test of the SQL Server path is PR #19 (stacked on #17), B3 (cut mode for the six machines) is PR #20 (stacked on #19); B4 to B6 not started.**
 **Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
@@ -441,3 +441,14 @@ Only on the real servers [V]:
 14. Whether the 16 exposed values are rotated after the cutover, and the change freeze and refresh cadence for catalogs while the old system is still in production.
 
 Not decided and not assumed anywhere in this plan: the long-term authority of the catalog (deferred by the owner), the SQLite managed provider (Phase 1B), and the crypto algorithms (Phase 1B).
+
+## 9. Result of step B3 (cut mode, PR #20)
+
+[CONFIRMED] On the real snapshot the converter built the six catalogs in 37 s (6.85 to 7.05 MB each, about 41.7 MB together). Instances per machine: BR_DEMO 21, ES_DEMO 19, PT_DEMO 16, PRESALES 8, SANDBOX_HUB 6, TENDERS 6 (76), as predicted in 2.3. An independent check in Python (not the tool) found: every cut table equals the expected rows; each of the 76 instances is in exactly one catalog and no catalog holds a row that references another machine's instance; the 51 global tables are identical in all six; 3,572 cut-table cells equal the source; none of the 16 original secret values is in any catalog; no excluded column exists; every catalog is read-only and passes `integrity_check`.
+[CONFIRMED] CI run 37323153083: 37 checks passed, including the cut on SQL Server (LocalDB) equal to the cut from the file, value by value.
+
+Findings in the real data:
+- [PENDING owner] 5 `cfg.LinksProfileInstance` rows link the hub profiles `SANDBOX_BR_HUB`, `SANDBOX_EN_HUB`, `SANDBOX_ES_HUB`, `SANDBOX_MX_HUB` and `SANDBOX_PT_HUB` to codes `SANDBOXBR`, `SANDBOXEN`, `SANDBOXES`, `SANDBOXMX` and `SANDBOXPT`, which are not instances (modified 2026-09-11). They belong to no machine and are not carried. Are they obsolete?
+- [CONFIRMED] PRESALES and TENDERS carry empty policy tables, as decided in 2.6; each catalog records a finding.
+- [CONFIRMED] `cfg.Application.LinksHubInstanceCode` refers to `DEMOPT` (on PT_DEMO); the other five catalogs carry the value and a finding.
+- [V] The live database may differ from the 2026-10-05 snapshot.
