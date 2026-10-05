@@ -1,0 +1,78 @@
+name: sqlclient-pin
+
+# Spike: pin Microsoft.Data.SqlClient for the conversion tools (owner decision 2026-10-05).
+# Runs on a disposable GitHub-hosted Windows runner. The report is committed to a temporary
+# results/sqlclient-pin-<run id> branch (same pattern as the Phase 1A spikes), because job
+# logs and artifacts are not readable from the agent sandbox.
+
+on:
+  push:
+    paths:
+      - 'spikes/sqlclient-pin/**'
+      - '.github/workflows/sqlclient-pin.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (empty = latest stable)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  pin:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run the spike
+        id: spike
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'pin-out'
+          ./spikes/sqlclient-pin/Invoke-SqlClientPin.ps1 -OutputFolder $out -Version '${{ github.event.inputs.version }}'
+
+      - name: Upload the closure and the report as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlclient-pin
+          path: |
+            ${{ runner.temp }}/pin-out/report.json
+            ${{ runner.temp }}/pin-out/sqlclient-closure.zip
+          if-no-files-found: warn
+
+      - name: Publish the report to a results branch
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'pin-out'
+          $report = Join-Path $out 'report.json'
+          if (-not (Test-Path -LiteralPath $report)) {
+              '{"error":"report.json was not produced"}' | Set-Content -LiteralPath $report -Encoding ascii
+          }
+          $stage = Join-Path $env:RUNNER_TEMP 'stage'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -LiteralPath $report -Destination (Join-Path $stage 'report.json')
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $branch = 'results/sqlclient-pin-' + $env:GITHUB_RUN_ID
+          git checkout --orphan $branch
+          git rm -rf -q --ignore-unmatch .
+          $dest = 'docs/phase1/evidence/sqlclient-pin-' + $env:GITHUB_RUN_ID
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $stage 'report.json') -Destination (Join-Path $dest 'report.json')
+          git add -A
+          git commit -q -m ('results: sqlclient-pin run ' + $env:GITHUB_RUN_ID)
+          git push origin $branch
+
+      - name: Fail the job when the spike failed
+        if: steps.spike.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Write-Host 'A required step of the spike failed. See the report on the results branch.'
+          exit 1

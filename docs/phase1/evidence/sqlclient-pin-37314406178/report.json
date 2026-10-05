@@ -1,0 +1,300 @@
+{
+  "contractVersion": "0.1-proposed",
+  "spike": "sqlclient-pin",
+  "runnerImage": "20260927.320.1",
+  "runnerOs": "Microsoft Windows 10.0.20348",
+  "dotnetSdks": [
+    "8.0.131 [C:\\Program Files\\dotnet\\sdk]",
+    "8.0.206 [C:\\Program Files\\dotnet\\sdk]",
+    "8.0.319 [C:\\Program Files\\dotnet\\sdk]",
+    "8.0.425 [C:\\Program Files\\dotnet\\sdk]",
+    "9.0.121 [C:\\Program Files\\dotnet\\sdk]",
+    "9.0.205 [C:\\Program Files\\dotnet\\sdk]",
+    "9.0.318 [C:\\Program Files\\dotnet\\sdk]",
+    "10.0.112 [C:\\Program Files\\dotnet\\sdk]",
+    "10.0.204 [C:\\Program Files\\dotnet\\sdk]",
+    "10.0.303 [C:\\Program Files\\dotnet\\sdk]",
+    "10.0.401 [C:\\Program Files\\dotnet\\sdk]"
+  ],
+  "generatedUtc": "2026-10-05T13:08:48Z",
+  "requiredFailed": false,
+  "facts": {
+    "latestStableVersions": [
+      "7.0.1",
+      "7.0.2",
+      "7.0.3",
+      "7.1.0",
+      "7.1.1"
+    ],
+    "version": "7.1.1",
+    "nupkgUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlclient/7.1.1/microsoft.data.sqlclient.7.1.1.nupkg",
+    "nupkgBytes": 6782596,
+    "nupkgSha256": "1da22a633fb44406d9a9400b00471039e8895ac3e717afe2e3beedba2f049e37",
+    "nupkgSha512Base64": "uZ9oSxejHPjNn1sk2ZUlPnsTiKq0Kx3ApVHmk3ZeHMHyh2Wtikijp1h5J+QBQIHa5Cz92p0hstEfbX/3h/lUSw==",
+    "catalogPackageHashAlgorithm": "SHA512",
+    "licenseExpression": "MIT",
+    "authors": "Microsoft",
+    "publishedUtc": "09/29/2026 22:38:05",
+    "signatureVerifyExitCode": 0,
+    "signatureSigner": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US | CN=NuGet.org Repository by Microsoft, O=NuGet.org Repository by Microsoft, L=Redmond, S=Washington, C=US",
+    "closureFiles": [
+      {
+        "file": "Microsoft.Bcl.Cryptography.dll",
+        "bytes": 16664,
+        "sha256": "30c625a2615dcf0a6b7b4355eac0b91d1ed7e3a8096cedc3d1b19b12f045b6f7",
+        "fileVersion": "8.0.23.53103",
+        "productVersion": "8.0.0+5535e31a712343a63f5d7d796cd874e563e5ac14"
+      },
+      {
+        "file": "Microsoft.Data.SqlClient.dll",
+        "bytes": 1668032,
+        "sha256": "3fc8292cfb9a22a5ed81e515584136f2c85c677ec49f6eb59fb282c0e99f20b6",
+        "fileVersion": "7.1.1.26272",
+        "productVersion": "7.1.1+29ce2d856cb5a9450f79ea62c0afc744fd337fde"
+      },
+      {
+        "file": "Microsoft.Data.SqlClient.Extensions.Abstractions.dll",
+        "bytes": 23488,
+        "sha256": "7fa21b488a3569731b0230feb0e8f8779d22aa4f451c1e6264af51264af82510",
+        "fileVersion": "7.1.1.26272",
+        "productVersion": "7.1.1+29ce2d856cb5a9450f79ea62c0afc744fd337fde"
+      },
+      {
+        "file": "Microsoft.Data.SqlClient.Internal.Logging.dll",
+        "bytes": 53696,
+        "sha256": "3a0d800c1ccbc41a427df0e84186488bfc1b5936bae6b5f6a732cb54877ac18f",
+        "fileVersion": "7.1.1.26272",
+        "productVersion": "7.1.1+29ce2d856cb5a9450f79ea62c0afc744fd337fde"
+      },
+      {
+        "file": "Microsoft.Data.SqlClient.SNI.dll",
+        "bytes": 555416,
+        "sha256": "e61ee1f20bb345147f85820b0d03c2b154bf9cd6b4971708114bb4782fd35b26",
+        "fileVersion": "7.1.0.0",
+        "productVersion": "7.1.0.0"
+      },
+      {
+        "file": "Microsoft.Extensions.Caching.Abstractions.dll",
+        "bytes": 31008,
+        "sha256": "31caebf834b6da88696a4a21ecb38eefff2623a531be925f6bd27719583ee3e2",
+        "fileVersion": "8.0.23.53103",
+        "productVersion": "8.0.0+5535e31a712343a63f5d7d796cd874e563e5ac14"
+      },
+      {
+        "file": "Microsoft.Extensions.Caching.Memory.dll",
+        "bytes": 45832,
+        "sha256": "a6bc869c530a2ed7573575dd61e40f0a1079ef6074251afe9701f927c5355ca8",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+        "bytes": 63768,
+        "sha256": "67fa4325000db017dc0c35829b416f024f042d24efb868bcf17a895ee6500a93",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "Microsoft.Extensions.Logging.Abstractions.dll",
+        "bytes": 65320,
+        "sha256": "45c22524218541717e4a0ade36847c1cda4921f5945b4975a1c78ddfe023d0b1",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "Microsoft.Extensions.Options.dll",
+        "bytes": 64776,
+        "sha256": "5e01894cbc0661bacb8ca8f485a40d5ee4e02f28fef58007668a0276431b4693",
+        "fileVersion": "8.0.224.6711",
+        "productVersion": "8.0.2+1381d5ebd2ab1f292848d5b19b80cf71ac332508"
+      },
+      {
+        "file": "Microsoft.Extensions.Primitives.dll",
+        "bytes": 43680,
+        "sha256": "446ff16e903e7479558816e213a3adee9a1c1adad65a56d853801b10933e29d7",
+        "fileVersion": "8.0.23.53103",
+        "productVersion": "8.0.0+5535e31a712343a63f5d7d796cd874e563e5ac14"
+      },
+      {
+        "file": "Microsoft.IdentityModel.Abstractions.dll",
+        "bytes": 19488,
+        "sha256": "c34d2ce8040d572d83762e5cf6cf2fe1e78d3de68d3bb9cebd793253f315f08d",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.IdentityModel.JsonWebTokens.dll",
+        "bytes": 172576,
+        "sha256": "cac7864ed8d14fe03ef7bbf8cc7fa0390d2e7b0af3472b8c1b1ba4c7c99b3086",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.IdentityModel.Logging.dll",
+        "bytes": 38432,
+        "sha256": "e5e606dbffd6ab4106d3058a046814f71fd96ac934f866a32aa0e10c00bb3e5a",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.IdentityModel.Protocols.dll",
+        "bytes": 53280,
+        "sha256": "8f4e850b00c9e881b7ca1753fb821b7e7cf999606d8091e4d98b411967e7f52c",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.IdentityModel.Protocols.OpenIdConnect.dll",
+        "bytes": 137288,
+        "sha256": "8e3fefb922ea84b9d242e07f7679bf6a733ae6cedac72e16fb2fc36f58e61dd1",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.IdentityModel.Tokens.dll",
+        "bytes": 392264,
+        "sha256": "7bc880d65d3dfa8c437822f200a1846a73bf589beb6ec9f802d2d529cb9218ba",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "Microsoft.SqlServer.Server.dll",
+        "bytes": 23976,
+        "sha256": "a9dca1b42bc875f966b78b2c0880e62b838f0ed6567166d7f1f07ae4b76ec4bf",
+        "fileVersion": "1.0.0.0",
+        "productVersion": "1.0.0-dev+54ab5aef2e1b74c0971a00711fecb003b624efdf"
+      },
+      {
+        "file": "System.Configuration.ConfigurationManager.dll",
+        "bytes": 442544,
+        "sha256": "f7ea3a9618aca48fb57fd06e9102b327ab66468ceb78c96d56f7d2eee2945983",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "System.Diagnostics.EventLog.dll",
+        "bytes": 172704,
+        "sha256": "8343020e3752dc8fae7598816570aa30b041f835412a76dac7f65b229ed9532b",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "System.Diagnostics.EventLog.Messages.dll",
+        "bytes": 801080,
+        "sha256": "dbfb7c81fb62a0bd3f77da92496640f179e96dd0c1a41a0d3c5d2a2445a3be46",
+        "fileVersion": "",
+        "productVersion": ""
+      },
+      {
+        "file": "System.IdentityModel.Tokens.Jwt.dll",
+        "bytes": 91720,
+        "sha256": "fd8ae62b01f008248bfff06c42d1514830e05cd6c01f807761d68a12f1b6dcda",
+        "fileVersion": "8.16.0.26043",
+        "productVersion": "8.16.0+f8172402e711c043a59bef81bba2609cf1fb9f46"
+      },
+      {
+        "file": "System.Security.Cryptography.Pkcs.dll",
+        "bytes": 319784,
+        "sha256": "d8e4b733fbaec1fe0e808fd6391479f190b170df03e309c5f07dc85445447d22",
+        "fileVersion": "8.0.1024.46610",
+        "productVersion": "8.0.10+81cabf2857a01351e5ab578947c7403a5b128ad1"
+      },
+      {
+        "file": "System.Security.Cryptography.ProtectedData.dll",
+        "bytes": 36616,
+        "sha256": "5e04d6cff3b6fe9706908970cd594861f0c08b3824f7827b2331b5f4fcee1bd1",
+        "fileVersion": "8.0.23.53103",
+        "productVersion": "8.0.0+5535e31a712343a63f5d7d796cd874e563e5ac14"
+      },
+      {
+        "file": "System.Threading.RateLimiting.dll",
+        "bytes": 68896,
+        "sha256": "95b7e590ae833a7842bb8c0453032661e4110678248b0e43d26c39b2cc00716d",
+        "fileVersion": "8.0.23.53103",
+        "productVersion": "8.0.0+5535e31a712343a63f5d7d796cd874e563e5ac14"
+      }
+    ],
+    "closureFileCount": 25,
+    "hasClientDll": true,
+    "hasNativeSni": true,
+    "closureZipSha256": "1c823a42785d606a2306c7fdc4f6e8869530805e0b79cdaa170c22dc54e067b1",
+    "closureZipBytes": 1806815,
+    "loadTest": {
+      "psVersion": "7.6.6",
+      "runtime": ".NET 10.0.12",
+      "assemblyVersion": "7.0.0.0",
+      "loadedFrom": "D:\\a\\_temp\\pin-out\\closure\\Microsoft.Data.SqlClient.dll",
+      "builderWorks": true
+    },
+    "sqlServices": [],
+    "sqlProbe": [
+      {
+        "dataSource": ".\\SQLEXPRESS",
+        "ok": false,
+        "result": "ParentContainsErrorRecordException: D:\\a\\_temp\\pin-out\\probe-test.ps1:12\r\nLine |\r\n  12 |      $c.Open()\r\n     |      ~~~~~~~~~\r\n     | Exception calling \"Open\" with \"0\" argument(s): \"A network-related or instance-specific error occurred while\r\n     | establishing a connection to SQL Server. The serv ..."
+      },
+      {
+        "dataSource": "(localdb)\\MSSQLLocalDB",
+        "ok": true,
+        "result": "15.0.4382.1|SQL_Latin1_General_CP1_CI_AS"
+      },
+      {
+        "dataSource": ".",
+        "ok": false,
+        "result": "ParentContainsErrorRecordException: D:\\a\\_temp\\pin-out\\probe-test.ps1:12\r\nLine |\r\n  12 |      $c.Open()\r\n     |      ~~~~~~~~~\r\n     | Exception calling \"Open\" with \"0\" argument(s): \"A network-related or instance-specific error occurred while\r\n     | establishing a connection to SQL Server. The serv ..."
+      },
+      {
+        "dataSource": "localhost,1433",
+        "ok": false,
+        "result": "ParentContainsErrorRecordException: D:\\a\\_temp\\pin-out\\probe-test.ps1:12\r\nLine |\r\n  12 |      $c.Open()\r\n     |      ~~~~~~~~~\r\n     | Exception calling \"Open\" with \"0\" argument(s): \"A network-related or instance-specific error occurred while\r\n     | establishing a connection to SQL Server. The serv ..."
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step": "resolve version",
+      "status": "PASS",
+      "details": "7.1.1"
+    },
+    {
+      "step": "download nupkg and hash",
+      "status": "PASS",
+      "details": "SHA-256 1da22a633fb44406d9a9400b00471039e8895ac3e717afe2e3beedba2f049e37"
+    },
+    {
+      "step": "SHA-512 equals the NuGet catalog packageHash",
+      "status": "PASS",
+      "details": "match"
+    },
+    {
+      "step": "package signature (dotnet nuget verify)",
+      "status": "PASS",
+      "details": "signer: CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US | CN=NuGet.org Repository by Microsoft, O=NuGet.org Repository by Microsoft, L=Redmond, S=Washington, C=US"
+    },
+    {
+      "step": "collect dependency closure",
+      "status": "PASS",
+      "details": "25 files; native SNI present: True"
+    },
+    {
+      "step": "pinned PowerShell 7.6.6 ZIP verified",
+      "status": "PASS",
+      "details": "SHA-256 matches vendor/manifest.json"
+    },
+    {
+      "step": "load the client in the pinned PowerShell and build a connection string",
+      "status": "PASS",
+      "details": "assembly 7.0.0.0 on .NET 10.0.12"
+    },
+    {
+      "step": "SQL Server services on the runner",
+      "status": "INFO",
+      "details": ""
+    },
+    {
+      "step": "read-only query against a SQL Server on the runner",
+      "status": "PASS",
+      "details": "(localdb)\\MSSQLLocalDB -> 15.0.4382.1|SQL_Latin1_General_CP1_CI_AS"
+    }
+  ]
+}
