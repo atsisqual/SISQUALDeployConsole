@@ -13,7 +13,7 @@ body:
     id: reference
     attributes:
       label: Reference evidence
-      description: Name the reference commit, snapshot rows, ADRs, and current behaviour.
+      description: Name the reference commit, catalog rows, ADRs, and current behaviour.
     validations:
       required: true
   - type: textarea
