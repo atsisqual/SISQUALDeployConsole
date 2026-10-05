@@ -5,8 +5,6 @@ on:
     branches: ['spike/phase1c-local-web-security']
     paths:
       - 'spikes/phase1C/local-web-security/**'
-      - 'docs/phase1/phase1c-local-web-security.md'
-      - 'docs/phase1/evidence/phase1c-local-web-security/**'
       - '.github/workflows/phase1c-local-web-security.yml'
   workflow_dispatch:
 
