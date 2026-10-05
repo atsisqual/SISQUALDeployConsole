@@ -44,14 +44,16 @@ function Get-CanonicalLockKeys {
 function Get-RequestFingerprint {
     param(
         [Parameter(Mandatory = $true)][string]$EngineCode,
+        [Parameter(Mandatory = $true)][ValidateSet('PREVIEW', 'APPLY')][string]$Mode,
         [string]$InstanceCode,
-        [Parameter(Mandatory = $true)][string]$PlanFingerprint,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$PlanFingerprint,
         [Parameter(Mandatory = $true)][ValidateSet('COOPERATIVE', 'NONE')][string]$CancellationMode,
         [string[]]$LockKeys
     )
 
     $parts = @(
         $EngineCode,
+        $Mode,
         ([string]$InstanceCode),
         $PlanFingerprint,
         $CancellationMode
@@ -178,10 +180,11 @@ function Update-SisqualOperationCoordinator {
 function Start-SisqualOperation {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Z0-9_]+$')][string]$EngineCode,
+        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Z][A-Z0-9_]{1,59}$')][string]$EngineCode,
+        [Parameter(Mandatory = $true)][ValidateSet('PREVIEW', 'APPLY')][string]$Mode,
         [string]$InstanceCode,
-        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$PlanFingerprint,
-        [Parameter(Mandatory = $true)][ValidateLength(16, 256)][string]$IdempotencyKey,
+        [AllowEmptyString()][string]$PlanFingerprint = '',
+        [Parameter(Mandatory = $true)][ValidateLength(16, 128)][string]$IdempotencyKey,
         [ValidateSet('COOPERATIVE', 'NONE')][string]$CancellationMode = 'COOPERATIVE',
         [string[]]$LockKeys = @(),
         [Parameter(Mandatory = $true)][scriptblock]$WorkerScript,
@@ -190,12 +193,20 @@ function Start-SisqualOperation {
     )
 
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
+
+    if ($Mode -eq 'APPLY' -and $PlanFingerprint -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'APPLY requires a lowercase 64-hex confirmed plan fingerprint.'
+    }
+    if ($Mode -eq 'PREVIEW' -and -not [string]::IsNullOrEmpty($PlanFingerprint) -and $PlanFingerprint -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'PREVIEW plan fingerprint, when supplied, must be lowercase 64-hex.'
+    }
+
     $canonicalLocks = @(Get-CanonicalLockKeys -InstanceCode $InstanceCode -LockKeys $LockKeys)
     if ($canonicalLocks.Count -eq 0) {
         throw 'At least one instance or explicit lock key is required.'
     }
 
-    $requestFingerprint = Get-RequestFingerprint -EngineCode $EngineCode -InstanceCode $InstanceCode -PlanFingerprint $PlanFingerprint -CancellationMode $CancellationMode -LockKeys $canonicalLocks
+    $requestFingerprint = Get-RequestFingerprint -EngineCode $EngineCode -Mode $Mode -InstanceCode $InstanceCode -PlanFingerprint $PlanFingerprint -CancellationMode $CancellationMode -LockKeys $canonicalLocks
     $idempotencyHash = ConvertTo-Sha256Hex -Value $IdempotencyKey
 
     $decision = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
@@ -238,6 +249,7 @@ function Start-SisqualOperation {
         $newOperation = [pscustomobject][ordered]@{
             OperationId = $operationId
             EngineCode = $EngineCode
+            Mode = $Mode
             InstanceCode = [string]$InstanceCode
             PlanFingerprint = $PlanFingerprint
             RequestFingerprint = $requestFingerprint
@@ -321,6 +333,7 @@ function Get-SisqualOperation {
         return [pscustomobject][ordered]@{
             OperationId = $operation.OperationId
             EngineCode = $operation.EngineCode
+            Mode = $operation.Mode
             InstanceCode = $operation.InstanceCode
             PlanFingerprint = $operation.PlanFingerprint
             RequestFingerprint = $operation.RequestFingerprint
