@@ -12,7 +12,7 @@ Vocabulary: [CONFIRMED] demonstrated by a run, [PROPOSED] recommended, not appro
 
 ## 2. Phase 1A - portable runtime (run 37284187896, commit 463c8e786b)
 
-The script's own verdict is FAIL, only because its critical list still includes the WebAdministration checks (see finding 1).
+The script's own verdict is FAIL, only because its critical list still includes the WebAdministration checks (see finding 1). Update: after commit 23a726e moved the IIS gate to the Windows PowerShell 5.1 control and MWA, run 37293496549 reports PASS on both runners; the three WebAdministration-under-PowerShell-7 checks still FAIL, now as an expected and non-critical limitation. Evidence: `docs/phase1/evidence/phase1a-rerun37293496549/`.
 
 | Area | windows-2022 | windows-2025 |
 |---|---|---|
@@ -100,11 +100,13 @@ Merging the workflows also enables `workflow_dispatch`, so the spikes can be re-
 | 37286541200 | cf4b8cb | Phase 1A-2: harness bugs only (volatile keys, variable collision, wrong threshold) |
 | 37289281915 | 64aa35f | Duplicate PR #6, stopped at the first write step; closed in favour of PR #5 |
 | 37290642287 | 4909851 | Phase 1A-2 final: 22/22 PASS on both runners |
+| 37293496549 | 23a726e | Phase 1A re-run after moving the IIS gate to the 5.1 control and MWA: PASS on both runners; WebAdministration under PowerShell 7 still FAIL (non-critical, expected) |
 
 ## 9. Evidence
 
 - `docs/phase1/evidence/phase1a-run37284187896/` report and console of windows-2022 and windows-2025.
 - `docs/phase1/evidence/phase1a2-run37290642287/` report and console of windows-2022 and windows-2025.
+- `docs/phase1/evidence/phase1a-rerun37293496549/` report and console of windows-2022 and windows-2025 after the IIS gate change.
 
 ## 10. Related documents
 

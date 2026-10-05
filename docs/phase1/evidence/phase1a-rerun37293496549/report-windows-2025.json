@@ -1,0 +1,221 @@
+﻿{
+    "Phase":  "1A",
+    "Name":  "Portable Runtime Compatibility",
+    "RunId":  "d7fed79bdc52470aa55dd68911bb993e",
+    "Machine":  "runnervmfi6oq",
+    "StartedAtUtc":  "2026-10-05T10:04:58.4564228Z",
+    "CompletedAtUtc":  "2026-10-05T10:06:11.6291318Z",
+    "DurationSeconds":  73.173,
+    "Overall":  "PASS",
+    "IisInstalled":  true,
+    "KeepArtifacts":  false,
+    "ArtifactRoot":  "D:\\a\\SISQUALDeployConsole\\SISQUALDeployConsole\\spikes\\phase1A\\artifacts",
+    "ReportPath":  "D:\\a\\SISQUALDeployConsole\\SISQUALDeployConsole\\report-windows-2025.json",
+    "PinnedArtifacts":  {
+                            "PowerShell":  {
+                                               "Version":  "7.6.6",
+                                               "FileName":  "PowerShell-7.6.6-win-x64.zip",
+                                               "Sha256":  "02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860",
+                                               "PublishedBy":  "PowerShell/PowerShell release hashes.sha256",
+                                               "Source":  "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip"
+                                           },
+                            "Pode":  {
+                                         "Version":  "2.14.1",
+                                         "FileName":  "2.14.1-Binaries.zip",
+                                         "Sha256":  "85CCA8D0446E5D57F57BA9FD859166845D4997A28B71142912B6B648A3F152C6",
+                                         "PublishedBy":  "Badgerati/Pode release checksum",
+                                         "Source":  "https://github.com/Badgerati/Pode/releases/download/v2.14.1/2.14.1-Binaries.zip"
+                                     },
+                            "SQLite":  {
+                                           "Version":  "3.53.4",
+                                           "FileName":  "sqlite-tools-win-x64-3530400.zip",
+                                           "Sha256":  "F46EE2475DE4CBE287E6E5F7D43C838796B14E7379CD216BDBB28D391429F9FC",
+                                           "Sha256PublishedBy":  "ScoopInstaller/Main bucket/sqlite.json (3.53.4)",
+                                           "Sha3_256":  "88B4659FE747896B853AF10157316B4ADE143553EFB89C1C8CA7423A278DCC8B",
+                                           "Sha3PublishedBy":  "sqlite.org official download page",
+                                           "Source":  "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip"
+                                       }
+                        },
+    "Checks":  [
+                   {
+                       "Id":  "HOST_WINDOWS_X64",
+                       "Status":  "PASS",
+                       "Message":  "Host inventory.",
+                       "Error":  "",
+                       "DataJson":  "{\"ComputerName\":\"runnervmfi6oq\",\"Caption\":\"Microsoft Windows Server 2025 Datacenter\",\"Version\":\"10.0.26100\",\"Build\":\"26100\",\"Architecture\":\"64-bit\",\"HostPowerShell\":\"5.1.26100.33438\"}"
+                   },
+                   {
+                       "Id":  "HOST_ADMINISTRATOR",
+                       "Status":  "PASS",
+                       "Message":  "Process is elevated.",
+                       "Error":  "",
+                       "DataJson":  "{\"IsAdministrator\":true}"
+                   },
+                   {
+                       "Id":  "HOST_IIS_PRESENT",
+                       "Status":  "PASS",
+                       "Message":  "IIS detected.",
+                       "Error":  "",
+                       "DataJson":  "{\"Installed\":true,\"Version\":\"10.0\"}"
+                   },
+                   {
+                       "Id":  "POWERSHELL_ARTIFACT",
+                       "Status":  "PASS",
+                       "Message":  "SHA-256 matches pinned published value.",
+                       "Error":  "",
+                       "DataJson":  "{\"Path\":\"D:\\\\a\\\\SISQUALDeployConsole\\\\SISQUALDeployConsole\\\\spikes\\\\phase1A\\\\artifacts\\\\PowerShell-7.6.6-win-x64.zip\",\"Version\":\"7.6.6\",\"Sha256\":\"02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860\",\"PublishedBy\":\"PowerShell/PowerShell release hashes.sha256\"}"
+                   },
+                   {
+                       "Id":  "PODE_ARTIFACT",
+                       "Status":  "PASS",
+                       "Message":  "SHA-256 matches pinned published value.",
+                       "Error":  "",
+                       "DataJson":  "{\"Path\":\"D:\\\\a\\\\SISQUALDeployConsole\\\\SISQUALDeployConsole\\\\spikes\\\\phase1A\\\\artifacts\\\\2.14.1-Binaries.zip\",\"Version\":\"2.14.1\",\"Sha256\":\"85CCA8D0446E5D57F57BA9FD859166845D4997A28B71142912B6B648A3F152C6\",\"PublishedBy\":\"Badgerati/Pode release checksum\"}"
+                   },
+                   {
+                       "Id":  "SQLITE_ARTIFACT",
+                       "Status":  "PASS",
+                       "Message":  "SHA-256 matches pinned published value.",
+                       "Error":  "",
+                       "DataJson":  "{\"Path\":\"D:\\\\a\\\\SISQUALDeployConsole\\\\SISQUALDeployConsole\\\\spikes\\\\phase1A\\\\artifacts\\\\sqlite-tools-win-x64-3530400.zip\",\"Version\":\"3.53.4\",\"Sha256\":\"F46EE2475DE4CBE287E6E5F7D43C838796B14E7379CD216BDBB28D391429F9FC\",\"PublishedBy\":\"ScoopInstaller/Main bucket/sqlite.json (3.53.4)\"}"
+                   },
+                   {
+                       "Id":  "POWERSHELL_PORTABLE",
+                       "Status":  "PASS",
+                       "Message":  "Pinned pwsh started from extracted runtime.",
+                       "Error":  "",
+                       "DataJson":  "{\"PSVersion\":\"7.6.6\",\"PSEdition\":\"Core\",\"PSHome\":\"C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\SISQUALDeployConsole-Phase1A-d7fed79bdc52470aa55dd68911bb993e\\\\pwsh\",\"Framework\":\".NET 10.0.12\",\"ProcessArchitecture\":\"X64\",\"Is64Bit\":true}"
+                   },
+                   {
+                       "Id":  "SQLITE_ARTIFACT_SHA3",
+                       "Status":  "PASS",
+                       "Message":  "SQLite also matches official sqlite.org SHA3-256.",
+                       "Error":  "",
+                       "DataJson":  "{\"Expected\":\"88B4659FE747896B853AF10157316B4ADE143553EFB89C1C8CA7423A278DCC8B\",\"PublishedBy\":\"sqlite.org official download page\",\"WindowsBuild\":\"26100\",\"Dotnet\":\".NET 10.0.12\",\"Supported\":true,\"Actual\":\"88B4659FE747896B853AF10157316B4ADE143553EFB89C1C8CA7423A278DCC8B\"}"
+                   },
+                   {
+                       "Id":  "PODE_PORTABLE_IMPORT",
+                       "Status":  "PASS",
+                       "Message":  "Pode imported from extracted offline artifact.",
+                       "Error":  "",
+                       "DataJson":  "{\"Success\":true,\"Name\":\"Pode\",\"Version\":\"2.14.1\",\"Path\":\"C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\SISQUALDeployConsole-Phase1A-d7fed79bdc52470aa55dd68911bb993e\\\\pode\\\\Pode.psm1\"}"
+                   },
+                   {
+                       "Id":  "PODE_LOOPBACK_POSITIVE",
+                       "Status":  "PASS",
+                       "Message":  "Pode health route over 127.0.0.1.",
+                       "Error":  "",
+                       "DataJson":  "{\"Port\":63308,\"Exited\":false}"
+                   },
+                   {
+                       "Id":  "PODE_LISTENER_LOOPBACK_ONLY",
+                       "Status":  "PASS",
+                       "Message":  "Listener must exist only on loopback.",
+                       "Error":  "",
+                       "DataJson":  "{\"Port\":63308,\"Listeners\":[{\"LocalAddress\":\"127.0.0.1\",\"LocalPort\":63308,\"OwningProcess\":1892,\"State\":2}]}"
+                   },
+                   {
+                       "Id":  "PODE_NON_LOOPBACK_NEGATIVE",
+                       "Status":  "PASS",
+                       "Message":  "Connection via the machine non-loopback IP must fail.",
+                       "Error":  "",
+                       "DataJson":  "[{\"Address\":\"10.1.0.182\",\"Connected\":false},{\"Address\":\"172.20.112.1\",\"Connected\":false}]"
+                   },
+                   {
+                       "Id":  "SQLITE_PORTABLE",
+                       "Status":  "PASS",
+                       "Message":  "SQLite extracted ZIP: version/WAL/create/insert/reopen/rollback.",
+                       "Error":  "",
+                       "DataJson":  "{\"Version\":\"3.53.4 2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc (64-bit)\",\"ExpectedVersion\":\"3.53.4\",\"JournalMode\":\"wal\",\"Inserted\":\"portable\",\"Reopen\":\"1|portable\",\"RollbackCount\":\"1\",\"ExitCodes\":[0,0,0]}"
+                   },
+                   {
+                       "Id":  "IIS_BASELINE_WINPS51",
+                       "Status":  "PASS",
+                       "Message":  "Control: the same IIS reads in Windows PowerShell 5.1 itself (no PowerShell 7 involved).",
+                       "Error":  "",
+                       "DataJson":  "{\"ImportSuccess\":true,\"Sites\":1,\"Applications\":0,\"Pools\":3,\"ElapsedMs\":170.72390000000001,\"PerCmdlet\":{},\"Error\":null}"
+                   },
+                   {
+                       "Id":  "IIS_WEBADMIN_NATIVE",
+                       "Status":  "FAIL",
+                       "Message":  "Default/native WebAdministration import and real reads under PowerShell 7.",
+                       "Error":  "",
+                       "DataJson":  "{\"Mode\":\"Native\",\"ImportSuccess\":true,\"UsedCompatSession\":true,\"Read\":{\"Get-Website\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebApplication\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Site\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebsiteState\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebAppPoolState\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebGlobalModule\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Image\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Precondition\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]}},\"Mutable\":{},\"ProviderAvailable\":false,\"ProviderError\":null,\"Counts\":{},\"TimingsMs\":{},\"Samples\":{},\"Error\":\"System.Management.Automation.RemoteException: The data is invalid. (Exception from HRESULT: 0x8007000D)\"}"
+                   },
+                   {
+                       "Id":  "IIS_WEBADMIN_COMPAT",
+                       "Status":  "FAIL",
+                       "Message":  "Forced Windows PowerShell compatibility import and real reads.",
+                       "Error":  "",
+                       "DataJson":  "{\"Mode\":\"Compat\",\"ImportSuccess\":true,\"UsedCompatSession\":true,\"Read\":{\"Get-Website\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebApplication\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Site\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebsiteState\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebAppPoolState\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]},\"Get-WebGlobalModule\":{\"Present\":true,\"Module\":\"WebAdministration\",\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Image\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Precondition\",\"Verbose\",\"WarningAction\",\"WarningVariable\"]}},\"Mutable\":{\"Start-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Stop-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Restart-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Start-Website\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Stop-Website\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"New-Website\":{\"Present\":true,\"Parameters\":[\"ApplicationPool\",\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Force\",\"HostHeader\",\"Id\",\"InformationAction\",\"InformationVariable\",\"IPAddress\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PhysicalPath\",\"PipelineVariable\",\"Port\",\"Ssl\",\"SslFlags\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\",\"PhysicalPath\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"New-WebApplication\":{\"Present\":true,\"Parameters\":[\"ApplicationPool\",\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Force\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PhysicalPath\",\"PipelineVariable\",\"Site\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\",\"Site\",\"PhysicalPath\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Set-WebConfigurationProperty\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"AtElement\",\"AtIndex\",\"AtName\",\"Clr\",\"Confirm\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Filter\",\"Force\",\"InformationAction\",\"InformationVariable\",\"InputObject\",\"Location\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"PSPath\",\"Value\",\"Verbose\",\"WarningAction\",\"WarningVariable\",\"WhatIf\"],\"Expected\":[\"Filter\",\"Name\",\"Value\"],\"Missing\":[],\"Pass\":true,\"Executed\":false}},\"ProviderAvailable\":false,\"ProviderError\":null,\"Counts\":{},\"TimingsMs\":{},\"Samples\":{},\"Error\":\"System.Management.Automation.RemoteException: The data is invalid. (Exception from HRESULT: 0x8007000D)\"}"
+                   },
+                   {
+                       "Id":  "IIS_MUTABLE_COMMAND_SURFACE_COMPAT",
+                       "Status":  "PASS",
+                       "Message":  "Mutating commands checked only with Get-Command; expected parameters present; Executed=false.",
+                       "Error":  "",
+                       "DataJson":  "{\"Start-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Stop-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Restart-WebAppPool\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Start-Website\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Stop-Website\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"Passthru\",\"PipelineVariable\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"New-Website\":{\"Present\":true,\"Parameters\":[\"ApplicationPool\",\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Force\",\"HostHeader\",\"Id\",\"InformationAction\",\"InformationVariable\",\"IPAddress\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PhysicalPath\",\"PipelineVariable\",\"Port\",\"Ssl\",\"SslFlags\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\",\"PhysicalPath\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"New-WebApplication\":{\"Present\":true,\"Parameters\":[\"ApplicationPool\",\"AsJob\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Force\",\"InformationAction\",\"InformationVariable\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PhysicalPath\",\"PipelineVariable\",\"Site\",\"Verbose\",\"WarningAction\",\"WarningVariable\"],\"Expected\":[\"Name\",\"Site\",\"PhysicalPath\"],\"Missing\":[],\"Pass\":true,\"Executed\":false},\"Set-WebConfigurationProperty\":{\"Present\":true,\"Parameters\":[\"AsJob\",\"AtElement\",\"AtIndex\",\"AtName\",\"Clr\",\"Confirm\",\"Debug\",\"ErrorAction\",\"ErrorVariable\",\"Filter\",\"Force\",\"InformationAction\",\"InformationVariable\",\"InputObject\",\"Location\",\"Name\",\"OutBuffer\",\"OutVariable\",\"PipelineVariable\",\"PSPath\",\"Value\",\"Verbose\",\"WarningAction\",\"WarningVariable\",\"WhatIf\"],\"Expected\":[\"Filter\",\"Name\",\"Value\"],\"Missing\":[],\"Pass\":true,\"Executed\":false}}"
+                   },
+                   {
+                       "Id":  "IIS_PROVIDER",
+                       "Status":  "FAIL",
+                       "Message":  "IIS:\\ provider availability under PowerShell 7.",
+                       "Error":  "",
+                       "DataJson":  "{\"Native\":false,\"NativeError\":null,\"Compat\":false,\"CompatError\":null}"
+                   },
+                   {
+                       "Id":  "IIS_ENUMERATION_PERFORMANCE",
+                       "Status":  "PASS",
+                       "Message":  "Captured timings/counts for all sites, applications, pools and state calls.",
+                       "Error":  "",
+                       "DataJson":  "{\"NativeTimings\":{},\"NativeCounts\":{},\"CompatTimings\":{},\"CompatCounts\":{}}"
+                   },
+                   {
+                       "Id":  "IIS_SERIALIZED_PROPERTIES",
+                       "Status":  "PASS",
+                       "Message":  "Captured type names and usable property names only, not site values.",
+                       "Error":  "",
+                       "DataJson":  "{\"Native\":{},\"Compat\":{}}"
+                   },
+                   {
+                       "Id":  "IIS_ADMINISTRATION_MODULE",
+                       "Status":  "PASS",
+                       "Message":  "Informational alternative: IISAdministration module read-only (Get-IISSite, Get-IISAppPool) under PowerShell 7.",
+                       "Error":  "",
+                       "DataJson":  "{\"Success\":true,\"Module\":\"IISAdministration\",\"Version\":\"1.1.0.0\",\"UsedCompatSession\":false,\"Sites\":1,\"Pools\":3,\"SitesMs\":57.5582,\"PoolsMs\":2.1703,\"Error\":null}"
+                   },
+                   {
+                       "Id":  "IIS_MICROSOFT_WEB_ADMINISTRATION",
+                       "Status":  "PASS",
+                       "Message":  "Direct Microsoft.Web.Administration.dll load and read-only site/app/pool enumeration.",
+                       "Error":  "",
+                       "DataJson":  "{\"Success\":true,\"AssemblyPath\":\"C:\\\\Windows\\\\System32\\\\inetsrv\\\\Microsoft.Web.Administration.dll\",\"AssemblyFullName\":\"Microsoft.Web.Administration, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35\",\"SiteCount\":1,\"ApplicationCount\":1,\"PoolCount\":3,\"SitesMs\":36.0525,\"ApplicationsMs\":4.1767,\"PoolsMs\":1.9673,\"Error\":null}"
+                   },
+                   {
+                       "Id":  "CLEANUP_PORT",
+                       "Status":  "PASS",
+                       "Message":  "No listener may remain on the Pode test port.",
+                       "Error":  "",
+                       "DataJson":  "{\"Port\":63308,\"Remaining\":[]}"
+                   },
+                   {
+                       "Id":  "CLEANUP_SHELL_PROCESSES",
+                       "Status":  "PASS",
+                       "Message":  "No new pwsh/powershell process may remain after the spike.",
+                       "Error":  "",
+                       "DataJson":  "{\"Baseline\":[{\"ProcessName\":\"powershell\",\"Id\":1648},{\"ProcessName\":\"powershell\",\"Id\":2024}],\"RemainingNew\":[]}"
+                   },
+                   {
+                       "Id":  "CLEANUP_TEMP_ROOT",
+                       "Status":  "PASS",
+                       "Message":  "Temporary directory removed.",
+                       "Error":  "",
+                       "DataJson":  "{\"TempRoot\":\"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\SISQUALDeployConsole-Phase1A-d7fed79bdc52470aa55dd68911bb993e\",\"Kept\":false}"
+                   }
+               ],
+    "FatalError":  null,
+    "DecisionHint":  "ADR-0001 Phase 1A runtime gate passed on this machine.",
+    "ReportDiagnostics":  [
+
+                          ]
+}
