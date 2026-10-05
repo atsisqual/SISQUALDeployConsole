@@ -1,0 +1,28 @@
+{
+  "status": "[CONFIRMED]",
+  "source": "spikes/phase1A/Test-Phase1A.ps1",
+  "artifacts": [
+    {
+      "name": "PowerShell",
+      "version": "7.6.6",
+      "fileName": "PowerShell-7.6.6-win-x64.zip",
+      "sha256": "02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860",
+      "source": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip"
+    },
+    {
+      "name": "Pode",
+      "version": "2.14.1",
+      "fileName": "2.14.1-Binaries.zip",
+      "sha256": "85CCA8D0446E5D57F57BA9FD859166845D4997A28B71142912B6B648A3F152C6",
+      "source": "https://github.com/Badgerati/Pode/releases/download/v2.14.1/2.14.1-Binaries.zip"
+    },
+    {
+      "name": "SQLite",
+      "version": "3.53.4",
+      "fileName": "sqlite-tools-win-x64-3530400.zip",
+      "sha256": "F46EE2475DE4CBE287E6E5F7D43C838796B14E7379CD216BDBB28D391429F9FC",
+      "sha3_256": "88B4659FE747896B853AF10157316B4ADE143553EFB89C1C8CA7423A278DCC8B",
+      "source": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip"
+    }
+  ]
+}
