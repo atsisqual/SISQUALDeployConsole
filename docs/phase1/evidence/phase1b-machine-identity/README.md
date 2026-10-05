@@ -3,15 +3,35 @@
 **Branch:** `spike/phase1b-machine-identity-cng`
 **Base main:** `ad598215fe3ab0bc715a797a37e2bcf9331eaa56`
 **Workflow:** `phase1b-machine-identity`
-**Status:** [PENDING] no Windows execution has been dispatched yet.
+**Workflow ID:** `375831032`
+**Current run ID:** `37376755238`
+**Run number:** `1`
+**Run attempt:** `1`
+**Event:** `push`
+**Head commit:** `53cccd67cee9cd5e2cd9a9210995a6987c563adf`
+**Created UTC:** `2026-10-05T21:34:40Z`
+**Status:** [PENDING] first Windows execution is in progress.
 
-## Why there is no run ID yet
+## Why the trigger changed
 
-[CONFIRMED] PR #36 recorded three GitHub-hosted Windows attempts that never received a runner and executed zero steps. Per owner direction on 2026-10-05, this machine-identity workflow is manual (`workflow_dispatch`) so another AI/reviewer can validate it when Windows capacity is available instead of spending automatic attempts now.
+[CONFIRMED] PR #36 recorded three GitHub-hosted Windows attempts that never received a runner and executed zero steps.
 
-No run ID, attempt ID, job ID or artifact ID exists for this spike until the first manual dispatch. None is invented here.
+[CONFIRMED external] GitHub documents that `workflow_dispatch` only receives events when the workflow file exists on the default branch. Because this spike must be validated before merge, the workflow also has a `push` trigger limited to `spike/phase1b-machine-identity-cng` and only the spike/workflow paths. `workflow_dispatch` remains for later use after integration.
 
-## Required ledger for every dispatch
+## Current execution ledger
+
+### Run `37376755238`, attempt `1`
+
+| Job | Job ID | Label | Runner | Created UTC | Started UTC | State |
+|---|---:|---|---|---|---|---|
+| Machine A - create and reopen CNG identity | `111987660696` | `windows-2022` | `GitHub Actions 1000000536` (`runner_id=1000000536`) | 2026-10-05T21:34:41Z | 2026-10-05T21:34:43Z | in progress at latest check |
+| Machine B - copied folder has no source private key | [PENDING] | `windows-2025` | [PENDING] | [PENDING] | [PENDING] | created only after Machine A succeeds |
+
+[CONFIRMED] At the latest recorded check, Machine A had received a real GitHub-hosted runner. `Set up job` and `actions/checkout@v4` had succeeded; `Download verified portable PowerShell` was in progress. No CNG compatibility result is claimed yet.
+
+[PENDING] Machine B has no job ID yet because the workflow uses `needs: machine-a`; GitHub will materialize it after Machine A reaches the dependency point. No ID is invented.
+
+## Required ledger for every execution
 
 For every workflow execution record:
 
@@ -21,8 +41,7 @@ For every workflow execution record:
 - `run_attempt`;
 - event and triggering actor;
 - exact head commit SHA;
-- Machine A job ID (`windows-2022`);
-- Machine B job ID (`windows-2025`);
+- Machine A and Machine B job IDs;
 - runner labels, runner ID and runner name;
 - created, started and completed UTC timestamps;
 - conclusion of every job and every step;
@@ -38,11 +57,13 @@ A retry caused only by runner infrastructure stays under the same run ID with a 
 - copied replacement portable folder used by Machine A;
 - `machine-identity-source.json` (public data only);
 - `report-machine-a-create.json`;
-- `report-machine-a-reopen.json`.
+- `report-machine-a-reopen.json`;
+- `report-machine-a-cleanup.json`.
 
 ### `phase1b-machine-identity-machine-b`
 
-- `report-machine-b.json`.
+- `report-machine-b.json`;
+- `report-machine-b-cleanup.json`.
 
 The final evidence record must preserve artifact IDs as well as display names.
 
@@ -71,7 +92,7 @@ Machine B:
 - `CREDENTIAL_MODULE_INTEROP`;
 - `SOURCE_ENTRY_REJECTED_ON_DESTINATION`.
 
-Cleanup should report `KEY_REMOVED` for each VM when the cleanup action runs.
+Cleanup must report `KEY_REMOVED` for each VM when the cleanup action runs.
 
 ## Acceptance rule
 
