@@ -1,6 +1,6 @@
 # Analysis: Pulse (`PULSE_STATUS` and the Pulse profile)
 
-**Status:** [PROPOSED] analysis for review. It closes the open item "does a machine's Pulse need the hub or the instances of other machines" (conversion plan 2.4, roadmap section 5). No product code.
+**Status:** [PROPOSED] analysis, with the owner answers of 2026-10-05 recorded in section 9. It closes the open item "does a machine's Pulse need the hub or the instances of other machines" (conversion plan 2.4, roadmap section 5). No product code.
 **Date:** 2026-10-05
 **Sources (read only):** `database/sync/ManagementSync.sql` of `atsisqual/SISQUALManagementConsole` (29,516,382 bytes, blob `9401e2c3cb2517ca88848f902ff4d3786583e888`, reference head `9756ba956842884fabcf25b82c4fbf1d11cf56bd`), and the `PULSE_STATUS` engine exported from it (`ops.Engine`: file `Invoke-SISQUALPulseStatus.ps1`, version `v2`, Windows PowerShell 5.1, requires administrator, stored `ScriptSha256` `60917424...`). Script text is not copied here; objects are cited by name.
 Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs a decision; [V] needs a real server.
@@ -100,17 +100,27 @@ Not carried (already excluded by the plan): `ops_PulseCheckState`, `ops_PulseRun
 
 ## 8. Recommendation
 
-1. [PROPOSED] Close the Pulse item of the conversion plan 2.4 as "no": a machine's Pulse does not need the hub or the instances of other machines. The catalog cut for `cfg_PulseProfile` stays as it is.
+1. [PROPOSED] Close the Pulse item of the conversion plan 2.4 as "no" (the owner accepted the scope in section 9): a machine's Pulse does not need the hub or the instances of other machines. The catalog cut for `cfg_PulseProfile` stays as it is.
 2. [PROPOSED] Port `PULSE_STATUS` with the three replacements of section 6 and keep the same checks, thresholds and page.
 3. [PROPOSED] On a machine without a Pulse profile, the engine reports "not applicable" and does not fail, so `FULL_DEPLOYMENT` can run on PRESALES and TENDERS.
 4. [PROPOSED] Treat the Pulse card on other machines' links pages as part of the links-page design (task 1c): the card needs the hub's public URL, not the Pulse engine.
 
-## 9. [PENDING] decisions
+## 9. Decisions
 
-1. Is "same server and same country" the intended scope? The profile name says all enabled instances of the country (it would add 1, 1, 9 and 6 instances in the table above). Recommendation: keep today's behaviour, because the other behaviour needs data and network reach to other machines that V1 does not have. Fix the profile name to say what it does.
-2. Where does the collector run from? Options: (a) the portable `pwsh.exe` at its current path, re-registering the task whenever the folder is replaced (Apply is idempotent and preview shows a changed action path); (b) a copy of the runtime outside the portable; (c) Windows PowerShell 5.1 for a small designated collector (AGENTS.md allows a designated fallback script). Recommendation: (a).
-3. Should the task keep running as the hub instance's IIS identity? Recommendation: yes for V1 (same behaviour); revisit after the port.
-4. Is a missing Pulse profile "not applicable" (recommended) or an error as today?
+Owner answers of 2026-10-05 to the four points listed in PR #27 (each is traceable to the reply "1. Aceito, 2. Pode ser, 3. Pode ser, e como faria refresh?, 4. Ok"):
+
+1. [DECIDED, "Aceito"] Keep today's scope (same server and same country). The profile value `SAME_COUNTRY_ALL_ENABLED` says something else, so [PROPOSED] the owner changes it to a name that says what it does (for example `SAME_SERVER_SAME_COUNTRY`) with a manual catalog edit and a seal; the converter keeps text byte for byte and does not rename it.
+2. [DECIDED, "Pode ser"] The collector runs from the portable `pwsh.exe` at its current path. Apply re-registers the task, and preview shows a changed action path, so replacing the folder is followed by an Apply.
+3. [DECIDED, "Pode ser"] The task keeps running as the hub instance's IIS identity in V1. The owner asked how a refresh would work: see 9a.
+4. [DECIDED, "Ok"] A machine without a Pulse profile reports "not applicable" and does not fail.
+
+### 9a. How a refresh works
+
+There are three different refreshes; the second is the one the identity choice affects.
+
+- **The page.** [CONFIRMED] The page re-reads the status file every `RefreshSeconds` (30) and shows a check as unknown once the file is older than `StaleAfterSeconds` (300). The collector writes it every minute. Nothing for the operator to do.
+- **The task credentials.** [CONFIRMED] The scheduler keeps the identity's password when the task is registered and does not return it, so the engine cannot compare it with the credential package. [PROPOSED] After a new `IIS_IDENTITY` credential is imported for the hub, the operator runs `PULSE_STATUS` apply again: it re-registers the task with the current credential (idempotent). To notice a stale password without waiting for the page to go stale, preview reads the task and reports: registered or not, action path, user, last run time and last run result; a logon failure result, or no run for more than two intervals, is a finding ("task not running, credential may be stale").
+- **The plan.** [PROPOSED] The collector uses the check plan written at apply time (section 6.3). After a catalog edit (new instance, new application, new policy) the operator runs apply again; preview stores and compares a hash of the plan, so a plan that no longer matches the catalog shows as "plan out of date" instead of being silent.
 
 ## 10. Test plan for the engine port
 
