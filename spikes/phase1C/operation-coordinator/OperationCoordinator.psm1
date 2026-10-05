@@ -72,7 +72,7 @@ function Invoke-WithCoordinatorLock {
 
     [Threading.Monitor]::Enter($Coordinator.SyncRoot)
     try {
-        & $ScriptBlock
+        return & $ScriptBlock
     }
     finally {
         [Threading.Monitor]::Exit($Coordinator.SyncRoot)
@@ -113,14 +113,14 @@ function Update-SisqualOperationCoordinator {
 
     $completed = [System.Collections.Generic.List[object]]::new()
 
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+    $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         foreach ($operation in @($Coordinator.Operations.Values)) {
             if ((Test-TerminalStatus -Status $operation.Status) -or $null -eq $operation.AsyncResult) {
                 continue
             }
 
             if ($operation.AsyncResult.IsCompleted) {
-                $completed.Add($operation)
+                $completed.Add($operation) | Out-Null
             }
         }
     }
@@ -144,7 +144,7 @@ function Update-SisqualOperationCoordinator {
             $errorText = $_.Exception.GetType().FullName
         }
 
-        Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+        $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
             if (-not (Test-TerminalStatus -Status $operation.Status)) {
                 if ($outcome -eq 'CANCELLED') {
                     $operation.Status = 'CANCELLED'
@@ -196,41 +196,45 @@ function Start-SisqualOperation {
 
     $requestFingerprint = Get-RequestFingerprint -EngineCode $EngineCode -InstanceCode $InstanceCode -PlanFingerprint $PlanFingerprint.ToUpperInvariant() -CancellationMode $CancellationMode -LockKeys $canonicalLocks
     $idempotencyHash = ConvertTo-Sha256Hex -Value $IdempotencyKey
-    $result = $null
-    $operation = $null
 
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+    $decision = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         if ($Coordinator.Closed) {
-            $result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'COORDINATOR_CLOSED'; OperationId = $null; BlockingOperationId = $null }
-            return
+            return [pscustomobject]@{
+                Result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'COORDINATOR_CLOSED'; OperationId = $null; BlockingOperationId = $null }
+                Operation = $null
+            }
         }
 
         if ($Coordinator.Idempotency.ContainsKey($IdempotencyKey)) {
             $existing = $Coordinator.Idempotency[$IdempotencyKey]
             if ([string]$existing.RequestFingerprint -eq $requestFingerprint) {
-                $result = [pscustomobject]@{ Accepted = $true; Reused = $true; Reason = 'IDEMPOTENT_REPLAY'; OperationId = [string]$existing.OperationId; BlockingOperationId = $null }
+                $replayResult = [pscustomobject]@{ Accepted = $true; Reused = $true; Reason = 'IDEMPOTENT_REPLAY'; OperationId = [string]$existing.OperationId; BlockingOperationId = $null }
             }
             else {
-                $result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'IDEMPOTENCY_CONFLICT'; OperationId = [string]$existing.OperationId; BlockingOperationId = $null }
+                $replayResult = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'IDEMPOTENCY_CONFLICT'; OperationId = [string]$existing.OperationId; BlockingOperationId = $null }
             }
-            return
+            return [pscustomobject]@{ Result = $replayResult; Operation = $null }
         }
 
         if (-not $Coordinator.AcceptingOperations) {
-            $result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'SHUTTING_DOWN'; OperationId = $null; BlockingOperationId = $null }
-            return
+            return [pscustomobject]@{
+                Result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'SHUTTING_DOWN'; OperationId = $null; BlockingOperationId = $null }
+                Operation = $null
+            }
         }
 
         foreach ($lockKey in $canonicalLocks) {
             if ($Coordinator.Locks.ContainsKey($lockKey)) {
-                $result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'LOCK_CONFLICT'; OperationId = $null; BlockingOperationId = [string]$Coordinator.Locks[$lockKey]; LockKey = $lockKey }
-                return
+                return [pscustomobject]@{
+                    Result = [pscustomobject]@{ Accepted = $false; Reused = $false; Reason = 'LOCK_CONFLICT'; OperationId = $null; BlockingOperationId = [string]$Coordinator.Locks[$lockKey]; LockKey = $lockKey }
+                    Operation = $null
+                }
             }
         }
 
         $operationId = [guid]::NewGuid().ToString('D')
         $cancellationSource = [Threading.CancellationTokenSource]::new()
-        $operation = [pscustomobject][ordered]@{
+        $newOperation = [pscustomobject][ordered]@{
             OperationId = $operationId
             EngineCode = $EngineCode
             InstanceCode = [string]$InstanceCode
@@ -249,16 +253,19 @@ function Start-SisqualOperation {
             AsyncResult = $null
         }
 
-        $Coordinator.Operations.Add($operationId, $operation)
+        $Coordinator.Operations.Add($operationId, $newOperation)
         $Coordinator.Idempotency.Add($IdempotencyKey, [pscustomobject]@{ OperationId = $operationId; RequestFingerprint = $requestFingerprint })
         foreach ($lockKey in $canonicalLocks) {
             $Coordinator.Locks.Add($lockKey, $operationId)
         }
+
+        return [pscustomobject]@{ Result = $null; Operation = $newOperation }
     }
 
-    if ($null -ne $result) {
-        return $result
+    if ($null -ne $decision.Result) {
+        return $decision.Result
     }
+    $operation = $decision.Operation
 
     $powerShell = [PowerShell]::Create()
     $powerShell.RunspacePool = $Coordinator.RunspacePool
@@ -269,7 +276,7 @@ function Start-SisqualOperation {
 
     try {
         $asyncResult = $powerShell.BeginInvoke()
-        Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+        $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
             $operation.PowerShell = $powerShell
             $operation.AsyncResult = $asyncResult
             $operation.Status = 'RUNNING'
@@ -277,10 +284,11 @@ function Start-SisqualOperation {
         }
     }
     catch {
-        Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+        $caughtType = $_.Exception.GetType().FullName
+        $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
             $operation.Status = 'FAILED'
             $operation.FinishedAt = [DateTime]::UtcNow
-            $operation.ErrorType = $_.Exception.GetType().FullName
+            $operation.ErrorType = $caughtType
             foreach ($lockKey in $operation.LockKeys) {
                 if ($Coordinator.Locks.ContainsKey($lockKey) -and [string]$Coordinator.Locks[$lockKey] -eq $operation.OperationId) {
                     $null = $Coordinator.Locks.Remove($lockKey)
@@ -303,13 +311,12 @@ function Get-SisqualOperation {
     )
 
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
-    $snapshot = $null
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+    return Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         if (-not $Coordinator.Operations.ContainsKey($OperationId)) {
-            return
+            return $null
         }
         $operation = $Coordinator.Operations[$OperationId]
-        $snapshot = [pscustomobject][ordered]@{
+        return [pscustomobject][ordered]@{
             OperationId = $operation.OperationId
             EngineCode = $operation.EngineCode
             InstanceCode = $operation.InstanceCode
@@ -325,7 +332,6 @@ function Get-SisqualOperation {
             ErrorType = $operation.ErrorType
         }
     }
-    return $snapshot
 }
 
 function Request-SisqualOperationCancellation {
@@ -336,22 +342,18 @@ function Request-SisqualOperationCancellation {
     )
 
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
-    $result = $null
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+    return Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         if (-not $Coordinator.Operations.ContainsKey($OperationId)) {
-            $result = [pscustomobject]@{ Accepted = $false; Reason = 'NOT_FOUND'; OperationId = $OperationId }
-            return
+            return [pscustomobject]@{ Accepted = $false; Reason = 'NOT_FOUND'; OperationId = $OperationId }
         }
 
         $operation = $Coordinator.Operations[$OperationId]
         if (Test-TerminalStatus -Status $operation.Status) {
-            $result = [pscustomobject]@{ Accepted = $true; Reason = 'ALREADY_FINISHED'; OperationId = $OperationId }
-            return
+            return [pscustomobject]@{ Accepted = $true; Reason = 'ALREADY_FINISHED'; OperationId = $OperationId }
         }
 
         if ($operation.CancellationMode -ne 'COOPERATIVE') {
-            $result = [pscustomobject]@{ Accepted = $false; Reason = 'NOT_CANCELLABLE'; OperationId = $OperationId }
-            return
+            return [pscustomobject]@{ Accepted = $false; Reason = 'NOT_CANCELLABLE'; OperationId = $OperationId }
         }
 
         if (-not $operation.CancellationRequested) {
@@ -359,9 +361,8 @@ function Request-SisqualOperationCancellation {
             $operation.Status = 'CANCELLING'
             $operation.CancellationSource.Cancel()
         }
-        $result = [pscustomobject]@{ Accepted = $true; Reason = 'CANCELLATION_REQUESTED'; OperationId = $OperationId }
+        return [pscustomobject]@{ Accepted = $true; Reason = 'CANCELLATION_REQUESTED'; OperationId = $OperationId }
     }
-    return $result
 }
 
 function Request-SisqualCoordinatorShutdown {
@@ -372,7 +373,7 @@ function Request-SisqualCoordinatorShutdown {
         [switch]$CancelCooperativeOperations
     )
 
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+    $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
         $Coordinator.AcceptingOperations = $false
         $Coordinator.ShutdownRequested = $true
     }
@@ -380,10 +381,9 @@ function Request-SisqualCoordinatorShutdown {
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
 
     if ($CancelCooperativeOperations) {
-        $ids = @()
-        Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
-            $ids = @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) -and $_.CancellationMode -eq 'COOPERATIVE' } | ForEach-Object { $_.OperationId })
-        }
+        $ids = @(Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+            return @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) -and $_.CancellationMode -eq 'COOPERATIVE' } | ForEach-Object { $_.OperationId })
+        })
         foreach ($id in $ids) {
             $null = Request-SisqualOperationCancellation -OperationId $id -Coordinator $Coordinator
         }
@@ -392,10 +392,9 @@ function Request-SisqualCoordinatorShutdown {
     $deadline = [DateTime]::UtcNow.AddMilliseconds($WaitMilliseconds)
     do {
         Update-SisqualOperationCoordinator -Coordinator $Coordinator
-        $active = @()
-        Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
-            $active = @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) } | ForEach-Object { $_.OperationId })
-        }
+        $active = @(Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+            return @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) } | ForEach-Object { $_.OperationId })
+        })
         if ($active.Count -eq 0) {
             return [pscustomobject]@{ ReadyToExit = $true; ActiveOperationIds = @(); ShutdownRequested = $true }
         }
@@ -411,17 +410,17 @@ function Close-SisqualOperationCoordinator {
     param([Parameter(Mandatory = $true)]$Coordinator)
 
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
-    $active = @()
-    Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
-        $active = @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) } | ForEach-Object { $_.OperationId })
-        if ($active.Count -eq 0) {
-            $Coordinator.AcceptingOperations = $false
-            $Coordinator.Closed = $true
-        }
-    }
+    $active = @(Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+        return @($Coordinator.Operations.Values | Where-Object { -not (Test-TerminalStatus -Status $_.Status) } | ForEach-Object { $_.OperationId })
+    })
 
     if ($active.Count -gt 0) {
         throw "Cannot close coordinator while operations are active: $($active -join ',')"
+    }
+
+    $null = Invoke-WithCoordinatorLock -Coordinator $Coordinator -ScriptBlock {
+        $Coordinator.AcceptingOperations = $false
+        $Coordinator.Closed = $true
     }
 
     $Coordinator.RunspacePool.Close()
