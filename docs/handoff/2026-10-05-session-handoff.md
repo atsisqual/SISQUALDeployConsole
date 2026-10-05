@@ -159,7 +159,7 @@ How to get a test environment in a fresh sandbox (no root needed):
 Owner answers ([CONFIRMED]):
 - Yes to pinning the SQL client with a Windows-runner workflow, and to documenting it (PR #18, `docs/phase1/sqlclient-pin.md`).
 - `dbo.ManagedServer.ManagementDatabaseName` is dropped (done in PR #17, commit 95ea485).
-- Every database uses the collation `Latin1_General_CI_AS`. Code columns stay `COLLATE NOCASE` (ASCII-only folding); in the snapshot all 10,165 code values are ASCII; the converter reports any non-ASCII code value as a finding. Other text columns are case-sensitive in SQLite, so the engine ports must not rely on SQL Server's case-insensitive comparison for them.
+- Collation, FIRST answer: every database uses `Latin1_General_CI_AS`. SECOND answer (supersedes the NOCASE choice): the owner prefers that NOTHING about upper and lower case of the stored data changes (some identity-provider links are case-sensitive); the application databases are `Latin1_General_CI_AS`. Decision applied in PR #17: text is stored byte-exact and code columns compare exactly (binary, `-CodeCollation Binary` is the default; `NoCase` is opt-in). Evidence: no case-variant codes, no reference that matches only ignoring case, upper-case machine names. The engine ports must not rely on case-insensitive comparison, and must compare Windows names case-insensitively in code.
 - The owner asked why SQL Server appears at all, since the product uses SQLite. Answer given and recorded in the plan (section 5): SQL Server is ONLY the source of the one-off conversion and of the one-time credential import; the catalogs, the application and the tests use SQLite only; the same conversion also works offline from `ManagementSync.sql`.
 
 SQL client pin ([CONFIRMED] by run 37314406178):
@@ -173,3 +173,12 @@ Suggested next steps (in this order):
 4. Decide how the 25 closure files reach the operator machine, and the connection encryption defaults for the real servers [V].
 
 Reminder: the GitHub token pasted in the first message was still valid at the end of this session and was used throughout. It must be revoked.
+
+## 14. Defect found by a full value comparison (added later the same day)
+
+While checking the owner's case preference, a cell-by-cell comparison of the real catalog with the source showed that multi-line texts had lost their carriage returns (9 rows). Cause: the `sqlite3` shell strips the CR of every CRLF it reads, even inside a quoted literal. Fix (PR #17, commit 2b7fbc2): texts with control characters are written as `CAST(X'<UTF-8 hex>' AS TEXT)`. The new unit test fails when the fix is disabled (mutation check). Real data after the fix: 18,125 cells compared, 0 differences, all stored SHA-256 columns match.
+
+Lessons:
+- Counts, keys and types are not enough: compare VALUES. B4 (`Test-CatalogConversion.ps1`) must do a value-level comparison (and use the stored `ContentSha256` columns, which hash the UTF-16LE text).
+- A test fixture must contain the hard cases: multi-line text with CRLF, lone CR, lone LF, tab, quotes and non-ASCII. The fixture of `tests/Unit/Test-ConvertManagementDb.ps1` now does.
+- Do not trust a successful run of a conversion tool; verify its output independently (this session used a separate Python comparison).
