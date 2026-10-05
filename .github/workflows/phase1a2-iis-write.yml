@@ -1,0 +1,93 @@
+name: phase1a2-iis-write
+
+# Phase 1A-2: IIS WRITE path under PowerShell 7 through Microsoft.Web.Administration.
+# Runs only on ephemeral GitHub-hosted Windows Server runners (disposable VMs). The script mutates IIS,
+# local accounts, certificates, the hosts file and ACLs, so it must never run on a SISQUAL server.
+on:
+  push:
+    branches: ['spike/phase1a2-**']
+    paths:
+      - 'spikes/phase1A2/**'
+      - '.github/workflows/phase1a2-iis-write.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1a2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iis-write:
+    name: IIS write path on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    permissions:
+      contents: write   # only to publish the report to a results/* branch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure IIS with management tools (ephemeral runner)
+        shell: powershell
+        run: |
+          $r = Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+          Write-Host ("Install-WindowsFeature Success=" + $r.Success + " ExitCode=" + $r.ExitCode + " RestartNeeded=" + $r.RestartNeeded)
+
+      - name: Download and verify the pinned portable PowerShell 7.6.6
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
+          Invoke-WebRequest -Uri 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip' -OutFile $zip -UseBasicParsing
+          $h = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($h -ne '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860') { throw "SHA-256 mismatch: $h" }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'pwsh7') -Force
+          Write-Host ('portable pwsh ready, SHA-256 verified: ' + $h)
+
+      - name: Run Phase 1A-2 (portable PowerShell 7)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh7\pwsh.exe'
+          & $pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$env:GITHUB_WORKSPACE\spikes\phase1A2\Test-IisWritePath.ps1" -ReportPath "$env:GITHUB_WORKSPACE\report-iiswrite-${{ matrix.os }}.json" -IUnderstandThisMutatesTheMachine 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\console-iiswrite-${{ matrix.os }}.txt"
+          exit 0
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1a2-report-${{ matrix.os }}
+          path: report-iiswrite-${{ matrix.os }}.json
+          if-no-files-found: warn
+
+      - name: Summarize report
+        if: always()
+        shell: powershell
+        run: |
+          $p = Join-Path $env:GITHUB_WORKSPACE 'report-iiswrite-${{ matrix.os }}.json'
+          if (-not (Test-Path $p)) { Write-Host 'No report was produced.'; exit 1 }
+          $r = Get-Content $p -Raw | ConvertFrom-Json
+          $lines = @('### Phase 1A-2 - ${{ matrix.os }} - **' + $r.Overall + '**', '', '| Step | Status | Critical | ms |', '|---|---|---|---|')
+          foreach ($s in $r.Steps) { $lines += ('| {0} | {1} | {2} | {3} |' -f $s.Id, $s.Status, $s.Critical, $s.ElapsedMs) }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($r.Overall -eq 'FAIL') { exit 1 }
+
+      - name: Publish results to a results/* branch (readable through the API)
+        if: always()
+        shell: powershell
+        run: |
+          $branch = 'results/phase1a2-${{ github.run_id }}-${{ matrix.os }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --orphan $branch
+          git rm -rf --cached . | Out-Null
+          $files = @('report-iiswrite-${{ matrix.os }}.json', 'console-iiswrite-${{ matrix.os }}.txt') | Where-Object { Test-Path $_ }
+          if (-not $files) { Write-Host 'Nothing to publish.'; exit 1 }
+          git add -f -- $files
+          git commit -m 'phase1a2 results ${{ matrix.os }} run ${{ github.run_id }}'
+          git push origin $branch
