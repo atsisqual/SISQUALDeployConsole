@@ -12,3 +12,6 @@ Newest last. Each entry names the decision, who took it and where the evidence i
 | 2026-10-05 | ADR-0001 accepted (portable PowerShell 7, Pode, SQLite) after spike 1A | Project owner | ADR-0001 |
 | 2026-10-05 | IIS integration through `Microsoft.Web.Administration` (option A), accepted with four conditions | Project owner | ADR-0006 |
 | 2026-10-05 | PR #6 closed as a duplicate of PR #5 | Reviewer | PR #6 |
+| 2026-10-05 | ADR-0006 confirmed (IIS through Microsoft.Web.Administration, four conditions) | Project owner | ADR-0006 |
+| 2026-10-05 | Central sync transport: direct read-only SQL connection | Project owner | docs/roadmap.md section 4 |
+| 2026-10-05 | V1 scope: all engines | Project owner | docs/roadmap.md section 4 |
