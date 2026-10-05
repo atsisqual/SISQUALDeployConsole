@@ -25,7 +25,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 | `built_at_utc` | TEXT NOT NULL | `YYYY-MM-DDTHH:MM:SSZ`, shown in the UI |
 | `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting rules used by the conversion tool |
 
-`schema_version`, `server_code` and `built_at_utc` must agree with the package manifest; any difference is an integrity error and the application refuses to start (except with the logged development flag).
+`schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error and the application refuses to start (except with the logged development flag). `built_at_utc` is the time the catalog content was produced or last sealed after a manual edit; it is not required to equal the manifest's `builtAt` (the time of the last seal of the whole package) [PROPOSED, implemented by `tools/Seal-Package.ps1`].
 
 ## 3. Conventions for all tables [PROPOSED]
 

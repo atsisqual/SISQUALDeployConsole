@@ -114,7 +114,9 @@
     "[PROPOSED] 'files' paths are unique ignoring case. The manifest does not list itself. Credentials (credentials.db) and logs are outside the package and never listed.",
     "[PROPOSED] Every file inside the package folder must be listed and every listed file must exist with the stated size and hash; an unlisted file is an error.",
     "[PROPOSED] 'catalog.file' appears in 'files'. 'catalog.serverCode' equals the ServerCode stored inside the catalog and the local machine identity.",
-    "[PENDING] Canonical form for signing (for example RFC 8785 JSON Canonicalization or a fixed byte layout) and the trust bootstrap of the issuer public key: see contracts/credential-package.md, open questions.",
+    "[PROPOSED] Canonical form for signing, implemented by tools/Seal-Package.ps1 (PR #22): the manifest without 'signature' as compact JSON, object keys in ordinal order, arrays as stored (files sorted by path in ordinal order), every non-ASCII character as \\uXXXX, integers as plain digits. For this manifest this is RFC 8785. [PENDING] owner approval with the trust bootstrap of the issuer public key: see contracts/credential-package.md, open questions Q1 and Q2.",
+    "[PROPOSED] The manifest is the file package-manifest.json at the package root and is not listed in 'files'. The seal log is kept outside the package.",
+    "[PROPOSED] 'builtAt' is the time of the last seal of the whole package. catalog_meta.built_at_utc is the time the catalog content was produced or last sealed after an edit; the two differ when only other files change. The application checks server_code and schema_version against the manifest, and that catalog.origin equals catalog_meta.source_kind, not the times.",
     "[PENDING] Whether one package carries one catalog (one package per machine) or all catalogs with the application choosing by identity. This draft assumes one catalog per package."
   ],
   "examples": [
