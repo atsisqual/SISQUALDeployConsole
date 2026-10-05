@@ -1,6 +1,7 @@
 # Catalog conversion plan (task 4, step A)
 
 **Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
+**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16); B3 to B6 not started.**
 **Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
@@ -244,7 +245,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 ### 2.5 Binary content
 
 [CONFIRMED] `cfg.LinksPageAsset` holds 45 image rows (about 11.5 MB of INSERT text, 41 percent of all INSERT text); `cfg.PulseResource.BinaryContent` and `cfg.WebsiteBrandingAsset.BinaryContent` hold a few more; `dbo.ManagedInstance.CustomerLogo` is set on 62 of 76 instances (about 1 MB together).
-[CONFIRMED] Owner answer of 2026-10-05: binary content stays as BLOB in EVERY catalog. Global assets are therefore duplicated in each catalog file; per-instance logos stay in the catalog of their machine. Consequences [PROPOSED]: each catalog is roughly 13 to 14 MB larger than a catalog without images (an estimate from the INSERT text, to be measured); six catalogs add up to about 80 MB; each is hashed in its package manifest; the catalog must still open read-only quickly, so BLOBs are read on demand and never selected with `SELECT *`. The `Content` columns keep their SHA-256 (`ContentSha256`) so a test can verify every BLOB against it.
+[CONFIRMED] Owner answer of 2026-10-05: binary content stays as BLOB in EVERY catalog. Global assets are therefore duplicated in each catalog file; per-instance logos stay in the catalog of their machine. Consequences: measured in step B2 on the real data, a new-machine catalog is 6.85 MB (the hex text of the INSERT statements is twice the size of the bytes), so six catalogs are about 40 MB [CONFIRMED, replaces the earlier estimate of 80 MB]; each is hashed in its package manifest; the catalog must still open read-only quickly, so BLOBs are read on demand and never selected with `SELECT *`. The `Content` columns keep their SHA-256 (`ContentSha256`) so a test can verify every BLOB against it.
 
 ### 2.6 Machines without policy rows, and new machines
 
@@ -262,7 +263,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 - Credential history: `sec.ManagedCredentialAudit` (384 rows).
 - Job history (owner): `app.Job` (766), `app.JobStep` (7,793), `app.JobTarget` (7,631), `app.JobLog` (0 rows), `ops.ExecutionLog` (8,068), `ops.ConsoleSession` (774), `ops.GovernanceAudit`, `ui.PublishedEnvironmentLinkAudit`.
 - `app.HousekeepingArtifact` (owner, 0 rows) and `dbo.DemoProfileImage` (owner, 0 rows).
-- Engine scripts (owner): the `ScriptText` of `ops.Engine` (19 rows) and of `ops.Engine_BackupIisFix`. The engines are exported as files, see 5.4. In the catalog, `ops_EngineCatalog` keeps only `EngineCode`, `DisplayName`, `SourceFileName`, `EngineVersion`, `MinimumPowerShell`, `RequiresAdministrator`, `IsEnabled`, `ModifiedAt`.
+- Engine scripts (owner): the `ScriptText` of `ops.Engine` (19 rows) and of `ops.Engine_BackupIisFix`. The engines are exported as files, see 5.4. In the catalog, `ops_Engine` (same naming rule as every table, `<schema>_<Table>`) keeps only `EngineCode`, `DisplayName`, `SourceFileName`, `EngineVersion`, `MinimumPowerShell`, `RequiresAdministrator`, `IsEnabled`, `ModifiedAt`.
 - Everything else classed Excluded in 1.3 (plans, inventories, locks, schedules, approvals, workers, backups of tables).
 
 ### 3.2 Columns and views
@@ -406,7 +407,7 @@ Only on the real servers [V]:
 | C-10 | Template expansion lives in a SQL function (`cfg.ExpandTemplate`) | port with tests before any engine that uses templates |
 | C-11 | Executable SQL text in `ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` | carried as data, never executed (R-019, R-027) |
 | C-12 | A conversion bug lets a secret column or value through | explicit whitelist, exclusion by name, scan, marker tests, review of every PR of step B |
-| C-13 | 11.5 MB of global images duplicated in six catalogs (owner chose BLOB in every catalog) | accept about 80 MB in total; measure real sizes; read BLOBs on demand; verify each against `ContentSha256` |
+| C-13 | 11.5 MB of global images duplicated in six catalogs (owner chose BLOB in every catalog) | about 40 MB in total, measured in B2; read BLOBs on demand; verify each against `ContentSha256` |
 | C-16 | The SQL client (`Microsoft.Data.SqlClient`, approved by the owner) is not yet pinned | pin version and SHA-256 in `vendor/manifest.json`, verify before use (step B2) |
 | C-17 | PowerShell 7 syntax in `tools/` breaks the 5.1 parser step of CI | CI parses `tools/` with the PowerShell 7 parser; the 5.1 parser stays for the engines [PENDING owner on engines] |
 | C-14 | The old database changes between the snapshot (2026-10-05 02:00) and the conversion | convert from the live database, record read time, compare counts with the snapshot |
