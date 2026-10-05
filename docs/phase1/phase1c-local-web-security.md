@@ -1,7 +1,7 @@
 # Phase 1C - Local web security spike
 
 **Date:** 2026-10-05
-**Status:** [CONFIRMED] technical viability proven on Windows Server 2022 and 2025. Product adoption of the bootstrap/session design remains [PROPOSED].
+**Status:** [PROPOSED] corrected non-ambient session candidate under two-OS validation. The earlier cookie model is superseded.
 **Branch:** `spike/phase1c-local-web-security`
 **Base:** `main` at `ad598215fe3ab0bc715a797a37e2bcf9331eaa56`.
 
@@ -12,158 +12,180 @@ Tags: `[CONFIRMED]` verified source or execution evidence; `[PROPOSED]` candidat
 This spike covers the browser/HTTP part of Phase 1C:
 
 - loopback-only listener;
-- bootstrap and in-memory session;
+- one-time bootstrap and in-memory session;
 - CSRF protection;
 - exact Host and Origin allowlists;
 - CORS denial;
 - browser security headers and CSP;
 - logout and process-restart session invalidation;
-- token-safe server output.
+- fail-closed token-log observation.
 
-[PENDING] Operation idempotency, active-operation shutdown and cancellation semantics are a separate Phase 1C task. `SERVER_STOPPED` in this spike proves listener removal after process termination; it is not graceful-shutdown evidence.
+[PENDING] Operation idempotency, active-operation shutdown and cancellation semantics are a separate Phase 1C task. Listener removal after forced process termination is not graceful-shutdown evidence.
 
 ## 2. Historical web interface baseline
 
 Reference repository: `atsisqual/SISQUALManagementConsole`, read-only snapshot `9756ba956842884fabcf25b82c4fbf1d11cf56bd`.
 
-[CONFIRMED] `src/SISQUAL.Management.Web/Program.cs` is an ASP.NET Core/Blazor application. It uses Negotiate authentication and explicit `Management.View`, `Management.Operate` and `Management.Administer` policies.
+[CONFIRMED] `src/SISQUAL.Management.Web/Program.cs` is ASP.NET Core/Blazor with Negotiate authentication and explicit `Management.View`, `Management.Operate` and `Management.Administer` policies.
 
-[CONFIRMED] The old pipeline uses authentication, authorization and ASP.NET antiforgery middleware. In non-development mode it enables HSTS. HTML responses are marked `no-store, no-cache, must-revalidate`.
+[CONFIRMED] The old pipeline uses authentication, authorization and ASP.NET antiforgery. Non-development mode enables HSTS. HTML responses use no-store/no-cache behavior.
 
-[CONFIRMED] `Install.ps1` disables anonymous IIS authentication and enables Windows Authentication. The old authentication boundary is therefore IIS + Windows/Negotiate, not a portable loopback process.
+[CONFIRMED] `Install.ps1` disables anonymous IIS authentication and enables Windows Authentication. The old boundary is IIS + Windows/Negotiate, not a portable loopback process.
 
-[CONFIRMED] The old application has deliberately anonymous deployment/public-links endpoints. The `/links` HTML builder encodes values before output and uses `rel="noopener"` for new-tab links. Those output-safety principles remain relevant, but the public links page is not the new local-admin session model.
+[CONFIRMED] The old application also has deliberately anonymous deployment/public-links endpoints. Its `/links` builder encodes output and uses `rel="noopener"`; those output-safety principles remain relevant, but the public links page is not the new admin-session model.
 
-[CONFIRMED] `src/SISQUAL.Management.Web/appsettings.json` sets `AllowedHosts` to `*`. No explicit CSP, application Host allowlist or CORS policy was found in the inspected startup/configuration and targeted security search. This is historical evidence, not a claim that ASP.NET/IIS supplied no other platform defaults.
+[CONFIRMED] `appsettings.json` sets `AllowedHosts` to `*`. No explicit CSP, application Host allowlist or CORS policy was found in the inspected startup/configuration and targeted security search. This is historical evidence, not a claim about every ASP.NET/IIS default.
 
-[CONFIRMED] `tests/Test-WebProject.Static.ps1` is mainly a UI/compile regression test. It requires HTTPS redirection to remain IIS-owned; it is not a browser-session/Host/Origin/CSP security suite.
+[CONFIRMED] `tests/Test-WebProject.Static.ps1` is mainly UI/static regression and explicitly keeps HTTPS redirection IIS-owned; it is not a Host/Origin/session/CSP security suite.
 
-| Old web behavior | Phase 1C treatment |
+| Old behavior | Phase 1C treatment |
 |---|---|
-| Explicit authentication/authorization boundary | Retain the principle; use a local bootstrap session candidate |
-| ASP.NET antiforgery | Retain the protection objective; test exact Origin + CSRF token |
+| Explicit auth/authz boundary | Retain the principle with a local bootstrap/session candidate |
+| ASP.NET antiforgery | Retain objective with exact Origin + CSRF checks |
 | HTML no-cache | Retain as `Cache-Control: no-store` and `Pragma: no-cache` |
 | IIS Windows Authentication | Do not port by default; ADR-0001 treats mandatory integrated auth as a reopen condition |
-| HSTS/HTTPS behind IIS | Do not assume it for plain HTTP loopback |
+| HSTS behind IIS | Do not assume for plain HTTP loopback |
 | `AllowedHosts=*` | Replace with exact loopback host + port allowlist |
 | Output encoding / `noopener` | Retain as UI implementation requirements |
 
 ## 3. Pode 2.14.1 findings
 
-[CONFIRMED] ADR-0001 pins Pode 2.14.1. Upstream tag v2.14.1 resolves to commit `42faafcbd0edf2ffcabd5011a1b03dfbc00c28c4`.
+[CONFIRMED] ADR-0001 pins Pode 2.14.1; upstream tag v2.14.1 resolves to `42faafcbd0edf2ffcabd5011a1b03dfbc00c28c4`.
 
-[CONFIRMED] Pode 2.14.1 has built-in in-memory session and CSRF middleware. Its public session/cookie APIs expose `HttpOnly`, `Secure` and Pode's signing `Strict` mode.
+[CONFIRMED] Pode has session/CSRF primitives, but this spike keeps Pode as the HTTP adapter and defines application session semantics explicitly.
 
-[CONFIRMED] The inspected 2.14.1 `Enable-PodeSessionMiddleware` / `Set-PodeCookie` APIs do not expose the browser SameSite attribute. Pode's `Strict` option is not `SameSite=Strict`.
+[CONFIRMED] The inspected 2.14.1 cookie API has no browser SameSite option. More importantly, PR security review showed that even `HttpOnly; SameSite=Strict` does not solve the explicit local-process threat because cookies are scoped by host/path, not TCP port.
 
-[PROPOSED] Keep Pode as the HTTP adapter and make application-session semantics explicit. The tested candidate emits the session cookie itself with `HttpOnly; SameSite=Strict` and keeps only hashes of session/CSRF tokens in memory.
+## 4. Security-review correction
 
-## 4. Candidate bootstrap/session flow
+[CONFIRMED] Codex P1 comment `4189467569` invalidated the original cookie-session acceptance. A cookie issued by `127.0.0.1:<product-port>` can be sent automatically to another service on `127.0.0.1:<different-port>`. A malicious local listener could receive the ambient credential and replay it against the product port.
 
-[PROPOSED] On process start, generate a 256-bit random one-time bootstrap token. The product browser-launch path should carry it in a URL fragment, for example `http://127.0.0.1:<port>/#bootstrap=<token>`, not in the query string. Client JavaScript should POST it in `X-SISQUAL-Bootstrap` and immediately clear the fragment with `history.replaceState`.
+[CONFIRMED] Run `37381402897` was green for the checks it contained, but it is now classified as a superseded design, not accepted security evidence. Its reports remain preserved for audit history.
 
-[PENDING] The fragment-to-header browser code is not part of this backend spike and must be proven with the actual vanilla-JS UI.
+[CONFIRMED] Codex P2 comment `4189467573` found that output-capture exceptions were swallowed, so `NO_TOKEN_LOG_LEAK` could pass on incomplete observation.
 
-[PROPOSED] The server stores only SHA-256 of the bootstrap token. It expires quickly and is consumed once.
+[CONFIRMED by code review] The corrected harness removes both weaknesses:
 
-[PROPOSED] Successful bootstrap creates independent 256-bit session and CSRF values. The server stores only their hashes and expiry in memory. The browser receives:
+- no session cookie is emitted;
+- bootstrap returns a random session credential that the UI must attach explicitly as `X-SISQUAL-Session`;
+- the product UI must keep session and CSRF values in JavaScript memory only, not cookies, localStorage or sessionStorage;
+- server stores only SHA-256 token hashes and expiry;
+- output capture has an explicit `OUTPUT_CAPTURE_COMPLETE` gate;
+- `NO_TOKEN_LOG_LEAK` cannot pass unless all four stdout/stderr capture files from the two server processes are complete/readable.
 
-- `SISQUAL-SESSION=<random>; Path=/; HttpOnly; SameSite=Strict; Max-Age=...`;
-- the CSRF token in the same-origin bootstrap JSON response for `X-SISQUAL-CSRF` on mutations.
+## 5. Corrected bootstrap/session flow
 
-[PROPOSED] `Secure` is not asserted while V1 uses plain HTTP loopback. If local HTTPS is introduced, `Secure` becomes mandatory. No session token is placed in localStorage/sessionStorage.
+[PROPOSED] On process start, generate a 256-bit random one-time bootstrap token. Browser launch should carry it in a URL fragment, for example `http://127.0.0.1:<port>/#bootstrap=<token>`, not a query string. Same-origin JavaScript posts it in `X-SISQUAL-Bootstrap` then clears the fragment with `history.replaceState`.
 
-[PROPOSED] Session state is in memory only. Logout clears it; process restart clears it.
+[PENDING] The real fragment-to-header JavaScript flow is not part of this backend spike and must be proven in the vanilla-JS shell.
 
-## 5. Request boundary
+[PROPOSED] The server stores only SHA-256 of bootstrap/session/CSRF values. Bootstrap is short-lived and single-use.
 
-The tested candidate:
+[PROPOSED] Successful bootstrap returns independent 256-bit `session` and `csrf` values in the same-origin JSON response. JavaScript holds them only in memory:
 
-- binds Pode only to `127.0.0.1`;
+- every protected API call sends `X-SISQUAL-Session`;
+- mutations additionally send `X-SISQUAL-CSRF` and an exact local `Origin`;
+- no `Set-Cookie` session credential exists;
+- no credential goes to localStorage/sessionStorage.
+
+[PROPOSED] Logout clears the server-side session/CSRF hashes. Process restart clears all in-memory session state.
+
+## 6. Request boundary
+
+The corrected candidate:
+
+- binds only to `127.0.0.1`;
 - accepts only `127.0.0.1:<port>` and `localhost:<port>` Host values;
-- requires exact local Origin + valid session + CSRF for mutations;
-- emits no `Access-Control-Allow-Origin` and rejects foreign preflight;
-- emits `Cache-Control: no-store` and `Pragma: no-cache`;
-- emits a restrictive CSP with `frame-ancestors 'none'`, `object-src 'none'` and `base-uri 'none'`;
-- emits `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, restrictive `Permissions-Policy`, COOP and CORP.
+- requires explicit session header for protected API routes;
+- requires exact local Origin + session + CSRF for mutations;
+- emits no `Access-Control-Allow-Origin`; foreign preflight is rejected;
+- emits `Cache-Control: no-store`, `Pragma: no-cache`, restrictive CSP, `nosniff`, `no-referrer`, restrictive `Permissions-Policy`, COOP and CORP.
 
-[PENDING] The final UI may require a reviewed CSP adjustment for specific vendored assets. Do not add `unsafe-inline` without a reviewed reason.
+[PENDING] Final UI assets may require a reviewed CSP adjustment. Do not add `unsafe-inline` without a reviewed reason.
 
-## 6. Implementation and evidence
+## 7. Implementation and evidence
 
 Files:
 
 - `spikes/phase1C/local-web-security/LocalWebSecurityServer.ps1`;
 - `spikes/phase1C/local-web-security/Test-LocalWebSecurity.ps1`;
 - `.github/workflows/phase1c-local-web-security.yml`;
-- `docs/phase1/evidence/phase1c-local-web-security/README.md`;
-- `docs/phase1/evidence/phase1c-local-web-security-37381402897/`.
+- `docs/phase1/evidence/phase1c-local-web-security/README.md`.
 
-[CONFIRMED by code review] Only the bootstrap hash is passed into the server child-process environment. Raw bootstrap/session/CSRF values are generated for the disposable test and are not committed or included in reports.
+[CONFIRMED] The workflow verifies pinned PowerShell 7.6.6 and Pode 2.14.1 SHA-256 values before execution.
 
-[CONFIRMED] The workflow downloads pinned PowerShell 7.6.6 and Pode 2.14.1 and verifies their SHA-256 values before execution.
+[CONFIRMED] Documentation-only commits no longer trigger the functional spike; the workflow runs on spike-code/workflow changes or explicit dispatch. This avoids misleading revalidation runs while preserving normal repository CI on PR changes.
 
-## 7. Accepted run
+## 8. Required corrected gates
 
-**Workflow ID:** `375855729`
-**Run:** `37381402897`
-**Run number:** `3`
-**Attempt:** `1`
-**Commit:** `9c27190bc1616278e59de5391425f66ea72fa747`
-**Conclusion:** [CONFIRMED] `success`
+The replacement report schema is `SISQUAL_PHASE1C_LOCAL_WEB_SECURITY_V2`.
 
-Windows 2022:
+Required gates on both Windows versions include:
 
-- job `112004092392`;
-- runner `GitHub Actions 1000000558` / runner ID `1000000558`;
-- artifact `11374356055`;
-- digest `sha256:12ea9164fb9a66d4c4d04ce0bc5be090bb6b0450db308b8a27b02957d70b4fe8`;
-- report `27 PASS / 0 FAIL / Fatal=null`.
+- `SERVER_READY`;
+- `LOOPBACK_ONLY`;
+- `SESSION_REQUIRED`;
+- `HOST_REJECTED`;
+- `BOOTSTRAP_ACCEPTED`;
+- `NO_SESSION_COOKIE`;
+- `BOOTSTRAP_SINGLE_USE`;
+- `WRONG_SESSION_REJECTED`;
+- `SESSION_ACCEPTED`;
+- `ORIGIN_REJECTED`;
+- `CSRF_REQUIRED`;
+- `CSRF_WRONG_REJECTED`;
+- `MUTATION_ACCEPTED`;
+- `CORS_PREFLIGHT_DENIED`;
+- CSP/nosniff/referrer/no-store/COOP/CORP checks;
+- `SERVER_STOPPED`;
+- `SERVER_RESTARTED`;
+- `SESSION_INVALID_AFTER_RESTART`;
+- `LOGOUT_INVALIDATES`;
+- `SESSION_INVALID_AFTER_LOGOUT`;
+- `OUTPUT_CAPTURE_COMPLETE`;
+- `NO_TOKEN_LOG_LEAK`.
 
-Windows 2025:
+[PENDING] Run `37382909046`, run number `8`, attempt `1`, commit `bee976eebf98257d39005020c264db769c7ba68c` is the current corrected two-OS candidate. Do not claim PASS until both reports are inspected.
 
-- job `112004092351`;
-- runner `GitHub Actions 1000000559` / runner ID `1000000559`;
-- artifact `11375770246`;
-- digest `sha256:1b61967c89885f88817f902b1faa15748c25de60d9f8501cd41bc42b41ac964a`;
-- report `27 PASS / 0 FAIL / Fatal=null`.
+## 9. Historical run classification
 
-[CONFIRMED] Both systems passed loopback-only reachability, session enforcement, forged-Host rejection, one-time bootstrap, `HttpOnly`/`SameSite=Strict`, bootstrap replay rejection, exact-Origin enforcement, CSRF negative and positive paths, CORS-preflight denial, security headers, restart invalidation, logout invalidation and raw-token log leakage checks.
+[CONFIRMED] Runs 1 and 2 were cancelled by concurrency before probe execution.
 
-[CONFIRMED] Exact secret-safe reports are versioned under `docs/phase1/evidence/phase1c-local-web-security-37381402897/` and the original GitHub artifacts are identified by ID and digest.
+[CONFIRMED] Run 3 (`37381402897`) executed and was green, but is superseded because review exposed the cross-port cookie threat and incomplete capture assurance.
 
-## 8. Superseded runs
+[CONFIRMED] Runs 4 and 5 were documentation-triggered revalidations and were cancelled by later commits. The workflow trigger was then narrowed so documentation changes no longer launch the functional matrix.
 
-[CONFIRMED] Run `37381249793` (run 1, commit `454f12f...`) was cancelled by workflow concurrency during runtime download after a later branch push. Jobs `112003514220` and `112003514640`; the security probe was skipped.
+[CONFIRMED] Run 7 (`37382675122`) was superseded by the follow-up harness fix before it could become the accepted corrected run.
 
-[CONFIRMED] Run `37381372562` (run 2, commit `75e5a6e...`) was cancelled by workflow concurrency during checkout after the next branch push. Jobs `112003982101` and `112003982569`; the security probe was skipped.
+The live evidence ledger records exact IDs/classification; no superseded run is rewritten as a technical failure.
 
-Neither superseded run is a technical security failure.
+## 10. Security interpretation
 
-## 9. Security interpretation
+A future corrected PASS will not mean localhost itself is an authentication boundary. It must prove that the local browser uses a non-ambient random credential plus CSRF/Host/Origin controls on top of loopback binding.
 
-[CONFIRMED] The tested boundary is technically viable on the GitHub-hosted Windows Server 2022 and 2025 images.
+The model does not protect against a fully compromised local administrator, browser process/profile or kernel.
 
-A PASS does not mean localhost itself is an authentication boundary. It proves random session/CSRF state and Host/Origin controls can be enforced on top of loopback binding, reducing the exposure behind R-009/R-034.
+Engine/API parameters still have to come from trusted contracts/catalog data under `AGENTS.md`.
 
-A PASS does not protect against a fully compromised local administrator, browser profile or kernel.
+## 11. Remaining decisions and validation
 
-A PASS does not approve arbitrary REST input. Engine parameters still have to come from trusted contracts/catalog data under `AGENTS.md`.
+1. [PENDING] Complete and inspect corrected run `37382909046` (or a later explicitly named accepted run).
+2. [PROPOSED] Reviewer/owner accepts or rejects the corrected non-ambient session model as V1 direction.
+3. [PENDING] Prove real browser URL-fragment bootstrap, explicit session-header attachment and fragment clearing in vanilla JS.
+4. [PENDING] Decide final session lifetime and idle extension policy.
+5. [PENDING] Implement/test operation idempotency and controlled shutdown with active operations as the next Phase 1C task.
+6. [V] Validate final elevated-process/browser behavior on a SISQUAL sandbox if required.
 
-## 10. Remaining decisions and validation
+## 12. Do not inherit blindly from the old UI
 
-1. [PROPOSED] Reviewer/owner accepts or rejects this bootstrap/session design as the V1 product direction.
-2. [PENDING] Prove the actual browser URL-fragment bootstrap, POST and fragment clearing in the vanilla-JS shell.
-3. [PENDING] Decide final session lifetime and whether idle extension is needed.
-4. [PENDING] Implement/test operation idempotency and controlled shutdown with active operations as the next Phase 1C task.
-5. [V] Validate final elevated-process/browser behavior on a SISQUAL sandbox if required by the reviewer.
+Do not add IIS or Windows/Negotiate authentication merely because the reference UI used it.
 
-## 11. Do not inherit blindly from the old UI
+Do not copy `AllowedHosts=*`.
 
-Do not add IIS or Windows/Negotiate authentication merely because the reference UI used it. That would change ADR-0001's portable local architecture and is a reopen condition.
+Do not use a host-scoped session cookie for this local-port threat model.
 
-Do not copy the old `AllowedHosts=*` behavior.
+Do not persist session/CSRF credentials in browser storage.
 
-Do not expose the reference console's public endpoints as part of the local administrative surface by default.
+Do not expose reference-console public endpoints as part of the local administrative surface by default.
 
 Do not copy reference web source into this repository; use it only as historical behavior/evidence.
