@@ -1,0 +1,20 @@
+{
+  "schema": "SISQUAL_PHASE1B_MACHINE_IDENTITY_SPIKE_V1",
+  "action": "SourceCreate",
+  "utc": "2026-10-05T21:46:18Z",
+  "machineName": "runnervmdlhio",
+  "powerShell": "7.6.6",
+  "overall": "PASS",
+  "fingerprint": "03fa38e72a84862634a18c2e4d49d61171e2f4cd2a9c9a11714a18f2e528778b",
+  "checks": [
+    {"id":"KEY_ABSENT_BEFORE_CREATE","status":"PASS","detail":"The test key name must be absent before source creation."},
+    {"id":"MACHINE_SCOPE","status":"PASS","detail":"The CNG key must be in the machine key store."},
+    {"id":"SOFTWARE_KSP","status":"PASS","detail":"The spike uses Microsoft Software Key Storage Provider."},
+    {"id":"ECDH_P256","status":"PASS","detail":"The machine key must be ECDH P-256."},
+    {"id":"EXPORT_POLICY_NONE","status":"PASS","detail":"The CNG export policy must be None."},
+    {"id":"PUBLIC_EXPORT","status":"PASS","detail":"Public SPKI export must succeed."},
+    {"id":"PRIVATE_EXPORT_PKCS8_BLOCKED","status":"PASS","detail":"PKCS#8 private-key export must be rejected."},
+    {"id":"PRIVATE_EXPORT_CNG_BLOCKED","status":"PASS","detail":"CNG ECC private-blob export must be rejected."},
+    {"id":"CREDENTIAL_MODULE_INTEROP","status":"PASS","detail":"Existing Sisqual.Credentials entry encryption/decryption must work with the non-exportable CNG key."}
+  ]
+}
