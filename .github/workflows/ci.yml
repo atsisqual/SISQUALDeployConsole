@@ -36,13 +36,16 @@ jobs:
           Write-Host ('Changed files: ' + $files.Count)
           $files | ForEach-Object { Write-Host ('  ' + $_) }
 
-      - name: Parse all PowerShell with Windows PowerShell 5.1
+      # tools/ and tests/ are PowerShell 7 (owner decision 2026-10-05); the tool PRs add tools-tests.yml,
+      # which parses them with the PowerShell 7 parser. Everything else still has to parse in 5.1.
+      - name: Parse PowerShell outside tools/ and tests/ with Windows PowerShell 5.1
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
           $files = @(Get-ChildItem -LiteralPath . -Recurse -File -Filter '*.ps1' | Where-Object {
-              $_.FullName -notmatch '[\\/]\.git[\\/]'
+              $_.FullName -notmatch '[\\/]\.git[\\/]' -and
+              $_.FullName -notmatch '[\\/](tools|tests)[\\/]'
           })
           foreach ($file in $files) {
               $tokens = $null
