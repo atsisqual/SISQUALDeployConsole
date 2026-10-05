@@ -264,7 +264,7 @@ function Invoke-Scalar {
 
 function New-SqlParameter {
     param([string]$Name, $Column, $Value)
-    $type = [Microsoft.Data.SqlClient.SqlDbType]
+    $type = [System.Data.SqlDbType]
     switch ($Column.type) {
         'bit' { $p = [Microsoft.Data.SqlClient.SqlParameter]::new($Name, $type::Bit) }
         'int' { $p = [Microsoft.Data.SqlClient.SqlParameter]::new($Name, $type::Int) }
@@ -285,7 +285,7 @@ function New-SqlParameter {
 function New-SourceDatabase {
     param([string]$Name, $Fixture)
     $master = Get-Connection -Database 'master'
-    try { Invoke-NonQuery $master ('CREATE DATABASE [{0}] COLLATE Latin1_General_CI_AS;' -f $Name) } finally { $master.Dispose() }
+    try { Invoke-NonQuery $master ('CREATE DATABASE [{0}] COLLATE Latin1_General_CI_AS;' -f $Name); $script:dbCreated = $true } finally { $master.Dispose() }
     $c = Get-Connection -Database $Name
     try {
         foreach ($s in @('app', 'cfg', 'ops', 'sec', 'ui')) { Invoke-NonQuery $c ('CREATE SCHEMA [{0}];' -f $s) }
