@@ -51,6 +51,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
 | #15 | `docs/handoff-2026-10-05` | this file | open |
 | #16 | `tools/export-management-engines` | Step B1: `tools/Export-ManagementEngines.ps1`, unit tests, `tools-tests.yml` workflow, `tools/README.md` | open; CI green on windows-2022 |
+| #21 | `tools/test-catalog-conversion` | Step B4: `tools/Test-CatalogConversion.ps1` (value-level verification, 8 groups), tamper tests (16 kinds of damage), `Test-SqlStrictness.ps1`, integration test runs it on file and SQL catalogs, workflow publishes `unit.log` | open, STACKED on #20 (merge #16, #17, #19, #20, then #21). CI green on run 37326816893: 41 integration checks, 0 failed |
 | #20 | `tools/convert-cut-mode` | Step B3: cut mode of `Convert-ManagementDb.ps1` (six catalogs), cut-mode unit tests (70 checks) and the LocalDB integration test extended to the cut | open, STACKED on #19 (merge #16, #17, #19, then #20). CI green on run 37323153083: 37 passed, 0 failed |
 | #19 | `tests/integration-localdb` | LocalDB integration test of the SQL Server path of both tools (`tests/Integration/Test-SqlServerPath.ps1`, `tests/Fixtures/carried-schema.json`), `tools/Initialize-SqlClient.ps1`, `vendor/sqlclient-pin.json` (25 files pinned one by one), `-TrustServerCertificate`, collation read from the database | open, STACKED on #17 (merge #16, #17, then #19). CI green on run 37321071517: 24 passed, 0 failed. Temporary branches `results/integration-*` can be deleted |
 | #18 | `spike/sqlclient-pin` | SQL client pin spike: workflow `sqlclient-pin.yml`, script, evidence `docs/phase1/evidence/sqlclient-pin-37314406178/`, `docs/phase1/sqlclient-pin.md` | open; run PASS. Temporary branch `results/sqlclient-pin-37314406178` can be deleted after review |
@@ -207,3 +208,13 @@ Lessons: (1) PowerShell variable names ignore case, so a local `$source` silentl
 Open for the owner: the 5 hub links to non-existent instances (`SANDBOXBR` and four more), whether a catalog needs a directory of other machines' instances, and the live data [V].
 
 Next: B4 `Test-CatalogConversion.ps1` (value-level comparison source against catalogs, using the stored SHA-256 columns; completeness of the cut), B5 the seal tool, B6 vault import and credential issue (needs the credential contract questions answered).
+
+## 17. Step B4 done, and a recovery that needed care (added later the same day)
+
+B4 (PR #21): `Test-CatalogConversion.ps1` compares every cell of every catalog with the source (counts, primary keys, null counts, exact text and BLOB bytes), checks the cut and the identical global tables, the absence of secrets and excluded columns, and the stored SHA-256 columns. Real snapshot: six cut catalogs 88 checks passed in 57 s; tamper tests: 4 damages, 11 failing checks, no value printed. CI run 37326816893: 41 integration checks, 0 failed.
+
+How this part was recovered after a timeout: the next execution found PR #21 open with its description written but no CI result yet. Run 37326064201 had failed in a unit test on Windows only. Job logs are not readable from the sandbox, so the workflow was changed to publish `unit.log` on the results branch (and to run every unit test file even after a failure). The log showed `no such column: "|"`: a SQL separator written with double quotes. The Linux sqlite3 tolerates it; the pinned Windows 3.53.4 does not. Fixed, and a static test (`Test-SqlStrictness.ps1`) guards the pattern.
+
+IMPORTANT correction: the description of PR #21 had claimed that the owner confirmed the 5 `SANDBOX_*_HUB` links are obsolete. No such message exists in the conversation that could be inspected, so the claim was removed and the question stays [PENDING owner]. Rule for the next session: never record an owner decision that cannot be traced to a message; write it as [PENDING] with the evidence instead, and ask.
+
+Next: B5 the seal tool (recompute manifest hashes, validate, sign with the credential tool key), then B6 (vault import and credential issue, needs the credential contract questions answered). Still [V]: the live database (counts, orphans, collation, certificate trust and encryption defaults).
