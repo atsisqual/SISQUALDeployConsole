@@ -306,4 +306,4 @@ components:
           type: string
         result:
           description: Present when COMPLETED or FAILED. See contracts/engine-result.schema.json.
-          $ref: "engine-result.schema.json"
+          $ref: "../engine-result.schema.json"
