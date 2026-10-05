@@ -273,3 +273,7 @@ Remaining work, by the roadmap (docs/roadmap.md, adjusted for ADR-0007), as of t
 7. Phase 8 production acceptance: ADR-0006 conditions 2 to 4 (a real-topology IIS run, real credentials, batched commits at scale), a threat-model review, backup and restore verification, a signed release package with hashes, handover documentation, the cutover and decommission plan, sandbox and then one controlled real server. About 8 to 10 steps; needs the owner's sandbox and a pilot server.
 
 Total after this session: 7 phases, roughly 60 to 90 pull requests, about half of them engine ports. What only the owner can provide: merging the open PRs in order (#10, #23; #16, #17, #19, #20, #21, #22; #11 to #15 and #18 independently), a sandbox and a pilot server, access to the live `_sisqualMANAGEMENT` for the one-time import and for real counts, and the decisions that come up per engine.
+
+## Later note (2026-10-05, after the integration)
+
+The temporary `results/*` branches mentioned above were removed once all PRs were integrated; the evidence that matters is under `docs/phase1/evidence/`. The statements about machines without a local database are obsolete under ADR-0007 (see `docs/decisions-log.md`).

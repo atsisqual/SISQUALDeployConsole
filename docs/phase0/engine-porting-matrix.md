@@ -1,4 +1,4 @@
-# Phase 0 — Engine Porting Matrix
+# Phase 0 - Engine Porting Matrix
 
 **Status:** Phase 0 diagnostic, corrected using the full 2026-10-04 central sync payload  
 **Target:** SISQUALDeployConsole V1  
@@ -16,7 +16,7 @@
 
 ## Porting principle
 
-“Port” means preserve operational behavior and safety contracts while moving execution into local versioned PowerShell modules.
+"Port" means preserve operational behavior and safety contracts while moving execution into local versioned PowerShell modules.
 
 It does **not** mean continuing to execute mutable `ops.Engine.ScriptText` from central SQL in V1.
 

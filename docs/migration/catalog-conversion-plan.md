@@ -15,7 +15,7 @@ Owner decisions that drive this plan [CONFIRMED]:
 - `_sisqualMANAGEMENT` (SQL Server) ceases to exist. Configuration becomes read-only SQLite files, ONE PER EXISTING MACHINE (`ServerCode`); machines in `dbo.ManagedServer`: PT_DEMO, SANDBOX_HUB, ES_DEMO, BR_DEMO, PRESALES, TENDERS.
 - Engines become files and are exported separately as the base for the port. Credentials never enter a catalog.
 - The pilot is on a server without the current system, so catalogs for NEW machines are prioritised (see 2.6).
-- Sync SQL is read-only when a local database exists; the case of machines without a database is undecided and nothing is assumed here.
+- [OBSOLETE, 2026-10-05] "Sync SQL is read-only when a local database exists" no longer applies: ADR-0007 removes the central database and the runtime sync, and every machine receives its catalog inside the portable package.
 - The sync contract no longer exists; it becomes the signed package manifest plus the per-machine catalog schema (`contracts/`).
 
 Source read, read-only [CONFIRMED]:
@@ -261,7 +261,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 - [CONFIRMED] Owner answer of 2026-10-05: there is no template server. Machines without policy rows, and the pilot, are cut exactly as they are in the source: empty policy tables, nothing copied from another server. The owner's reason is that the engines already create these settings.
 - [CONFIRMED, from the source] This is NOT what the reference system does today: `cfg.GetIisDeploymentPlan` stops with error 50010 when the machine is not an enabled `ManagedServer` and with error 50011 ("No enabled IIS server policy exists for the resolved ManagedServer") when the server has no row in `cfg.IisServerPolicy`. No stored procedure and none of the 19 engine scripts inserts rows into the four policy tables; the only rows are the data rows of the sync file. So the defaults would have to come from the new engines. [CONFIRMED] Owner answer of 2026-10-05: the ported engines have NO built-in defaults; on a machine without a policy row they stop and report "policy missing" (like the reference procedures do with errors 50010 and 50011). The converter and tests make no assumption: an empty policy table is valid and is reported as a finding, never filled.
 - [PROPOSED] The pilot server has no row in `dbo.ManagedServer`, so it cannot be cut. The converter gets a new-machine mode: all global tables, one `dbo_ManagedServer` row built from parameters (`ServerCode`, `MachineName`, roots), no instances and no policy rows. Because the pilot comes first, this mode is built before the cut mode (step B order).
-- [PENDING] Machines without a local database: not decided; nothing is assumed.
+- [OBSOLETE, 2026-10-05] Machines without a local database: no longer applicable (ADR-0007).
 
 ## 3. What does NOT enter a catalog
 
@@ -437,7 +437,7 @@ Only on the real servers [V]:
 10. The credential contract questions Q1 to Q8, all answered on 2026-10-05 (section 12), including Q3 (text package pasted into the application) and Q6 (kinds, including `RULE_SECRET`).
 11. Whether the seal tool and the credential tool are the same program.
 12. [DECIDED by evidence, PR #18] CI gets a SQL Server from the runner image (LocalDB). Still to approve: the integration test that uses it.
-13. Machines without a local database (not decided).
+13. Machines without a local database: obsolete under ADR-0007 (closed 2026-10-05).
 14. [DECIDED 2026-10-05: not rotated, risk accepted] Still open: the change freeze and refresh cadence for catalogs while the old system is still in production.
 
 Not decided and not assumed anywhere in this plan: the long-term authority of the catalog (deferred by the owner), the SQLite managed provider (Phase 1B), and the crypto algorithms (Phase 1B).
