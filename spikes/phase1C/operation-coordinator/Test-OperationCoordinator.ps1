@@ -85,6 +85,67 @@ function Get-MarkerLines {
     return @(Get-Content -LiteralPath $Path | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Invoke-ConcurrentStatusReads {
+    param(
+        [Parameter(Mandatory = $true)]$Coordinator,
+        [Parameter(Mandatory = $true)][string]$OperationId,
+        [ValidateRange(2, 16)][int]$ReaderCount = 8
+    )
+
+    $barrier = [Threading.Barrier]::new($ReaderCount)
+    $readers = [System.Collections.Generic.List[object]]::new()
+    $statuses = [System.Collections.Generic.List[string]]::new()
+    $errorCount = 0
+    $scriptText = @'
+param($ModulePath, $Coordinator, $OperationId, $Barrier)
+Import-Module -Name $ModulePath -Force -ErrorAction Stop
+if (-not $Barrier.SignalAndWait(10000)) { throw 'Concurrent reader barrier timed out.' }
+Get-SisqualOperation -Coordinator $Coordinator -OperationId $OperationId
+'@
+
+    try {
+        for ($i = 0; $i -lt $ReaderCount; $i++) {
+            $ps = [PowerShell]::Create()
+            $null = $ps.AddScript($scriptText)
+            $null = $ps.AddArgument($modulePath)
+            $null = $ps.AddArgument($Coordinator)
+            $null = $ps.AddArgument($OperationId)
+            $null = $ps.AddArgument($barrier)
+            $async = $ps.BeginInvoke()
+            $readers.Add([pscustomobject]@{ PowerShell = $ps; Async = $async }) | Out-Null
+        }
+
+        foreach ($reader in $readers) {
+            try {
+                $output = @($reader.PowerShell.EndInvoke($reader.Async))
+                if ($reader.PowerShell.HadErrors) {
+                    $errorCount++
+                }
+                foreach ($item in $output) {
+                    if ($null -ne $item -and $null -ne $item.PSObject.Properties['Status']) {
+                        $statuses.Add([string]$item.Status) | Out-Null
+                    }
+                }
+            }
+            catch {
+                $errorCount++
+            }
+        }
+    }
+    finally {
+        foreach ($reader in $readers) {
+            try { $reader.PowerShell.Dispose() } catch {}
+        }
+        $barrier.Dispose()
+    }
+
+    return [pscustomobject]@{
+        ReaderCount = $ReaderCount
+        ErrorCount = $errorCount
+        Statuses = @($statuses)
+    }
+}
+
 $worker = {
     param($OperationId, $CancellationToken, $Argument)
 
@@ -160,6 +221,16 @@ try {
     $shared3 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'B' -PlanFingerprint $planC -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
     $shared3Done = Wait-OperationTerminal -Coordinator $coordinator -OperationId $shared3.OperationId
     Add-Check 'SHARED_LOCK_RELEASED' ($shared3.Accepted -and $shared3Done.Status -eq 'SUCCEEDED') 'Shared-resource lock is released after terminal completion.'
+
+    $raceCoordinator = New-SisqualOperationCoordinator
+    $coordinators.Add($raceCoordinator) | Out-Null
+    $raceOp = Start-SisqualOperation -Coordinator $raceCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'RACE' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode NONE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 150; MarkerPath = ''; CheckCancellation = $false })
+    Start-Sleep -Milliseconds 350
+    $raceRead = Invoke-ConcurrentStatusReads -Coordinator $raceCoordinator -OperationId $raceOp.OperationId -ReaderCount 8
+    $raceFinal = Wait-OperationTerminal -Coordinator $raceCoordinator -OperationId $raceOp.OperationId -TimeoutMilliseconds 2000
+    Add-Check 'CONCURRENT_FINALIZATION_NO_ERROR' ($raceRead.ErrorCount -eq 0) 'Synchronized concurrent status readers do not race EndInvoke/disposal.' @{ Readers = $raceRead.ReaderCount; Errors = $raceRead.ErrorCount; ObservedStatuses = @($raceRead.Statuses) }
+    Add-Check 'CONCURRENT_FINALIZATION_TERMINAL' ($raceFinal.Status -eq 'SUCCEEDED') 'Operation reaches a stable terminal state after concurrent finalization attempts.' @{ Status = $raceFinal.Status }
+    Close-SisqualOperationCoordinator -Coordinator $raceCoordinator
 
     $cancelCoordinator = New-SisqualOperationCoordinator
     $coordinators.Add($cancelCoordinator) | Out-Null
