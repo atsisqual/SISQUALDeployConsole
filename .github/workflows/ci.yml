@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  static-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect changed files
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_BASE_REF)) {
+              $base = "origin/$env:GITHUB_BASE_REF"
+          }
+          else {
+              $before = '${{ github.event.before }}'
+              if ([string]::IsNullOrWhiteSpace($before) -or $before -match '^0+$') {
+                  $base = 'HEAD~1'
+              }
+              else {
+                  $base = $before
+              }
+          }
+          $files = @(git diff --name-only --diff-filter=ACMR "$base...HEAD")
+          $files | Set-Content -LiteralPath changed-files.txt -Encoding ascii
+          Write-Host ('Changed files: ' + $files.Count)
+          $files | ForEach-Object { Write-Host ('  ' + $_) }
+
+      - name: Parse changed PowerShell with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failed = $false
+          $files = @(Get-Content -LiteralPath changed-files.txt | Where-Object { $_ -like '*.ps1' -and (Test-Path -LiteralPath $_) })
+          foreach ($file in $files) {
+              $tokens = $null
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile(
+                  (Resolve-Path -LiteralPath $file).Path,
+                  [ref]$tokens,
+                  [ref]$errors
+              )
+              if (@($errors).Count -gt 0) {
+                  $failed = $true
+                  Write-Error ("PowerShell 5.1 parse failure in {0}" -f $file) -ErrorAction Continue
+                  foreach ($parseError in @($errors)) {
+                      Write-Host ("  line {0}: {1}" -f $parseError.Extent.StartLineNumber, $parseError.Message)
+                  }
+              }
+              else {
+                  Write-Host ("PASS parser: {0}" -f $file)
+              }
+          }
+          if ($failed) { throw 'One or more changed PowerShell files failed the Windows PowerShell 5.1 parser.' }
+
+      - name: Verify ASCII and LF on changed text files
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extensions = @('.ps1','.psm1','.psd1','.md','.json','.yaml','.yml','.html','.css','.js','.cmd','.txt')
+          $namesWithoutExtension = @('.gitignore')
+          $failed = $false
+          $files = @(Get-Content -LiteralPath changed-files.txt | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+          foreach ($file in $files) {
+              $leaf = Split-Path -Leaf $file
+              $extension = [IO.Path]::GetExtension($file).ToLowerInvariant()
+              if (($extensions -notcontains $extension) -and ($namesWithoutExtension -notcontains $leaf)) { continue }
+              $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $file).Path)
+              $nonAscii = @($bytes | Where-Object { $_ -gt 127 })
+              $cr = @($bytes | Where-Object { $_ -eq 13 })
+              if ($nonAscii.Count -gt 0) {
+                  $failed = $true
+                  Write-Error ("Non-ASCII byte found: {0}" -f $file) -ErrorAction Continue
+              }
+              if ($cr.Count -gt 0) {
+                  $failed = $true
+                  Write-Error ("CR byte found; LF-only required: {0}" -f $file) -ErrorAction Continue
+              }
+              if ($nonAscii.Count -eq 0 -and $cr.Count -eq 0) {
+                  Write-Host ("PASS ASCII/LF: {0}" -f $file)
+              }
+          }
+          if ($failed) { throw 'ASCII/LF policy failed for one or more changed text files.' }
+
+      - name: Simple secret scan on changed text files
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $patterns = @(
+              '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----',
+              '(?i)(password|pwd|clientsecret|client_secret|access_token|refresh_token)\s*[:=]\s*["''][^"'']{8,}["'']',
+              'github_pat_[A-Za-z0-9_]{20,}',
+              'ghp_[A-Za-z0-9]{20,}',
+              'AKIA[0-9A-Z]{16}'
+          )
+          $extensions = @('.ps1','.psm1','.psd1','.md','.json','.yaml','.yml','.html','.css','.js','.cmd','.txt')
+          $failed = $false
+          $files = @(Get-Content -LiteralPath changed-files.txt | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+          foreach ($file in $files) {
+              if ($extensions -notcontains [IO.Path]::GetExtension($file).ToLowerInvariant()) { continue }
+              $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $file).Path)
+              foreach ($pattern in $patterns) {
+                  if ($text -match $pattern) {
+                      $failed = $true
+                      Write-Error ("Potential secret pattern in {0}: {1}" -f $file, $pattern) -ErrorAction Continue
+                  }
+              }
+          }
+          if ($failed) { throw 'Potential secret material detected in changed files.' }
+          Write-Host 'PASS simple secret scan.'
