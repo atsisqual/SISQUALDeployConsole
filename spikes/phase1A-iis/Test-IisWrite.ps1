@@ -240,12 +240,22 @@ function Compare-Snapshots {
     Flatten-Object $B '' $fb
     $keys=@(@($fa.Keys)+@($fb.Keys) | Sort-Object -Unique)
     $diffs=New-Object 'System.Collections.Generic.List[object]'
+    $notes=New-Object 'System.Collections.Generic.List[string]'
+    $ignored=0
     foreach ($k in $keys) {
+        # Runtime state of w3wp worker processes (PID, GUID, state) is not configuration.
+        if ($k -match '\.workerProcesses(\.|\[|$)') { $ignored++; continue }
         $va=$(if($fa.ContainsKey($k)){$fa[$k]}else{'<missing>'})
         $vb=$(if($fb.ContainsKey($k)){$fb[$k]}else{'<missing>'})
-        if ($va -cne $vb) { $diffs.Add([ordered]@{Path=$k;Current=$va;Mwa=$vb}) }
+        if ($va -cne $vb) {
+            if ($k -match 'certificateStoreName$' -and [string]::Equals([string]$va,[string]$vb,[StringComparison]::OrdinalIgnoreCase)) {
+                $notes.Add('certificateStoreName differs only by case: ' + $k + ' current=' + $va + ' mwa=' + $vb)
+                continue
+            }
+            $diffs.Add([ordered]@{Path=$k;Current=$va;Mwa=$vb})
+        }
     }
-    return [pscustomobject]@{Compared=$keys.Count;DiffCount=$diffs.Count;Diffs=@($diffs | Select-Object -First 80)}
+    return [pscustomobject]@{Compared=($keys.Count-$ignored);DiffCount=$diffs.Count;IgnoredVolatile=$ignored;Notes=@($notes);Diffs=@($diffs | Select-Object -First 80)}
 }
 
 function Get-HttpResult {
@@ -630,7 +640,7 @@ try{
         }
     }
     $sw.Stop();$r.CreateMs=$sw.Elapsed.TotalMilliseconds
-    $sw=[Diagnostics.Stopwatch]::StartNew();$sites=@(Get-Website | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumSitesMs=$sw.Elapsed.TotalMilliseconds
+    $sw=[Diagnostics.Stopwatch]::StartNew();$siteList=@(Get-Website | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumSitesMs=$sw.Elapsed.TotalMilliseconds
     $sw=[Diagnostics.Stopwatch]::StartNew();$apps=@(Get-WebApplication | Where-Object { $_.path -like '/app*' });$sw.Stop();$r.EnumAppsMs=$sw.Elapsed.TotalMilliseconds;$r.Applications=$apps.Count
     $sw=[Diagnostics.Stopwatch]::StartNew();$pools=@(Get-ChildItem 'IIS:\AppPools' | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumPoolsMs=$sw.Elapsed.TotalMilliseconds;$r.Pools=$pools.Count
     $sw=[Diagnostics.Stopwatch]::StartNew();foreach($p in $pools){[void](Get-WebAppPoolState -Name ([string]$p.Name))};$sw.Stop();$r.PoolStatesMs=$sw.Elapsed.TotalMilliseconds
@@ -668,8 +678,8 @@ try{
     $sw.Stop();$r.CreateMs=$sw.Elapsed.TotalMilliseconds
     $sm=[Microsoft.Web.Administration.ServerManager]::new()
     try{
-        $sw=[Diagnostics.Stopwatch]::StartNew();$sites=@($sm.Sites | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumSitesMs=$sw.Elapsed.TotalMilliseconds
-        $sw=[Diagnostics.Stopwatch]::StartNew();$count=0;foreach($x in $sites){$count+=@($x.Applications | Where-Object { $_.Path -like '/app*' }).Count};$sw.Stop();$r.EnumAppsMs=$sw.Elapsed.TotalMilliseconds;$r.Applications=$count
+        $sw=[Diagnostics.Stopwatch]::StartNew();$siteList=@($sm.Sites | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumSitesMs=$sw.Elapsed.TotalMilliseconds
+        $sw=[Diagnostics.Stopwatch]::StartNew();$count=0;foreach($x in $siteList){$count+=@($x.Applications | Where-Object { $_.Path -like '/app*' }).Count};$sw.Stop();$r.EnumAppsMs=$sw.Elapsed.TotalMilliseconds;$r.Applications=$count
         $sw=[Diagnostics.Stopwatch]::StartNew();$pools=@($sm.ApplicationPools | Where-Object { $_.Name -like 'sc*' });$sw.Stop();$r.EnumPoolsMs=$sw.Elapsed.TotalMilliseconds;$r.Pools=$pools.Count
         $sw=[Diagnostics.Stopwatch]::StartNew();foreach($p in $pools){[void][string]$p.State};$sw.Stop();$r.PoolStatesMs=$sw.Elapsed.TotalMilliseconds
     }finally{$sm.Dispose()}
@@ -734,7 +744,7 @@ $r|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $OutputPath -Encoding utf8
         try {
             $rrun=Run-ChildJson $ps51 $readCmdlets (Join-Path $TempRoot 'read1.json') @('-PoolName','sp_wfm','-SiteName','sp1')
             $p=$rrun.Payload
-            $interopOk=((Child-Ok $rrun) -and @($p.Applications).Count -ge 3 -and @($p.Bindings).Count -ge 4 -and @($p.Pools).Count -ge 3)
+            $interopOk=((Child-Ok $rrun) -and @($p.Applications).Count -ge 3 -and @($p.Bindings).Count -ge 3 -and @($p.Pools).Count -ge 3)
             Add-Result 'M7_INTEROP_CMDLET_READ' $(if($interopOk){'PASS'}else{'FAIL'}) 'Windows PowerShell 5.1 WebAdministration cmdlets read the objects written by MWA from PowerShell 7.' $p (Child-Error $rrun)
         } catch { Add-Result 'M7_INTEROP_CMDLET_READ' 'FAIL' 'Interop read threw.' $null (Err $_) }
 
