@@ -3,7 +3,7 @@
 **Workflow:** `phase1b-sqlite-provider`
 **Branch:** `spike/phase1b-sqlite-managed-provider`
 **PR:** #36
-**Status:** [PENDING] technical evidence. The accepted compatibility result must come from a completed job that executed the probe.
+**Status:** [CONFIRMED] superseded evidence history. This run is not eligible to establish provider compatibility.
 
 ## Attempt history
 
@@ -20,37 +20,27 @@ This attempt is not compatibility evidence and must not be counted as PASS or FA
 
 [CONFIRMED] The failed/cancelled jobs were re-requested without changing the spike code.
 
-[PENDING] At the time this evidence record was created, both `windows-2022` and `windows-2025` jobs were queued and had not executed any step.
+[CONFIRMED] Before this run could become accepted evidence, review found a defect in the NuGet hash collection: a PackageReference restore does not guarantee that `.nupkg` archives remain in the global package directory, so `nupkgSha256` could be null.
 
-## Required artifacts
+The defect was fixed in commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3`. This older run remains in the repository only to preserve the evidence history.
 
-A completed job is expected to upload these files:
+## Superseding run
 
-- `report-windows-2022-original.json`
-- `report-windows-2022-copy.json`
-- `packages.lock-windows-2022.json`
-- `nuget-graph-windows-2022.json`
-- `report-windows-2025-original.json`
-- `report-windows-2025-copy.json`
-- `packages.lock-windows-2025.json`
-- `nuget-graph-windows-2025.json`
+[CONFIRMED] Run `37372704803` is the first run eligible for acceptance because it uses the corrected package-evidence workflow.
 
-The two operating-system jobs upload separate GitHub Actions artifacts named:
+See:
 
-- `phase1b-sqlite-provider-windows-2022`
-- `phase1b-sqlite-provider-windows-2025`
+`docs/phase1/evidence/phase1b-sqlite-provider-37372704803/README.md`
 
-## Acceptance rule
+## Why this run cannot be accepted
 
-[PENDING] This folder must be updated with the reports from a completed accepted run before the provider can be described as technically viable.
+Even if a later attempt of this old run were to execute the provider probe successfully, its workflow revision does not satisfy the required dependency-evidence rule. The accepted run must:
 
-The minimum evidence is:
-
-1. both Windows jobs actually execute;
-2. both original-folder probes report `overall = PASS`;
-3. both copied-folder probes report `overall = PASS`;
-4. the read-only, write-rejection, missing-file, multiple-reader and no-mutation checks all PASS;
-5. the resolved NuGet graph and native SQLite version are recorded;
-6. the package/file hashes needed for future vendoring are preserved.
+1. execute both Windows jobs;
+2. pass original-folder and copied-folder provider probes;
+3. preserve the exact resolved NuGet graph;
+4. record a non-empty SHA-256 for every resolved package archive;
+5. verify each archive SHA-512 against the lock-file `contentHash`;
+6. record the native SQLite version loaded by the provider.
 
 A workflow cancellation before runner assignment is an infrastructure event only and does not change the candidate status.
