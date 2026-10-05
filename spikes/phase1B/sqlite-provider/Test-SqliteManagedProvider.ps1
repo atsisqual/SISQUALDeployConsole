@@ -237,10 +237,11 @@ INSERT INTO sample(id,code,amount) SELECT x, printf('C%05d',x), x*10 FROM n;
 
     $fixtureHashAfter = (Get-FileHash -LiteralPath $dbPath -Algorithm SHA256).Hash
     $sidecars = @(Get-ChildItem -LiteralPath $dbDir -File | Where-Object { $_.Name -ne (Split-Path -Leaf $dbPath) })
+    $sidecarNames = @($sidecars | ForEach-Object { $_.Name })
     $noMutation = ($fixtureHashBefore -eq $fixtureHashAfter -and $sidecars.Count -eq 0)
     Add-Check 'NO_CATALOG_MUTATION' $(if ($noMutation) { 'PASS' } else { 'FAIL' }) `
         'Read-only use leaves the catalog bytes unchanged and creates no sidecar files.' `
-        ([ordered]@{ before = $fixtureHashBefore; after = $fixtureHashAfter; sidecars = @($sidecars.Name) })
+        ([ordered]@{ before = $fixtureHashBefore; after = $fixtureHashAfter; sidecars = $sidecarNames })
 }
 catch {
     $fatal = $_.Exception.GetType().FullName + ': ' + $_.Exception.Message
