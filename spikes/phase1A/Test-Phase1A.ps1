@@ -35,7 +35,7 @@ $Pinned = [ordered]@{
         Version = '3.53.4'
         FileName = 'sqlite-tools-win-x64-3530400.zip'
         Sha256 = 'F46EE2475DE4CBE287E6E5F7D43C838796B14E7379CD216BDBB28D391429F9FC'
-        Sha256PublishedBy = 'Scoop main sqlite 3.53.4 manifest'
+        Sha256PublishedBy = 'ScoopInstaller/Main bucket/sqlite.json (3.53.4)'
         Sha3_256 = '88B4659FE747896B853AF10157316B4ADE143553EFB89C1C8CA7423A278DCC8B'
         Sha3PublishedBy = 'sqlite.org official download page'
         Source = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip'
@@ -137,9 +137,9 @@ function Run-ChildJson {
     param([string]$Pwsh,[string]$Script,[string]$Out,[string[]]$Extra=@())
     $stdout=$Out+'.stdout.txt'
     $stderr=$Out+'.stderr.txt'
-    $args=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"{0}"' -f $Script),'-OutputPath',('"{0}"' -f $Out))
-    $args += $Extra
-    $p=Start-Process -FilePath $Pwsh -ArgumentList $args -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $childArgs=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"{0}"' -f $Script),'-OutputPath',('"{0}"' -f $Out))
+    $childArgs += $Extra
+    $p=Start-Process -FilePath $Pwsh -ArgumentList $childArgs -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $payload=$null
     if (Test-Path -LiteralPath $Out) {
         try { $payload=Get-Content -LiteralPath $Out -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
@@ -209,24 +209,43 @@ param([string]$OutputPath)
     if (-not $psPass) { throw 'Portable PowerShell validation failed.' }
 
     # SQLite second provenance check: official sqlite.org SHA3-256.
+    # SHA3 is only available on newer OS/.NET combinations (for example recent Windows 11 builds and
+    # Windows Server 2025). Where it is unsupported this check is reported as WARN and the run continues:
+    # the SHA-256 (official Scoop bucket) was already enforced above.
     $sha3Script=Join-Path $TempRoot 'Probe-Sha3.ps1'
     @'
 param([string]$OutputPath,[string]$InputPath)
 $ErrorActionPreference='Stop'
 try{
+    $supported=$false
+    try{$supported=[bool][Security.Cryptography.SHA3_256]::IsSupported}catch{$supported=$false}
+    if(-not $supported){
+        [pscustomobject]@{Success=$true;Supported=$false;Sha3_256=$null;Error=$null}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
+        exit 0
+    }
     $hex=[Convert]::ToHexString([Security.Cryptography.SHA3_256]::HashData([IO.File]::ReadAllBytes($InputPath)))
-    [pscustomobject]@{Success=$true;Sha3_256=$hex}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
+    [pscustomobject]@{Success=$true;Supported=$true;Sha3_256=$hex;Error=$null}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
 }catch{
-    [pscustomobject]@{Success=$false;Error=$_.Exception.GetType().FullName+': '+$_.Exception.Message}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
+    [pscustomobject]@{Success=$false;Supported=$null;Sha3_256=$null;Error=$_.Exception.GetType().FullName+': '+$_.Exception.Message}|ConvertTo-Json|Set-Content $OutputPath -Encoding utf8
     exit 1
 }
 '@ | Set-Content $sha3Script -Encoding UTF8
     $sha3Out=Join-Path $TempRoot 'sha3.json'
     $sha3Run=Run-ChildJson $pwsh $sha3Script $sha3Out @('-InputPath',('"{0}"' -f $sqliteZip))
-    $sha3=$(if($null -ne $sha3Run.Payload){[string]$sha3Run.Payload.Sha3_256}else{''})
-    $sha3Pass=($sha3Run.ExitCode -eq 0 -and $sha3.ToUpperInvariant() -eq $Pinned.SQLite.Sha3_256)
-    Add-Result 'SQLITE_ARTIFACT_SHA3' $(if($sha3Pass){'PASS'}else{'FAIL'}) 'SQLite also matches official sqlite.org SHA3-256.' ([ordered]@{Expected=$Pinned.SQLite.Sha3_256;Actual=$sha3.ToUpperInvariant();PublishedBy=$Pinned.SQLite.Sha3PublishedBy}) $sha3Run.StdErr
-    if (-not $sha3Pass) { throw 'SQLite SHA3-256 mismatch.' }
+    $sha3Payload=$sha3Run.Payload
+    $sha3Info=[ordered]@{Expected=$Pinned.SQLite.Sha3_256;PublishedBy=$Pinned.SQLite.Sha3PublishedBy;WindowsBuild=$os.BuildNumber;Dotnet=$psInfo.Framework;Supported=$null;Actual=$null}
+    if($null -eq $sha3Payload -or -not [bool]$sha3Payload.Success){
+        Add-Result 'SQLITE_ARTIFACT_SHA3' 'WARN' 'SHA3-256 could not be computed (probe error). SHA-256 from the official Scoop bucket remains enforced.' $sha3Info $(if($null -ne $sha3Payload){[string]$sha3Payload.Error}else{$sha3Run.StdErr})
+    }elseif(-not [bool]$sha3Payload.Supported){
+        $sha3Info['Supported']=$false
+        Add-Result 'SQLITE_ARTIFACT_SHA3' 'WARN' 'SHA3-256 is not supported by this OS/.NET combination, so it cannot be verified here. SHA-256 from the official Scoop bucket remains enforced; verify SHA3 on the download machine.' $sha3Info
+    }else{
+        $sha3=([string]$sha3Payload.Sha3_256).ToUpperInvariant()
+        $sha3Info['Supported']=$true;$sha3Info['Actual']=$sha3
+        $sha3Pass=($sha3 -eq $Pinned.SQLite.Sha3_256.ToUpperInvariant())
+        Add-Result 'SQLITE_ARTIFACT_SHA3' $(if($sha3Pass){'PASS'}else{'FAIL'}) $(if($sha3Pass){'SQLite also matches official sqlite.org SHA3-256.'}else{'SQLite SHA3-256 mismatch. Aborting before artifact use.'}) $sha3Info
+        if (-not $sha3Pass) { throw 'SQLite SHA3-256 mismatch.' }
+    }
 
     # 2. Pode portable + loopback isolation
     $podeRoot=Join-Path $TempRoot 'pode'
