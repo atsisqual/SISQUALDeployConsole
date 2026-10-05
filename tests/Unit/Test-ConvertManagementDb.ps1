@@ -150,7 +150,7 @@ try {
     Assert-That 'cut tables are empty; only the new ManagedServer row exists' ((Invoke-Query $db 'SELECT (SELECT count(*) FROM dbo_ManagedInstance), (SELECT count(*) FROM cfg_IisServerPolicy), (SELECT count(*) FROM dbo_ManagedServer), (SELECT ServerCode || MachineName FROM dbo_ManagedServer);') -eq '0|0|1|NEW_SRVNEW-HOST')
     Assert-That 'the old server row of the source is not copied' ((Invoke-Query $db "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'OLD_SRV';") -eq '0')
     $columns = Invoke-Query $db "SELECT group_concat(m.name || '.' || p.name) FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type='table';"
-    Assert-That 'secret, script and rowversion columns do not exist' (($columns -notmatch 'IisIdentityPassword|WebAccessPassword|MobileAppToken|ScriptText|ScriptSha256|RowVersion'))
+    Assert-That 'secret, script, rowversion and ManagementDatabaseName columns do not exist' (($columns -notmatch 'IisIdentityPassword|WebAccessPassword|MobileAppToken|ScriptText|ScriptSha256|RowVersion|ManagementDatabaseName'))
     Assert-That 'the history trap row never appears' ((Invoke-Query $db "SELECT count(*) FROM cfg_ConfigRule WHERE RuleCode = 'TRAP';") -eq '0')
 
     # 4. Redaction and secret safety ------------------------------------------------
@@ -189,6 +189,13 @@ try {
     Assert-That 'manifest row counts match' (@($entry.tables | Where-Object { $_.sourceRows -ne $_.destinationRows }).Count -eq 0)
 
     # 7. Input checks --------------------------------------------------------------------
+    # 8. Collation finding ---------------------------------------------------------------
+    Assert-That 'no collation finding when every code is ASCII' (@($entry.findings | Where-Object { $_ -like '*non-ASCII*' }).Count -eq 0)
+    $accent = New-Source -Text $fixture.Replace("N'PLAIN_RULE'", "N'PLAIN_R${eAcute}GLE'")
+    $r3 = Invoke-NewMachineConversion -Source $accent -SourceInfo $info -Folder (Join-Path $work 'accent') -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'x'
+    $m3 = ([System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($r3.Manifest)) | ConvertFrom-Json).catalogs[0]
+    Assert-That 'a non-ASCII code value is reported as a finding (count only, no value)' (@($m3.findings | Where-Object { $_ -like 'cfg_ConfigRule.RuleCode: 1 value(s) contain non-ASCII*' }).Count -eq 1 -and -not ($m3 | ConvertTo-Json -Depth 8).Contains('PLAIN_R'))
+
     Assert-Throws 'an existing ServerCode is refused (cut mode is B3)' { Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'o1') -Sqlite3 $sqlite3 -Code 'old_srv' -Machine 'H' -Services 'S' -BackupRoot 'B' } '*already exists*'
     Assert-Throws 'an invalid ServerCode is refused' { Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'o2') -Sqlite3 $sqlite3 -Code 'bad code!' -Machine 'H' -Services 'S' -BackupRoot 'B' } '*ServerCode must be*'
     Assert-Throws 'a missing sqlite3 is refused' { Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'o3') -Sqlite3 (Join-Path $work 'nope.exe') -Code 'Z1' -Machine 'H' -Services 'S' -BackupRoot 'B' } '*sqlite3 was not found*'

@@ -89,6 +89,8 @@ foreach ($t in @('dbo.ManagedInstance', 'cfg.LinksPageInstanceApplication', 'cfg
 $script:ExcludedColumns = @{
     'dbo.ManagedInstance' = @('IisIdentityPassword', 'WebAccessPassword', 'MobileAppToken')
     'ops.Engine'          = @('ScriptText', 'ScriptSha256')
+    # Names the old central database; it ceases to exist (owner answer of 2026-10-05).
+    'dbo.ManagedServer'   = @('ManagementDatabaseName')
 }
 
 # Rule tables whose sensitive templates may hold a literal secret (plan section 3.3).
@@ -448,6 +450,28 @@ function Test-NoSecretLiterals {
 
 function Get-SqliteTableName { param([string]$Table) return $Table.Replace('.', '_') }
 
+function Get-NonAsciiCodeFindings {
+    # SQL Server collation Latin1_General_CI_AS (owner, 2026-10-05) is case-insensitive for all of Latin1.
+    # SQLite NOCASE folds ASCII letters only. They agree while every *Code value is ASCII, so a
+    # non-ASCII value in a NOCASE column is reported (counts only, never values).
+    param([hashtable]$Schema, [hashtable]$Rows, [bool]$UseCodeCollation)
+    $findings = [System.Collections.Generic.List[string]]::new()
+    if (-not $UseCodeCollation) { return , $findings.ToArray() }
+    foreach ($table in $script:CarriedTables.Keys) {
+        foreach ($col in (Get-CarriedColumns -Table $table -TableSchema $Schema[$table])) {
+            if ($col.Name -notmatch 'Code$' -or $col.Type -notin @('char', 'nchar', 'varchar', 'nvarchar', 'sysname')) { continue }
+            $n = 0
+            foreach ($row in $Rows[$table]) {
+                if ($row.Contains($col.Name) -and $row[$col.Name] -is [string] -and [regex]::IsMatch($row[$col.Name], '[^\u0000-\u007F]')) { $n++ }
+            }
+            if ($n -gt 0) {
+                $findings.Add(('{0}.{1}: {2} value(s) contain non-ASCII characters; SQLite NOCASE folds ASCII only, so case-insensitive matches may differ from SQL Server (Latin1_General_CI_AS).' -f (Get-SqliteTableName $table), $col.Name, $n))
+            }
+        }
+    }
+    return , $findings.ToArray()
+}
+
 function Get-CarriedColumns {
     param([string]$Table, $TableSchema)
     $skip = @($script:ExcludedColumns[$Table])
@@ -667,7 +691,7 @@ function Invoke-NewMachineConversion {
     $now = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffffff', [System.Globalization.CultureInfo]::InvariantCulture)
     $serverRow = [ordered]@{
         ServerCode = $Code; MachineName = $Machine; ServicesRoot = $Services; IsEnabled = 1
-        CreatedAt = $now; ModifiedAt = $now; ConfigBackupRoot = $BackupRoot; ManagementDatabaseName = ''
+        CreatedAt = $now; ModifiedAt = $now; ConfigBackupRoot = $BackupRoot
     }
     $rows['dbo.ManagedServer'].Add($serverRow)
 
@@ -681,6 +705,7 @@ function Invoke-NewMachineConversion {
     $catalog = New-CatalogFile -Code $Code -Schema $Source.Schema -Rows $rows -Folder $Folder -Sqlite3 $Sqlite3 -SourceKind 'conversion-tool' -SourceRef $SourceRef -UseCodeCollation $UseCodeCollation
 
     $findings = [System.Collections.Generic.List[string]]::new()
+    foreach ($f in (Get-NonAsciiCodeFindings -Schema $Source.Schema -Rows $rows -UseCodeCollation $UseCodeCollation)) { $findings.Add($f) }
     foreach ($t in $script:CarriedTables.Keys) {
         if ($script:CarriedTables[$t] -ne 'G' -and $t -ne 'dbo.ManagedServer') {
             $findings.Add(('{0} is empty: a new machine has no rows to cut. Engines that need it stop with "policy missing" until the owner adds rows and seals the package.' -f (Get-SqliteTableName $t)))
@@ -697,6 +722,7 @@ function Invoke-NewMachineConversion {
         convertedAtUtc  = $catalog.BuiltAtUtc
         source          = $SourceInfo
         codeCollation   = $(if ($UseCodeCollation) { 'NOCASE' } else { 'BINARY' })
+        sourceCollation = 'Latin1_General_CI_AS (stated by the owner on 2026-10-05; to be read from the live database [V])'
         catalogs        = @([ordered]@{
                 serverCode       = $Code
                 file             = (Split-Path -Leaf $catalog.File)
