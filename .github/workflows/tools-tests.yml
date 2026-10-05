@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - 'tools/**'
+      - 'modules/**'
       - 'tests/**'
       - '.github/workflows/tools-tests.yml'
   push:
@@ -18,6 +19,7 @@ on:
       - main
     paths:
       - 'tools/**'
+      - 'modules/**'
       - 'tests/**'
 
 jobs:
@@ -41,7 +43,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
-          $files = @(Get-ChildItem -LiteralPath tools, tests -Recurse -File -Include '*.ps1', '*.psm1' -ErrorAction SilentlyContinue)
+          $files = @(Get-ChildItem -LiteralPath tools, tests, modules -Recurse -File -Include '*.ps1', '*.psm1' -ErrorAction SilentlyContinue)
           foreach ($file in $files) {
               $tokens = $null
               $errors = $null
@@ -54,12 +56,12 @@ jobs:
           }
           if ($failed) { throw 'PowerShell 7 parse failure.' }
 
-      - name: ASCII and LF in tools and tests
+      - name: ASCII and LF in tools, tests and modules
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
-          $files = @(Get-ChildItem -LiteralPath tools, tests -Recurse -File -ErrorAction SilentlyContinue)
+          $files = @(Get-ChildItem -LiteralPath tools, tests, modules -Recurse -File -ErrorAction SilentlyContinue)
           foreach ($file in $files) {
               $bytes = [IO.File]::ReadAllBytes($file.FullName)
               $bad = @($bytes | Where-Object { $_ -gt 127 -or $_ -eq 13 })
