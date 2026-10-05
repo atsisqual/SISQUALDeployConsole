@@ -361,11 +361,15 @@ function Get-TextFromSqlite {
 }
 function Get-CatalogDigests {
     # Per table: SHA-256 over the sorted rows, each cell as typeof:hex, so no byte can be altered unseen.
+    # The new ManagedServer row gets CreatedAt and ModifiedAt from the clock at conversion time, so those
+    # two columns are left out of the comparison (they differ between any two runs by design).
     param([string]$Db)
+    $skip = @{ 'dbo_ManagedServer' = @('CreatedAt', 'ModifiedAt') }
     $digests = [ordered]@{}
     $tables = @((Get-TextFromSqlite $Db "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;") -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_.Trim() })
     foreach ($t in $tables) {
         $cols = @((Get-TextFromSqlite $Db ("SELECT name FROM pragma_table_info('{0}') ORDER BY cid;" -f $t)) -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_.Trim() })
+        if ($skip.ContainsKey($t)) { $cols = @($cols | Where-Object { $skip[$t] -notcontains $_ }) }
         $expr = ($cols | ForEach-Object { "typeof(`"$_`") || ':' || hex(`"$_`")" }) -join " || '|' || "
         $text = Get-TextFromSqlite $Db ("SELECT {0} AS r FROM `"{1}`" ORDER BY r;" -f $expr, $t)
         $digests[$t] = Get-Sha256Hex ([System.Text.Encoding]::UTF8.GetBytes($text))
@@ -401,6 +405,7 @@ try {
     $entryFile = $manifestFile.catalogs[0]
     $expectedRows = 0
     foreach ($t in $classes.Keys) { if ($classes[$t] -eq 'G') { $expectedRows += 3 } }
+    Assert-That 'file path: the new server row has creation times from the clock' ((Get-TextFromSqlite $dbFile "SELECT count(*) FROM dbo_ManagedServer WHERE CreatedAt LIKE '20%T%' AND ModifiedAt LIKE '20%T%';").Trim() -eq '1')
     Assert-That 'file path: every global table carries its 3 rows, cut tables are empty, one server row' ((($entryFile.tables | Measure-Object destinationRows -Sum).Sum) -eq ($expectedRows + 1))
     $expectedMulti = 'L1' + "`r`n" + 'L2 ' + $eAcute + " 'q'" + "`n`t" + 'T' + "`r`n" + 'end' + "`r`n" + '2'
     $expectedHex = [Convert]::ToHexString([System.Text.UTF8Encoding]::new($false).GetBytes($expectedMulti))
