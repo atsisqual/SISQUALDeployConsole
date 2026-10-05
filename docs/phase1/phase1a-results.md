@@ -1,7 +1,7 @@
 # Phase 1 - Results of spikes 1A and 1A-2
 
 **Date:** 2026-10-05
-**Status:** results recorded. The decision in section 6 is **[PROPOSED]** and needs human approval.
+**Status:** results recorded. The decision in section 6 was **approved by the project owner on 2026-10-05** and is formalised in ADR-0006 (IIS) and ADR-0001 (runtime).
 Vocabulary: [CONFIRMED] demonstrated by a run, [PROPOSED] recommended, not approved, [PENDING] still unknown, [V] needs validation on a real SISQUAL server.
 
 ## 1. Scope and environment
@@ -61,7 +61,7 @@ The script's own verdict is FAIL, only because its critical list still includes 
 - [V] Windows Server 2019 and any machine that is not a GitHub-hosted runner.
 - The spike scripts create and remove sites, a local user and a certificate. They must run only on disposable machines.
 
-## 6. Proposed decision [PROPOSED]
+## 6. Decision [APPROVED with conditions]
 
 Keep ADR-0001 (portable PowerShell 7 runtime, Pode, SQLite) and amend the IIS integration layer:
 
@@ -70,13 +70,22 @@ Keep ADR-0001 (portable PowerShell 7 runtime, Pode, SQLite) and amend the IIS in
 3. Commit in batches, and standardise the certificate store name as `MY`.
 4. Keep Windows PowerShell 5.1 available as a fallback child process for any rule MWA cannot cover.
 
-## 7. Recommended integration order [PROPOSED]
+Approved by the project owner on 2026-10-05; formalised in `docs/architecture/ADR-0006-iis-integration-via-microsoft-web-administration.md`.
+
+| Condition | Status |
+|---|---|
+| Equivalence matrix between `IIS_RECONCILE` and MWA | [PENDING] |
+| Write spike on a sandbox with a real topology | [PENDING] [V] |
+| Pool identity with credentials, SNI and central certificate store bindings, handler and module sections | [PENDING] |
+| Batched commits and certificate store name `MY` | [PENDING] (applies when the engine is ported) |
+
+## 7. Integration order [APPROVED]
 
 1. This documentation PR.
 2. PR #4, after moving `IIS_WEBADMIN_COMPAT` and `IIS_PROVIDER` out of the critical list (they are an expected limitation, not a gate) and re-running.
 3. PR #5.
 
-Merging the workflows also enables `workflow_dispatch`, so the spikes can be re-run on future runner images.
+Merging the workflows also enables `workflow_dispatch`, so the spikes can be re-run on future runner images. The execution is recorded in `docs/phase1/integration-log.md`.
 
 ## 8. Run history
 
@@ -96,3 +105,9 @@ Merging the workflows also enables `workflow_dispatch`, so the spikes can be re-
 
 - `docs/phase1/evidence/phase1a-run37284187896/` report and console of windows-2022 and windows-2025.
 - `docs/phase1/evidence/phase1a2-run37290642287/` report and console of windows-2022 and windows-2025.
+
+## 10. Related documents
+
+- `docs/architecture/ADR-0001-portable-runtime-pode-sqlite.md`
+- `docs/architecture/ADR-0006-iis-integration-via-microsoft-web-administration.md`
+- `docs/decisions-log.md`
