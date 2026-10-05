@@ -7,11 +7,20 @@ No Internet is required. Place the three pinned ZIPs in .\artifacts next to this
 
 [CmdletBinding()]
 param(
-    [string]$ArtifactRoot = (Join-Path $PSScriptRoot 'artifacts'),
+    [string]$ArtifactRoot = '',
     [string]$ReportPath = '',
     [int]$PodePort = 0,
     [switch]$KeepArtifacts
 )
+
+# Resolve the script directory without relying on $PSScriptRoot in a parameter default
+# (it arrived empty on the GitHub-hosted Windows PowerShell 5.1 runners).
+$ScriptDir = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ScriptDir) -and $null -ne $MyInvocation.MyCommand -and -not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+if ([string]::IsNullOrWhiteSpace($ScriptDir)) { $ScriptDir = (Get-Location).Path }
+if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) { $ArtifactRoot = Join-Path $ScriptDir 'artifacts' }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -46,7 +55,7 @@ $RunId = [guid]::NewGuid().ToString('N')
 $StartedUtc = [DateTime]::UtcNow
 $TempRoot = Join-Path $env:TEMP ('SISQUALDeployConsole-Phase1A-' + $RunId)
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
-    $ReportPath = Join-Path $PSScriptRoot ('Phase1A-Report-{0}-{1}.json' -f $env:COMPUTERNAME,(Get-Date -Format 'yyyyMMdd_HHmmss'))
+    $ReportPath = Join-Path $ScriptDir ('Phase1A-Report-{0}-{1}.json' -f $env:COMPUTERNAME,(Get-Date -Format 'yyyyMMdd_HHmmss'))
 }
 
 $Results = New-Object 'System.Collections.Generic.List[object]'
