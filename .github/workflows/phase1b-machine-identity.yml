@@ -1,6 +1,11 @@
 name: phase1b-machine-identity
 
 on:
+  push:
+    branches: ['spike/phase1b-machine-identity-cng']
+    paths:
+      - 'spikes/phase1B/machine-identity/**'
+      - '.github/workflows/phase1b-machine-identity.yml'
   workflow_dispatch:
 
 permissions:
