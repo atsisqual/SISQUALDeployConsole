@@ -4,7 +4,7 @@
 **Base main:** `ad598215fe3ab0bc715a797a37e2bcf9331eaa56`
 **Workflow:** `phase1c-operation-coordinator`
 **Workflow ID:** `375883256`
-**Status:** [PENDING] run 1 failed in the coordinator/harness; corrected run 2 is under execution.
+**Status:** [PENDING] runs 1 and 2 exposed coordinator/harness defects; run 3 was superseded before probe execution; corrected run 4 is under execution.
 
 ## Evidence rule
 
@@ -49,12 +49,49 @@ Windows 2025:
 
 [CONFIRMED] Windows 2022 artifact was downloaded and inspected. The matrix stopped immediately after coordinator creation because a single canonical lock was pipeline-unwrapped to a scalar under `Set-StrictMode`; `Start-SisqualOperation` then attempted `.Count` on that scalar and raised `PropertyNotFoundException`.
 
-[CONFIRMED] Both Windows jobs failed the operation-coordinator step, so this is a cross-OS coordinator/harness defect, not infrastructure failure. The correction in commit `93fc9649945439bbde574e92aefee0784a000fb1` forces the canonical lock result into an array and simplifies the ordinal dictionary type.
+[CONFIRMED] Both Windows jobs failed the operation-coordinator step, so this is a cross-OS coordinator/harness defect, not infrastructure failure. The first correction in commit `93fc9649945439bbde574e92aefee0784a000fb1` forced the canonical lock result into an array and simplified the ordinal dictionary type.
 
-### Run `37387027558` - corrected candidate
+### Run `37387027558` - technical coordinator failure
 
 - run number `2`, attempt `1`;
+- event `push`;
 - tested commit `93fc9649945439bbde574e92aefee0784a000fb1`;
+- conclusion `failure`.
+
+Windows 2022:
+
+- job `112022685775`;
+- artifact ID `11379517221`, size `856` bytes;
+- digest `sha256:4108ade6e2c71b2bc0b1d5ed584a9ae527c76b49040621d137f74aab8f864b76`;
+- expiry `2027-01-03T23:11:16Z`.
+
+Windows 2025:
+
+- job `112022685569`;
+- artifact ID `11379407314`, size `856` bytes;
+- digest `sha256:69a81cf7091b9e724703bc46b762699814700c8dfeef33a283ba8199c2e970d3`;
+- expiry `2027-01-03T23:11:16Z`.
+
+[CONFIRMED] Both jobs reached the functional probe and failed after `2 PASS / 0 FAIL` with non-null `Fatal`. Windows 2022 logs show `PropertyNotFoundException: The property 'OperationId' cannot be found on this object`.
+
+[CONFIRMED] Root cause is PowerShell child-scope behavior in `Invoke-WithCoordinatorLock`: assignments such as operation/result/snapshot/active performed inside the helper scriptblock did not update caller-local variables. Object property mutations did persist, making the bug easy to miss by static inspection.
+
+[CONFIRMED] Commit `7c956d6830f93e42808efce6ddde5bc678ee1d90` removes that dependency: protected code now returns decisions/snapshots/active lists explicitly, while only object-property mutations are used for shared state.
+
+### Run `37387328062` - superseded before probe execution
+
+- run number `3`, attempt `1`;
+- tested commit `e9c4de6fbc0484d195e1903c34e0bc71e716826b`;
+- conclusion `cancelled` by workflow concurrency after the subsequent coordinator fix;
+- windows-2022 job `112023717746`;
+- windows-2025 job `112023717895`.
+
+[CONFIRMED] Both jobs were cancelled during the portable PowerShell download. The operation-coordinator probe was skipped. This is supersession evidence only, not a technical coordinator result.
+
+### Run `37387494783` - corrected candidate
+
+- run number `4`, attempt `1`;
+- tested commit `7c956d6830f93e42808efce6ddde5bc678ee1d90`;
 - status: [PENDING] executing on Windows 2022 and Windows 2025.
 
 ## Report contract
