@@ -51,6 +51,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
 | #15 | `docs/handoff-2026-10-05` | this file | open |
 | #16 | `tools/export-management-engines` | Step B1: `tools/Export-ManagementEngines.ps1`, unit tests, `tools-tests.yml` workflow, `tools/README.md` | open; CI green on windows-2022 |
+| #20 | `tools/convert-cut-mode` | Step B3: cut mode of `Convert-ManagementDb.ps1` (six catalogs), cut-mode unit tests (70 checks) and the LocalDB integration test extended to the cut | open, STACKED on #19 (merge #16, #17, #19, then #20). CI green on run 37323153083: 37 passed, 0 failed |
 | #19 | `tests/integration-localdb` | LocalDB integration test of the SQL Server path of both tools (`tests/Integration/Test-SqlServerPath.ps1`, `tests/Fixtures/carried-schema.json`), `tools/Initialize-SqlClient.ps1`, `vendor/sqlclient-pin.json` (25 files pinned one by one), `-TrustServerCertificate`, collation read from the database | open, STACKED on #17 (merge #16, #17, then #19). CI green on run 37321071517: 24 passed, 0 failed. Temporary branches `results/integration-*` can be deleted |
 | #18 | `spike/sqlclient-pin` | SQL client pin spike: workflow `sqlclient-pin.yml`, script, evidence `docs/phase1/evidence/sqlclient-pin-37314406178/`, `docs/phase1/sqlclient-pin.md` | open; run PASS. Temporary branch `results/sqlclient-pin-37314406178` can be deleted after review |
 | #17 | `tools/convert-management-db` | Step B2: `tools/Convert-ManagementDb.ps1` (new-machine mode), unit tests, pinned `sqlite3` download in CI | open, STACKED on #16 (base branch is #16's); CI green. Merge #16 first |
@@ -194,3 +195,15 @@ Additions in #19: `tools/Initialize-SqlClient.ps1` (restores the pinned client w
 
 Still [V] (needs a real SISQUAL server): volume and network behaviour, permissions, the live collation of `_sisqualMANAGEMENT`, certificate trust and encryption defaults, the credential read path.
 Still [PENDING]: how the 25 client files reach the operator machine (the helper needs the .NET SDK and nuget.org); B3 (cut mode), B4 (value-level test tool), B5 (seal tool), B6 (vault import and credential issue).
+
+## 16. Step B3 done (added later the same day)
+
+Cut mode (PR #20): one catalog per existing machine, default of `Convert-ManagementDb.ps1` (`-ServerCode ALL` or a list; `-NewMachine` is the other mode). Real run: six catalogs in 37 s, 76 instances each in exactly one catalog, 51 global tables identical in all six, 3,572 cut cells equal to the source, no secret value anywhere (independent Python check). CI run 37323153083: 37 passed, 0 failed, including the cut on SQL Server (LocalDB) equal to the cut from the file.
+
+Recovery note: the execution that opened PR #20 timed out while its CI was running. It was recovered from git and the API: the fix for a test defect (`-Sqlite3Path` missing in the SQL cut call, commit 64f4424) was already pushed, the CI of that commit was still running, and the evidence, the PR comment and these notes were still to be written.
+
+Lessons: (1) PowerShell variable names ignore case, so a local `$source` silently replaced the parameter `$Source` and the second loop failed; avoid names that differ from a parameter only by case. (2) `@($null).Count` is 1 and an unbound `[string[]]` parameter is `$null`; filter empty values. (3) Under strict mode `.Count` on an empty pipeline result fails; wrap the whole pipeline in `@()`. (4) SQLite `LIKE` ignores ASCII case, so a case-sensitivity test must use `=`.
+
+Open for the owner: the 5 hub links to non-existent instances (`SANDBOXBR` and four more), whether a catalog needs a directory of other machines' instances, and the live data [V].
+
+Next: B4 `Test-CatalogConversion.ps1` (value-level comparison source against catalogs, using the stored SHA-256 columns; completeness of the cut), B5 the seal tool, B6 vault import and credential issue (needs the credential contract questions answered).
