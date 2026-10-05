@@ -1,0 +1,30 @@
+name: Engine port
+description: Track one engine port or equivalence task
+title: "engine: "
+labels: []
+body:
+  - type: input
+    id: engine
+    attributes:
+      label: Engine code
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference evidence
+      description: Name the reference commit, snapshot rows, ADRs, and current behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract and safety requirements
+      description: Preview/apply, target scope, idempotency, backup/restore, secret handling, parser and Windows validation.
+    validations:
+      required: true
+  - type: textarea
+    id: pending
+    attributes:
+      label: Pending and validation items
+      description: Use [PENDING] and [V].
