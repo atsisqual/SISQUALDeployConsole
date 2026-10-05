@@ -1,68 +1,73 @@
 # Roadmap to completion
 
-**Date:** 2026-10-05
-**Status:** [PROPOSED] - needs project owner approval. Section 4 records the owner's answers of 2026-10-05; items 3 and 4 are still open.
-Based on: the approved architecture plan, the Phase 0 documents, ADR-0001 (approved), ADR-0006 (accepted with conditions, owner confirmation requested) and the Phase 1A/1A-2 results.
+**Date:** 2026-10-05 (updated after ADR-0007)
+**Status:** accepted as the working plan (PR #9 was merged on the owner's instruction); updated by the reviewer for ADR-0007 and the owner decisions of 2026-10-05, which are in `docs/decisions-log.md`.
+Tags: [CONFIRMED] demonstrated, [PROPOSED] recommended, [PENDING] undecided, [V] needs a real server.
 
 ## 1. Where we are
 
-Done: Phase 0 (inventory), Phase 1A (portable runtime) and Phase 1A-2 (IIS write path). Phase 1 still needs 1B and 1C. The repository has no product code yet; `README.md` is empty.
+Integrated in `main`:
+- Phase 0 inventory; Phase 1A (portable runtime) and 1A-2 (IIS write path); ADR-0001 accepted and ADR-0006 accepted with four conditions.
+- Phase 2: README, AGENTS.md, CLAUDE.md, contracts (draft), skill skeletons, CI, and the audit of the guidance against ADR-0007.
+- ADR-0007 accepted: no central database, no runtime sync, one read-only SQLite catalog per machine, signed manifest, credentials outside the portable, text logs.
+- Conversion chain B1 to B5: `Export-ManagementEngines`, `Convert-ManagementDb` (new-machine and cut modes), a LocalDB integration test, `Test-CatalogConversion` and `Seal-Package`; `Microsoft.Data.SqlClient` 7.1.1 pinned.
 
-## 2. Phases
+Not started: the portable application itself, the credential tool, machine identity, local web security and the engines.
 
-| Phase | Goal | Verified on | Size | Depends on |
-|---|---|---|---|---|
-| 1B | Machine identity and portable state | GitHub runners (two VMs) | S-M | - |
-| 1C | Local web security and lifecycle | GitHub runners | S-M | - |
-| 2 | Repository foundation (README, AGENTS.md, CLAUDE.md, ADR index, contracts, test and CI skeleton) | Review only | S | can start now |
-| 3 | Local runtime (host, sessions, SQLite, logging, operation coordinator) | Runners | M | 1B, 1C, 2 |
-| 4 | Central snapshot sync (read-only) | Runners plus central DB access | M | 3 |
-| 5 | Credential packages (signed and encrypted) | Runners (two VMs) | M | 1B, 4 |
-| 6 | Engine ports, in waves | Runners, sandbox, real servers | XL | 3, 4, 5 |
-| 7 | Operational skills and the new-server wizard | Runners | M | 6 (partly) |
-| 8 | Production acceptance and handover | Sandbox, then real servers | L | all |
+## 2. Remaining phases
 
-## 3. Phase details
+| Phase | Goal | Verified on | PRs (estimate) |
+|---|---|---|---|
+| B6 | Credential tool: vault, one-time import from the live database, per-machine package, real signer and verifier, application-side validation | Runners and LocalDB; [V] live database | 4-6 |
+| 1B | Machine identity: non-exportable key, copying the folder does not carry the identity (two VMs), read-only SQLite open, ADR for the key | Runners (two VMs) | 2-3 |
+| 1C | Local web security: session, CSRF, Host and Origin, CSP, idempotency, clean shutdown | Runners | about 2 |
+| 3 | Local runtime: startup, manifest and catalog verification, credentials import route, logs, locks, shutdown | Runners | 6-8 |
+| 6 | Engine ports: 19 engines plus the `FULL_DEPLOYMENT` orchestration | Runners, sandbox, real servers | 30-45 |
+| 7 | Skills and the new-server wizard | Runners | 6-8 |
+| 8 | Production acceptance and handover | Sandbox, then one real server | 8-10 |
 
-**1B - machine identity and portable state.** Non-exportable CNG machine key (or machine-scope DPAPI as the fallback); prove that copying the folder to another machine does not carry a usable identity (two runner jobs, folder passed as an artifact); choose the SQLite managed provider that loads in portable PowerShell with no installation; WAL, reopen and first-run state. Risks: R-005, R-007, R-016, R-036. Output: ADR for the provider and ADR for the machine key.
+About 60 to 90 PRs in total, half of them engines. These are estimates, not commitments.
 
-**1C - local web security and lifecycle.** One-time bootstrap token exchanged for an HttpOnly SameSite session; CSRF on every mutating route; Host and Origin validation; CORS denied by default; strict CSP; idempotency token; clean shutdown and behaviour with an active operation. Risks: R-009, R-011, R-014, R-031.
+## 3. Phase notes
 
-**2 - repository foundation.** `README.md`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, ADR index (ADR-0001 and ADR-0006 exist; the provider, sync, machine-key and concurrency ADRs follow 1B and 1C), contracts (REST, sync manifest, credential envelope, engine result), `tests/` and CI skeleton, `vendor/manifest.json`, packaging skeleton. Acceptance: a new agent can answer from the repository alone what it may change, what needs approval, what is production and how to test.
+- **B6.** The existing 191 credentials are encrypted with a key protected by a certificate of the live database, so the one-time import must run where that database is reachable [V]. Vault: one encrypted file outside Git and outside the portable (contracts/credential-package.md, Q9).
+- **1B and 1C.** Both can run on GitHub runners; copying the folder between machines is tested with two runner jobs and an artifact.
+- **3.** Packaging includes the SQL client files (see section 5).
+- **7.** The new-server wizard generates scripts and checklists; it never writes to a database.
+- **8.** Includes the ADR-0006 conditions 2 to 4, backup and restore verification, a threat-model review, a signed package, handover documents, and the cutover: the first deployment is on a server without the current system; existing servers are switched when the owner decides.
 
-**3 - local runtime.** Bootstrap, Pode host as an adapter only, session security, SQLite migrations, logging without secrets, operation coordinator (per-instance locks, server-wide locks for destructive work), controlled shutdown. Acceptance: loopback only, CSRF tests, duplicate POST does not duplicate an operation, no secret in any log, SQLite recovery.
+## 4. Engine waves (all 19 engines are in V1)
 
-**4 - central snapshot sync.** Stage, validate, atomic swap; manifest with hashes and schema version; INITIAL SETUP state when no valid snapshot exists; secret-bearing surfaces (for example `cfg.ManagedInstanceRuntime`) never enter the snapshot (R-026). Failure cases (central down, corrupt, incompatible schema, partial transfer, duplicate, older snapshot) keep the last valid cache usable. Transport (direct read-only SQL versus exported snapshot) is [PENDING].
+The order of the seven engines that were outside the earlier plan was chosen by the reviewer on the owner's delegation (2026-10-05): safest first, destructive last. Each engine needs preview, apply, idempotency, a structured result, a backup and restore strategy, a secret-safety test and a Windows CI run before review.
 
-**5 - credential packages.** Envelope encrypted for the machine key and signed by the central side; target server, key fingerprint, expiry and sequence are validated before decryption. Acceptance: a package for SERVER-A fails on SERVER-B even with the folder copied; tampered, expired, replayed and wrong-fingerprint packages fail. The central side must be able to produce packages; where that tool lives is [PENDING] (see section 4).
+1. `DEPLOYMENT_PREFLIGHT`, `PULSE_STATUS`
+2. `CONFIG_REPAIR` (preview, then apply), `MANAGED_ASSETS`
+3. `IIS_RECONCILE` on Microsoft.Web.Administration, after the ADR-0006 conditions
+4. `WINDOWS_SERVICES`, `V8_KEYCLOAK_PREREQUISITES`, `V8_KEYCLOAK_SERVICE`, `KEYCLOAK_CLIENT_SECRETS`
+5. `WEB_ACCESS`, `LINKS_PAGES`, `DATABASE_CONTENT_SYNC`
+6. `FULL_DEPLOYMENT` as orchestration of the validated engines (13 steps, 12 enabled)
+7. Read-only diagnostics: `ENVIRONMENT_STATE_PROBE`, `STORAGE_SIZE_SCAN`, `MODEL_REVIEW`
+8. `LINKS_VISIBILITY`, and `V8_KEYCLOAK_CONFIG` (disabled in `FULL_DEPLOYMENT`)
+9. `DATABASE_COPY` (destructive; only after the backup and restore strategy is proven)
 
-**6 - engine ports.** Each engine needs preview, apply, idempotency, structured result, backup and restore strategy, a secret-safety test, a Windows PowerShell 5.1 parser check, and a Windows CI run before review. Waves, following the Phase 0 matrix and the plan:
-1. `DEPLOYMENT_PREFLIGHT`, `PULSE_STATUS`;
-2. `CONFIG_REPAIR` (preview, then apply), `MANAGED_ASSETS`;
-3. `IIS_RECONCILE` on Microsoft.Web.Administration, after the ADR-0006 conditions;
-4. `WINDOWS_SERVICES`, `V8_KEYCLOAK_PREREQUISITES`, `V8_KEYCLOAK_SERVICE`, `KEYCLOAK_CLIENT_SECRETS`;
-5. `WEB_ACCESS`, `LINKS_PAGES`, `DATABASE_CONTENT_SYNC`;
-6. `FULL_DEPLOYMENT` last, as orchestration of validated engines (13 steps, 12 enabled; `V8_KEYCLOAK_CONFIG` stays disabled).
-Not testable on a runner: TSplus and Web Access (`WEB_ACCESS`), a real Keycloak topology, real SQL data. Whether the runner images can host SQL Server is [PENDING].
+[PROPOSED] `DATABASE_SETTINGS` is the old engine that its action no longer uses (the action points to `DATABASE_CONTENT_SYNC`); its behaviour is covered by wave 5, so it is not ported separately. Not testable on a runner: TSplus and Web Access, a real Keycloak topology, real SQL data.
 
-**7 - skills and wizard.** `bootstrap-new-server`, `rename-instance`, `keycloak-client-provisioning`, `config-repair-rule-authoring`, `credential-portability`, each calling the same modules as the application. A new-server wizard that computes Keycloak ports and customer codes, lists every physical prerequisite, warns when not run from the sync origin and generates the SQL for the central database without writing to it (V1 never writes back).
+## 5. Open items
 
-**8 - production acceptance.** ADR-0006 conditions closed; unit and static tests; disposable VM; SISQUAL sandbox; one controlled real server; then the rest. Includes backup and restore verification (R-033), a threat-model review, signed release package with hashes, handover documentation and the coexistence plan with the current Management Console.
+- [PENDING] Whether a catalog needs a directory of the instances of other machines (hub link pages). Today nothing is carried from another machine. Decide before wave 5 (`LINKS_PAGES`).
+- [PENDING] How the 25 `Microsoft.Data.SqlClient` files reach the operator. [PROPOSED] they are vendored inside the portable and covered by the manifest; decide in Phase 3.
+- [PENDING] SQLite managed provider (Phase 1B, read-only open only).
+- [PENDING] Whether `DATABASE_SETTINGS` needs a separate port (proposed: no).
+- [CLOSED 2026-10-05] Machines without a local database: obsolete under ADR-0007.
 
-## 4. Decisions and access needed from the project owner
+## 6. Validations that need a real server [V]
 
-1. [DECIDED 2026-10-05] ADR-0006 confirmed by the project owner (IIS through Microsoft.Web.Administration, four conditions).
-2. [DECIDED 2026-10-05] Central sync transport: direct read-only SQL connection.
-3. [OPEN] Credential packages. Proposal: a script in this repository that runs on the central server, only reads the central database and produces one package per target machine; the signing key stays on the central server; the current Management Console is not changed. Needs owner agreement.
-4. [OPEN] Real-topology IIS run (ADR-0006 condition 2). Question: which machine may be used to run the write test, which creates and removes prefixed test sites, a local user and a certificate? Alternative: a read-only topology probe on a real server plus the runner results.
-5. [DECIDED 2026-10-05] V1 scope: all engines.
+Counts and orphan rows in the live database; the real collation of `_sisqualMANAGEMENT`; SQL connection encryption and certificate rules; reading the credentials through the old route and the one-time import; engine behaviour on real topologies; ADR-0006 conditions 2 to 4.
 
-## 5. Parallelism and cadence
+## 7. Cadence
 
-- Phase 2 starts now, in parallel with 1B and 1C.
-- After the Phase 3 engine contract exists, engines in the same wave can be ported in parallel.
-- One branch and one PR per piece of work; every merge records its evidence under `docs/`.
+One branch and one PR per piece of work; stacked PRs name their order of integration; every merge records its evidence under `docs/`. Engines of the same wave can be ported in parallel once the engine contract exists.
 
-## 6. Definition of done
+## 8. Definition of done
 
-Copy a folder to a SISQUAL Windows Server that never had the Deploy Console, run `Start.cmd`, install nothing; the console identifies the machine, validates its identity, syncs central configuration, shows exactly what it will change, executes only after confirmation, keeps local evidence, never reveals credentials, and leaves nothing behind when the process ends.
+Copy a folder to a SISQUAL Windows Server that never had the Deploy Console, run `Start.cmd`, install nothing; the console identifies the machine, verifies its package and catalog, shows exactly what it will change, executes only after confirmation, keeps local text logs, never reveals credentials, and leaves nothing behind when the process ends.

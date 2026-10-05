@@ -47,5 +47,5 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 - [PENDING] Final table list and DDL (conversion plan).
 - [PENDING] Whether the long-term authority for the catalog is a declarative source in this repository compiled by a build tool, or an editor tool (deferred by the owner, ADR-0007 item 1).
 - [CONFIRMED] Machines without policy rows in the server policy tables are cut as they are (empty tables, no template server); see the conversion plan section 2.6.
-- [PENDING] Behaviour for machines that have no local database: not decided, nothing is assumed here.
+- [OBSOLETE, 2026-10-05] Machines that have no local database: no longer applicable. Under ADR-0007 every machine receives its catalog inside the portable package.
 - [PENDING] Whether a package contains one catalog or all catalogs (see the manifest schema).

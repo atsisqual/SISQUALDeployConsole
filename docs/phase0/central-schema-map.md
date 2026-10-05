@@ -1,4 +1,4 @@
-# Phase 0 — Central Schema Map
+# Phase 0 - Central Schema Map
 
 **Purpose:** identify the central-management data that SISQUALDeployConsole V1 must understand and classify it as central read-only mirror data, credential-delivery data, local-only state, or out-of-scope operational history.
 
@@ -30,7 +30,7 @@ Therefore the central schema/data inventory can be derived directly from this re
 
 ## 2. V1 authority model
 
-**[CONFIRMED — approved product decision]**
+**[CONFIRMED - approved product decision]**
 
 ```text
 Central _sisqualMANAGEMENT
@@ -84,7 +84,7 @@ Private-key material and credential plaintext are never part of normal central-c
 | `ops.PulseCheckState` | 132 | CURRENT CENTRAL RUNTIME STATE; not active V1 control state |
 | `sec.ManagedCredential` | 191 | DO NOT mirror secret ciphertext into normal V1 cache |
 
-## 4. Physical server model — dbo.ManagedServer
+## 4. Physical server model - dbo.ManagedServer
 
 **[CONFIRMED-CODE] Exact current columns**
 
@@ -104,7 +104,7 @@ Role:
 
 V1 classification: **REQUIRED CENTRAL MIRROR**.
 
-## 5. Environment model — dbo.ManagedInstance
+## 5. Environment model - dbo.ManagedInstance
 
 **[CONFIRMED-CODE] Exact current columns**
 
@@ -235,7 +235,7 @@ Current repair data:
 
 V1 classification for all three: **REQUIRED CENTRAL MIRROR**.
 
-## 7. Database-content rule model — cfg.DatabaseObjectSettingRule
+## 7. Database-content rule model - cfg.DatabaseObjectSettingRule
 
 **Current rows:** 61.
 
@@ -271,7 +271,7 @@ V1 security invariant:
 - values are parameterized;
 - identifiers/predicate grammar are validated against the local contract.
 
-## 8. Windows-service model — cfg.WindowsServiceDefinition
+## 8. Windows-service model - cfg.WindowsServiceDefinition
 
 **Current rows:** 1.
 
@@ -302,7 +302,7 @@ Current enabled definition:
 
 V1 classification: **REQUIRED CENTRAL MIRROR**.
 
-## 9. Application-copy policy — cfg.ApplicationCopyPolicy
+## 9. Application-copy policy - cfg.ApplicationCopyPolicy
 
 **Current rows:** 22.
 
@@ -538,7 +538,7 @@ Activation:
 
 ## 16. First-run behavior
 
-Without a valid trusted snapshot, an empty local SQLite database must never mean “there are zero environments”.
+Without a valid trusted snapshot, an empty local SQLite database must never mean "there are zero environments".
 
 The application remains in **INITIAL SETUP** and exposes only:
 - machine identity/public-key bootstrap;

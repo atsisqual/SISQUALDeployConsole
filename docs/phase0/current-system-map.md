@@ -1,7 +1,7 @@
-# Phase 0 — Current System Map
+# Phase 0 - Current System Map
 
 **Status:** Phase 0 diagnostic, corrected after full sync-payload analysis  
-**Reference repository:** `atsisqual/SISQUALManagementConsole` — read-only  
+**Reference repository:** `atsisqual/SISQUALManagementConsole` - read-only  
 **Initial reference commit inspected:** `1050fbbc97b6b077302154dd2e7307cce2ca3bbc`  
 **Full sync snapshot analysed for this correction:** `master` @ `1e38c8ed860615c4039ea2ec870f245102943ae4`  
 **Production evidence source:** approved knowledge-transfer document based on direct execution on 4+ real production servers  

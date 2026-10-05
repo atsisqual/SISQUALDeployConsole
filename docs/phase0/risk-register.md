@@ -1,4 +1,4 @@
-# Phase 0 — Risk Register
+# Phase 0 - Risk Register
 
 **Scope:** risks identified before SISQUALDeployConsole product implementation.  
 **Scale:** Severity and likelihood are qualitative: Low / Medium / High / Critical where applicable.
@@ -16,7 +16,7 @@
 |---|---|---|---|---|---|
 | R-001 | Local cache accidentally becomes a second source of truth | Approved architecture specifically rejects this | Critical | Medium | Central config is read-only authoritative; SQLite separates central mirror from local state; no V1 authoring back to central |
 | R-002 | Partial/corrupt sync replaces a valid cache | Distributed snapshot failure is structurally possible | High | Medium | Stage -> validate -> atomic activate; retain last-known-good snapshot |
-| R-003 | First run with empty DB is mistaken for “zero environments” | Explicit product requirement | High | Medium | INITIAL SETUP state; operational routes blocked until trusted first snapshot |
+| R-003 | First run with empty DB is mistaken for "zero environments" | Explicit product requirement | High | Medium | INITIAL SETUP state; operational routes blocked until trusted first snapshot |
 | R-004 | Wrong/golden-source synchronization direction causes lost changes | [CONFIRMED] production: non-PT_DEMO edits are overwritten | High | Medium | V1 never writes central config; sync direction is central -> local only |
 | R-005 | Credential ciphertext/key material is copied to another server and becomes unusable or unsafe | [CONFIRMED] current SQL certificate model is machine/server-bound | Critical | High | New asymmetric machine identity; private key never leaves machine; offline encrypted+signed envelope; do not mirror current credential ciphertext |
 | R-006 | Credential package is encrypted for the right key but forged by an attacker | Cryptographic design risk | Critical | Low/Medium | Envelope must also be signed by trusted central signing identity; validate target/fingerprint/version/expiry/replay before decrypt |
@@ -62,13 +62,13 @@
 
 The following must be resolved or materially reduced before mutable engines are enabled:
 
-1. **R-005/R-006/R-007/R-008 — credential model and secret handling.**
-2. **R-009/R-034 — localhost API security under administrator privilege.**
-3. **R-012/R-014/R-031/R-032 — operation coordination, shutdown and idempotency.**
-4. **R-015/R-016 — portable PowerShell/IIS/SQLite technical viability.**
-5. **R-002/R-026/R-036 — trusted snapshot activation and secret exclusion.**
-6. **R-017/R-019/R-023 — mutation safety for config, SQL and IIS.**
-7. **R-042/R-043 — large-file evidence and catalogue-reference validation.**
+1. **R-005/R-006/R-007/R-008 - credential model and secret handling.**
+2. **R-009/R-034 - localhost API security under administrator privilege.**
+3. **R-012/R-014/R-031/R-032 - operation coordination, shutdown and idempotency.**
+4. **R-015/R-016 - portable PowerShell/IIS/SQLite technical viability.**
+5. **R-002/R-026/R-036 - trusted snapshot activation and secret exclusion.**
+6. **R-017/R-019/R-023 - mutation safety for config, SQL and IIS.**
+7. **R-042/R-043 - large-file evidence and catalogue-reference validation.**
 
 ## Phase 1 risk gates
 
