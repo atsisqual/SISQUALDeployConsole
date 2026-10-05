@@ -1,0 +1,255 @@
+?
+=== Test-ConvertManagementDb.ps1?
+PASS  schema: columns, identity and composite key are read?
+PASS  rows: only the whitelisted tables are read?
+PASS  rows: a string that looks like an INSERT is skipped, not parsed?
+PASS  rows: bit, long and bytes get native types?
+PASS  rows: quotes and non-ASCII text are unescaped?
+PASS  catalog and manifest are written, no temp files left?
+PASS  integrity check and user_version?
+PASS  catalog_meta has the one expected row?
+PASS  all tables are STRICT?
+PASS  global rows are copied (4 rules, 1 asset, 1 engine, 2 resources)?
+PASS  cut tables are empty; only the new ManagedServer row exists?
+PASS  the old server row of the source is not copied?
+PASS  secret, script, rowversion and ManagementDatabaseName columns do not exist?
+PASS  the history trap row never appears?
+PASS  marker value is not in the catalog file: MARKERA?
+PASS  marker value is not in the manifest: MARKERA?
+PASS  marker value is not in the catalog file: MARKERB?
+PASS  marker value is not in the manifest: MARKERB?
+PASS  marker value is not in the catalog file: MARKERC?
+PASS  marker value is not in the manifest: MARKERC?
+PASS  a whole-value secret becomes a reference token?
+PASS  a label=value secret keeps its label?
+PASS  placeholder and non-sensitive templates are unchanged?
+PASS  redaction is reported by rule code, count 2?
+PASS  a secret-like literal outside the rule tables stops the run?
+PASS  nothing is written when the safety net stops the run?
+PASS  multi-line text keeps CRLF, lone LF, lone CR and tab byte for byte?
+PASS  the stored multi-line value is still TEXT?
+PASS  a normal value with quotes is stored without hex casting and unchanged?
+PASS  text case is never changed (mixed-case code stored as given)?
+PASS  datetime2 keeps its value, with T and no zone?
+PASS  identity value is kept; bit is 0 or 1; char column holds text?
+PASS  BLOB is a real blob that hashes to its stored SHA-256?
+PASS  non-ASCII text is stored as UTF-8?
+PASS  by default code columns compare exactly (no folding)?
+PASS  a bit CHECK rejects other values?
+PASS  with -CodeCollation NoCase the same lookup folds ASCII case?
+PASS  with NoCase the stored text is still exactly as given?
+PASS  manifest is ASCII and LF?
+PASS  manifest SHA-256 and size match the file?
+PASS  manifest lists redacted rule codes, empty-policy findings and excluded columns?
+PASS  manifest row counts match?
+PASS  no collation finding when every code is ASCII?
+PASS  a non-ASCII code value is reported as a finding (count only, no value)?
+PASS  an existing ServerCode is refused (cut mode is B3)?
+PASS  an invalid ServerCode is refused?
+PASS  a missing sqlite3 is refused?
+PASS  a whitelisted table missing from the source is an error?
+  SRV_A: 2 instance(s), 94208 bytes?
+  SRV_B: 2 instance(s), 94208 bytes?
+  SRV_C: 0 instance(s), 94208 bytes?
+PASS  cut ALL writes one catalog per server and one manifest?
+PASS  machine A: its server, 2 instances, its policy, 2 profile links, its pulse hub and its windows group (name match ignores case)?
+PASS  machine B: 2 instances (one matched only by ignoring case), 1 policy, 2 profile links, no pulse, no windows group?
+PASS  machine C: only its server row; every cut table is empty?
+PASS  each of the 4 instances appears in exactly one catalog?
+PASS  global tables are identical in every catalog?
+PASS  stored text is unchanged: the case-only match keeps its own spelling?
+PASS  manifest: mode cut and completeness says each instance is in exactly one catalog?
+PASS  manifest: completeness counts add up for every cut table?
+PASS  manifest: rows that belong to no machine are reported with their codes and not carried?
+PASS  manifest: the case-only match is a finding for the machine that needed it?
+PASS  manifest: a machine without a policy row gets a finding for it?
+PASS  no marker value in any catalog or in the manifest (secret columns are not carried)?
+PASS  the original server rows were not modified in the source (ManagementDatabaseName still there)?
+  SRV_A: 2 instance(s), 94208 bytes?
+PASS  a subset (code given in other case) builds only that machine, named with the code as stored?
+PASS  an unknown ServerCode in cut mode is refused?
+PASS  ALL cannot be mixed with codes?
+PASS  an instance whose server is not in the source is an error (it would belong to no catalog)?
+PASS  nothing is written when the cut stops on an error?
+PASS  two instances that differ only by case are refused?
+PASS  a MachineName shared by two servers is refused (the cut would be ambiguous)?
+PASS  a secret-like literal in a cut table stops the run?
+70 passed, 0 failed?
+=== Test-ExportManagementEngines.ps1?
+PASS  parses exactly the two ops.Engine rows?
+PASS  quotes are unescaped?
+PASS  metadata is read?
+PASS  stored hash equals UTF-16LE hash?
+PASS  export reports 2 engines and 0 mismatches?
+PASS  file is UTF-8 without BOM and keeps CRLF?
+PASS  manifest is ASCII and LF?
+PASS  manifest records CRLF and the non-ASCII character?
+PASS  literal password values are counted?
+PASS  a type cast is not a hit?
+PASS  a placeholder is not a hit?
+PASS  the marker value never reaches the manifest?
+PASS  a hash mismatch stops the export?
+PASS  the mismatching file is not written?
+PASS  the mismatch is recorded in the manifest?
+PASS  an output folder inside the repository is refused?
+PASS  the refused folder was not created?
+PASS  a path in SourceFileName is refused?
+PASS  the engine filter exports only the selected engine?
+PASS  an unknown engine code is an error?
+PASS  two engines with the same file name are refused?
+21 passed, 0 failed?
+=== Test-SealPackage.ps1?
+PASS  canonical form: keys sorted, no spaces, escapes, non-ASCII as \u00e9, arrays kept?
+PASS  canonical form: control characters are escaped?
+PASS  canonical bytes leave out the signature and accept parsed JSON objects?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg\package-manifest.json?
+PASS  first seal: sealed, manifest and seal log written?
+PASS  first seal: the manifest is valid against the structure rules?
+PASS  first seal: every file is listed once, the manifest is not, and paths are in ordinal order?
+PASS  first seal: SHA-256 and size of every file equal an independent computation?
+PASS  first seal: catalog block carries server code, schema version, origin and the conversion run?
+PASS  first seal: a catalog written by the converter is not modified?
+PASS  first seal: signature is present and has the shape the contract asks for?
+PASS  first seal: the manifest file is ASCII with LF?
+PASS  first seal: the log line has package id, version, server, origin, file count and no secret?
+PASS  verify: a freshly sealed package matches its manifest and the signature verifies?
+PASS  verify: a changed file is detected?
+PASS  verify: a deleted file is detected?
+PASS  verify: an extra file is detected?
+PASS  verify: a changed manifest field is detected?
+PASS  verify: an edited catalog row is detected?
+PASS  verify: a forged signature is detected?
+PASS  verify: a stray temporary file is detected?
+PASS  verify: a missing manifest is reported?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg2  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog compared with the baseline: 2 table(s) differ.?
+  table cfg_ConfigRule: content changed (rows 2 -> 3)?
+  table dbo_ManagedServer: content changed (rows 1 -> 1)?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-05T15:04:41Z.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg2\package-manifest.json?
+PASS  re-seal: origin becomes manual-edit-sealed, with the note, version kept, new package id?
+PASS  re-seal: catalog_meta records the manual edit and the seal time?
+PASS  re-seal: the summary names the two changed tables and no other?
+PASS  re-seal: the summary never contains a cell value?
+PASS  re-seal: the new manifest verifies and the old signature would not?
+PASS  re-seal: the manifest origin and catalog_meta agree?
+PASS  re-seal: the log (next to this package folder) has a line for the manual edit?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg3  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: ui/index.html?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg3\package-manifest.json?
+PASS  re-seal after a non-catalog change: origin stays conversion-tool and the catalog is untouched?
+PASS  re-seal after a non-catalog change: the summary lists exactly that file?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg3  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 0 changed, 4 unchanged.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg3\package-manifest.json?
+PASS  re-seal with no change: new package id, same file entries?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg4  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: Start.cmd?
+The manifest will be signed by the credential tool signer.?
+Dry run: nothing was written.?
+PASS  dry run: reports what it would do and writes nothing (no manifest change, no log)?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg4  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: Start.cmd?
+The manifest will be signed by the credential tool signer.?
+PASS  without -Yes a non-interactive run is refused?
+PASS  a refused confirmation writes nothing?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-05T15:04:45Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a signer that fails stops the seal?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-05T15:04:46Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a signer that returns an invalid signature stops the seal?
+PASS  after a signer failure neither the catalog (edited text kept, meta untouched) nor the manifest changed?
+PASS  no signer and no -Unsigned is refused?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-05T15:04:46Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a missing signer script is refused?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg6  version 0.0.1  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+SIGNATURE: none (-Unsigned). The application refuses this package unless started with its development flag.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\pkg6\package-manifest.json?
+PASS  -Unsigned: no signature member, logged as UNSIGNED, and verification fails only because of that?
+PASS  first seal without -ProductVersion is refused?
+PASS  first seal with a malformed version is refused?
+PASS  first seal without a conversion manifest or an origin is refused?
+PASS  a catalog changed after the conversion does not match the conversion manifest?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\first1  version 1.0.0  catalog for SRV_A (origin manual-edit-sealed)?
+First seal: 4 file(s) will be listed.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-05T15:04:48Z.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-0ce1b05a12d84e4db0865c0cb6521f7f\first1\package-manifest.json?
+PASS  with an explicit origin the same catalog can be sealed, and catalog_meta is updated?
+PASS  refused: credentials.db?
+PASS  refused: a vault file?
+PASS  refused: a certificate with key?
+PASS  refused: a log?
+PASS  refused: a name with an accent?
+INFO  a colon cannot be part of a Windows file name, that check is skipped?
+INFO  this file system ignores case, the case-duplicate check is skipped?
+PASS  refused: a link inside the package?
+PASS  catalog refused: a secret-like literal in a text cell?
+PASS  nothing written after: a secret-like literal in a text cell?
+PASS  catalog refused: a secret column?
+PASS  nothing written after: a secret column?
+PASS  catalog refused: a credential table?
+PASS  nothing written after: a credential table?
+PASS  catalog refused: a second catalog_meta row?
+PASS  nothing written after: a second catalog_meta row?
+PASS  catalog refused: a foreign key violation?
+PASS  nothing written after: a foreign key violation?
+PASS  catalog refused: an unsupported schema version?
+PASS  catalog refused: no catalog_meta?
+PASS  catalog refused: not a SQLite file?
+PASS  re-seal refused: catalog_meta.server_code no longer matches the manifest?
+PASS  two catalogs in one package need -CatalogRelativePath?
+PASS  a note with a non-ASCII character is refused?
+PASS  the secret patterns of the seal tool equal those of the converter (no drift)?
+68 passed, 0 failed?
+=== Test-SqlStrictness.ps1?
+PASS  the heuristic flags a double-quoted separator and accepts a single-quoted one?
+PASS  no SQL text with a double-quoted separator in 10 files?
+2 passed, 0 failed?
+=== Test-TestCatalogConversion.ps1?
+PASS  intact cut catalogs: no check fails?
+PASS  intact cut catalogs: all eight groups ran?
+PASS  intact cut catalogs: the stored hash of the multi-line template matches in every catalog?
+PASS  intact new-machine catalog: no check fails?
+PASS  one text cell changed by a single letter case: values and manifest fail, and the table and key are named?
+PASS  CRLF turned into LF in a multi-line text: caught by values and by the stored hash?
+PASS  a row missing in a catalog: values fail with the count?
+PASS  an instance of another machine copied into a catalog: cut checks fail (in two catalogs, foreign row)?
+PASS  a secret column added to a catalog: exclusions fail?
+PASS  a table of the secret schema added: exclusions fail?
+PASS  the original secret put back in a rule: secrets fail (needle found), values fail (not a reference token)?
+PASS  a secret-like literal planted in a text cell: the pattern scan fails?
+PASS  a code whose case was changed: values fail (stored case is compared exactly)?
+PASS  a wrong SHA-256 in the manifest: manifest fails?
+PASS  an unlisted catalog file next to the others: manifest fails?
+PASS  a global table changed in one catalog only: global and values fail?
+PASS  a missing manifest: the tool fails instead of passing?
+PASS  the planted value is never printed (output carries names, keys and counts only)?
+PASS  the in-memory source rows are unchanged after all runs?
+19 passed, 0 failed?
