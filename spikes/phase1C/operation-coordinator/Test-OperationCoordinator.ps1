@@ -180,20 +180,23 @@ try {
 
     $markerA = Join-Path $tempRoot 'marker-a.txt'
     $keyA = New-IdempotencyKey
-    $first = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 500; MarkerPath = $markerA; CheckCancellation = $true })
+    $first = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 500; MarkerPath = $markerA; CheckCancellation = $true })
     Add-Check 'FIRST_OPERATION_ACCEPTED' ($first.Accepted -and -not $first.Reused -and $first.Reason -eq 'STARTED') 'First operation is accepted and receives an OperationId.' @{ Reason = $first.Reason }
 
-    $duplicate = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 500; MarkerPath = $markerA; CheckCancellation = $true })
+    $duplicate = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 500; MarkerPath = $markerA; CheckCancellation = $true })
     Add-Check 'DUPLICATE_REUSED_WHILE_RUNNING' ($duplicate.Accepted -and $duplicate.Reused -and $duplicate.OperationId -eq $first.OperationId) 'Same idempotency key plus same request reuses the in-flight OperationId.'
 
-    $conflict = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planB -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 100; MarkerPath = ''; CheckCancellation = $true })
+    $conflict = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planB -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 100; MarkerPath = ''; CheckCancellation = $true })
     Add-Check 'IDEMPOTENCY_CONFLICT' (-not $conflict.Accepted -and $conflict.Reason -eq 'IDEMPOTENCY_CONFLICT') 'Reusing an idempotency key with a different plan fingerprint is rejected.' @{ Reason = $conflict.Reason }
 
-    $lockConflict = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 100; MarkerPath = ''; CheckCancellation = $true })
+    $modeConflict = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode PREVIEW -InstanceCode 'A' -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 100; MarkerPath = ''; CheckCancellation = $true })
+    Add-Check 'IDEMPOTENCY_MODE_CONFLICT' (-not $modeConflict.Accepted -and $modeConflict.Reason -eq 'IDEMPOTENCY_CONFLICT') 'Reusing an idempotency key for PREVIEW after APPLY is rejected because mode is part of the request fingerprint.' @{ Reason = $modeConflict.Reason }
+
+    $lockConflict = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 100; MarkerPath = ''; CheckCancellation = $true })
     Add-Check 'INSTANCE_LOCK_BLOCKS_CONFLICT' (-not $lockConflict.Accepted -and $lockConflict.Reason -eq 'LOCK_CONFLICT' -and $lockConflict.BlockingOperationId -eq $first.OperationId) 'Second destructive operation on the same instance is blocked by the instance lock.' @{ Reason = $lockConflict.Reason }
 
     $markerB = Join-Path $tempRoot 'marker-b.txt'
-    $parallel = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'B' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 350; MarkerPath = $markerB; CheckCancellation = $true })
+    $parallel = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'B' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 350; MarkerPath = $markerB; CheckCancellation = $true })
     Add-Check 'DIFFERENT_INSTANCE_PARALLEL' ($parallel.Accepted -and -not $parallel.Reused) 'Different instance can run concurrently when no shared lock conflicts.'
 
     $firstDone = Wait-OperationTerminal -Coordinator $coordinator -OperationId $first.OperationId
@@ -203,28 +206,32 @@ try {
     $markerALines = @(Get-MarkerLines $markerA)
     Add-Check 'DUPLICATE_EXECUTES_ONCE' ($markerALines.Count -eq 1 -and $markerALines[0] -eq $first.OperationId) 'Duplicate request did not execute the worker twice.' @{ MarkerCount = $markerALines.Count }
 
-    $afterCompleteReplay = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = $markerA; CheckCancellation = $true })
+    $afterCompleteReplay = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = $markerA; CheckCancellation = $true })
     Start-Sleep -Milliseconds 100
     $markerALines2 = @(Get-MarkerLines $markerA)
     Add-Check 'REPLAY_AFTER_COMPLETE_REUSES_RESULT' ($afterCompleteReplay.Accepted -and $afterCompleteReplay.Reused -and $afterCompleteReplay.OperationId -eq $first.OperationId -and $markerALines2.Count -eq 1) 'Idempotent replay after completion returns the original operation and does not mutate again.' @{ MarkerCount = $markerALines2.Count }
 
     $postLockMarker = Join-Path $tempRoot 'marker-post-lock.txt'
-    $postLock = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planC -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 75; MarkerPath = $postLockMarker; CheckCancellation = $true })
+    $postLock = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planC -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 75; MarkerPath = $postLockMarker; CheckCancellation = $true })
     $postLockDone = Wait-OperationTerminal -Coordinator $coordinator -OperationId $postLock.OperationId
     Add-Check 'INSTANCE_LOCK_RELEASED' ($postLock.Accepted -and $postLockDone.Status -eq 'SUCCEEDED') 'Instance lock is released after terminal completion.' @{ Status = $postLockDone.Status }
 
-    $shared1 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 400; MarkerPath = ''; CheckCancellation = $true })
-    $shared2 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'B' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
+    $previewOp = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode PREVIEW -InstanceCode 'PREVIEW' -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
+    $previewDone = Wait-OperationTerminal -Coordinator $coordinator -OperationId $previewOp.OperationId
+    Add-Check 'PREVIEW_WITHOUT_CONFIRMED_PLAN' ($previewOp.Accepted -and $previewDone.Status -eq 'SUCCEEDED' -and $previewDone.Mode -eq 'PREVIEW' -and [string]::IsNullOrEmpty($previewDone.PlanFingerprint)) 'PREVIEW can execute without a confirmed APPLY plan fingerprint and preserves its mode.' @{ Status = $previewDone.Status; Mode = $previewDone.Mode }
+
+    $shared1 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 400; MarkerPath = ''; CheckCancellation = $true })
+    $shared2 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'B' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
     Add-Check 'SHARED_LOCK_BLOCKS_OTHER_INSTANCE' ($shared1.Accepted -and -not $shared2.Accepted -and $shared2.Reason -eq 'LOCK_CONFLICT' -and $shared2.BlockingOperationId -eq $shared1.OperationId) 'Shared-resource lock blocks a conflicting operation on another instance.' @{ Reason = $shared2.Reason }
     $null = Wait-OperationTerminal -Coordinator $coordinator -OperationId $shared1.OperationId
 
-    $shared3 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'B' -PlanFingerprint $planC -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
+    $shared3 = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'B' -PlanFingerprint $planC -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -LockKeys @('SERVER:SHARED_TEST') -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
     $shared3Done = Wait-OperationTerminal -Coordinator $coordinator -OperationId $shared3.OperationId
     Add-Check 'SHARED_LOCK_RELEASED' ($shared3.Accepted -and $shared3Done.Status -eq 'SUCCEEDED') 'Shared-resource lock is released after terminal completion.'
 
     $raceCoordinator = New-SisqualOperationCoordinator
     $coordinators.Add($raceCoordinator) | Out-Null
-    $raceOp = Start-SisqualOperation -Coordinator $raceCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'RACE' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode NONE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 150; MarkerPath = ''; CheckCancellation = $false })
+    $raceOp = Start-SisqualOperation -Coordinator $raceCoordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'RACE' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode NONE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 150; MarkerPath = ''; CheckCancellation = $false })
     Start-Sleep -Milliseconds 350
     $raceRead = Invoke-ConcurrentStatusReads -Coordinator $raceCoordinator -OperationId $raceOp.OperationId -ReaderCount 8
     $raceFinal = Wait-OperationTerminal -Coordinator $raceCoordinator -OperationId $raceOp.OperationId -TimeoutMilliseconds 2000
@@ -235,7 +242,7 @@ try {
     $cancelCoordinator = New-SisqualOperationCoordinator
     $coordinators.Add($cancelCoordinator) | Out-Null
     $cancelMarker = Join-Path $tempRoot 'cancel-marker.txt'
-    $cancelOp = Start-SisqualOperation -Coordinator $cancelCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'C' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 3000; MarkerPath = $cancelMarker; CheckCancellation = $true })
+    $cancelOp = Start-SisqualOperation -Coordinator $cancelCoordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'C' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 3000; MarkerPath = $cancelMarker; CheckCancellation = $true })
     Start-Sleep -Milliseconds 100
     $cancelRequest = Request-SisqualOperationCancellation -Coordinator $cancelCoordinator -OperationId $cancelOp.OperationId
     $cancelDone = Wait-OperationTerminal -Coordinator $cancelCoordinator -OperationId $cancelOp.OperationId -TimeoutMilliseconds 3000
@@ -247,20 +254,20 @@ try {
     $shutdownCoordinator = New-SisqualOperationCoordinator
     $coordinators.Add($shutdownCoordinator) | Out-Null
     $shutdownMarker = Join-Path $tempRoot 'shutdown-cancel-marker.txt'
-    $shutdownOp = Start-SisqualOperation -Coordinator $shutdownCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'D' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 3000; MarkerPath = $shutdownMarker; CheckCancellation = $true })
+    $shutdownOp = Start-SisqualOperation -Coordinator $shutdownCoordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'D' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 3000; MarkerPath = $shutdownMarker; CheckCancellation = $true })
     Start-Sleep -Milliseconds 100
     $shutdown = Request-SisqualCoordinatorShutdown -Coordinator $shutdownCoordinator -WaitMilliseconds 3000 -CancelCooperativeOperations
     $shutdownDone = Get-SisqualOperation -Coordinator $shutdownCoordinator -OperationId $shutdownOp.OperationId
     Add-Check 'SHUTDOWN_CANCELS_COOPERATIVE' ($shutdown.ReadyToExit -and $shutdownDone.Status -eq 'CANCELLED') 'Controlled shutdown cancels cooperative active operation and drains before exit.' @{ Status = $shutdownDone.Status }
     Add-Check 'SHUTDOWN_CANCEL_NO_MUTATION' (@(Get-MarkerLines $shutdownMarker).Count -eq 0) 'Shutdown-cancelled operation did not reach simulated mutation marker.'
-    $rejectedAfterShutdown = Start-SisqualOperation -Coordinator $shutdownCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'E' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
+    $rejectedAfterShutdown = Start-SisqualOperation -Coordinator $shutdownCoordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'E' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
     Add-Check 'SHUTDOWN_STOPS_ADMISSION' (-not $rejectedAfterShutdown.Accepted -and $rejectedAfterShutdown.Reason -eq 'SHUTTING_DOWN') 'Once shutdown begins, new operations are rejected.' @{ Reason = $rejectedAfterShutdown.Reason }
     Close-SisqualOperationCoordinator -Coordinator $shutdownCoordinator
 
     $blockingCoordinator = New-SisqualOperationCoordinator
     $coordinators.Add($blockingCoordinator) | Out-Null
     $blockingMarker = Join-Path $tempRoot 'blocking-marker.txt'
-    $blockingOp = Start-SisqualOperation -Coordinator $blockingCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'F' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode NONE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 1200; MarkerPath = $blockingMarker; CheckCancellation = $false })
+    $blockingOp = Start-SisqualOperation -Coordinator $blockingCoordinator -EngineCode 'TEST_ENGINE' -Mode APPLY -InstanceCode 'F' -PlanFingerprint $planA -IdempotencyKey (New-IdempotencyKey) -CancellationMode NONE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 1200; MarkerPath = $blockingMarker; CheckCancellation = $false })
     Start-Sleep -Milliseconds 100
     $nonCancel = Request-SisqualOperationCancellation -Coordinator $blockingCoordinator -OperationId $blockingOp.OperationId
     Add-Check 'NONCANCELLABLE_CANCEL_REJECTED' (-not $nonCancel.Accepted -and $nonCancel.Reason -eq 'NOT_CANCELLABLE') 'Operation declared non-cancellable rejects cancellation request.' @{ Reason = $nonCancel.Reason }
