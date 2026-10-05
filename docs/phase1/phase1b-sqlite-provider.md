@@ -73,7 +73,7 @@ The workflow runs the same gates on `windows-2022` and `windows-2025`.
 | Catalog bytes | SHA-256 before and after is identical |
 | Sidecars | no journal, WAL, SHM or other sidecar is created |
 | Folder portability | the complete provider folder is copied elsewhere and the probe passes again |
-| Dependency evidence | lock file and resolved package hashes are captured |
+| Dependency evidence | lock file and resolved package hashes are captured and verified |
 | Native version evidence | `sqlite_version()` records the SQLite version actually loaded by the provider |
 
 A green result means only that this candidate is technically viable for the tested scope.
@@ -138,11 +138,13 @@ No credentials are involved in this spike.
 
 ## 9. Execution evidence
 
-[PENDING] GitHub Actions run `37370494285`, workflow `phase1b-sqlite-provider`.
+[CONFIRMED] Run `37370494285` records the initial workflow attempt. Its first attempt was cancelled before either Windows job received a runner, so it is not compatibility evidence.
 
-The first attempt was cancelled before either Windows job received a runner; both jobs had zero executed steps, so that attempt is not technical evidence.
+[CONFIRMED] Review of that workflow identified an evidence defect: PackageReference restores do not guarantee that `.nupkg` archives remain in the global package directory, so the original hash collector could have emitted `nupkgSha256 = null`.
 
-[CONFIRMED] The same run was re-requested without changing code. Evidence will be accepted only from jobs that actually execute the probe and upload their reports.
+[CONFIRMED] Commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3` fixes that defect. The workflow now resolves package IDs and versions from `packages.lock.json`, downloads each exact archive explicitly, records SHA-256 and SHA-512, verifies SHA-512 against the lock-file `contentHash`, and fails on missing or mismatched evidence.
+
+[PENDING] The candidate accepted run is `37372704803`, workflow `phase1b-sqlite-provider`, commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3`. Its evidence record is `docs/phase1/evidence/phase1b-sqlite-provider-37372704803/README.md`.
 
 Expected evidence artifacts per Windows version:
 
@@ -151,7 +153,7 @@ Expected evidence artifacts per Windows version:
 - `packages.lock-<os>.json`
 - `nuget-graph-<os>.json`
 
-[PENDING] Until those reports exist, no compatibility gate is [CONFIRMED] by execution and the provider remains unselected.
+[PENDING] Until those reports exist from executed jobs, no compatibility gate is [CONFIRMED] by execution and the provider remains unselected.
 
 ## 10. Decision boundary
 
