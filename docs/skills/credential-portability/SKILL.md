@@ -10,7 +10,7 @@ Validate the machine-bound credential-package workflow without exposing secret p
 
 - target machine identity and public-key fingerprint;
 - credential-package metadata;
-- trusted central signing identity;
+- signing identity of the credential tool (separate tool);
 - expected server/instance scope.
 
 ## Safety rules
@@ -19,6 +19,7 @@ Validate the machine-bound credential-package workflow without exposing secret p
 - Never log decrypted secret values.
 - Validate package signature, target server, key fingerprint, version, expiry, and replay/sequence state before decryption.
 - Copying the DeployConsole folder to another machine must not transfer a usable private identity.
+- The portable application never contacts any server to obtain or exchange credentials.
 
 ## Expected outputs
 
@@ -30,4 +31,4 @@ Validate the machine-bound credential-package workflow without exposing secret p
 
 ## Dependencies
 
-[PENDING] Final workflow depends on Phase 1B machine-key ADR and the approved credential-package contract.
+[PENDING] Final workflow depends on Phase 1B machine-key ADR and the approved credential-package contract. The credential creation/signing tool lives separately under `tools/` and is outside the portable application runtime.
