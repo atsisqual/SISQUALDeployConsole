@@ -76,7 +76,7 @@ $script:SupportedSchemaVersions = @(1)
 $script:RelativePathPattern = '^(?!/)(?![A-Za-z]:)(?!.*(^|/)\.{1,2}(/|$))(?!.*//)[A-Za-z0-9._ \-/]+$'
 
 # Files that must never be listed in a package (credentials and logs live outside it).
-$script:ForbiddenPatterns = @('credentials*.db', '*.vault', '*.pfx', '*.pem', '*.key', '*.snk', '*.log', '*.bak', '*.tmp', '*.build.sql')
+$script:ForbiddenPatterns = @('credentials*.db', 'credentials*.pkg', '*.vault', '*.pfx', '*.pem', '*.key', '*.snk', '*.log', '*.bak', '*.tmp', '*.build.sql')
 # Retired or secret columns and tables (plan section 3).
 $script:ForbiddenColumns = @('IisIdentityPassword', 'WebAccessPassword', 'MobileAppToken', 'ScriptText', 'ScriptSha256', 'RowVersion', 'ManagementDatabaseName', 'SecretCipher')
 $script:ForbiddenTablePatterns = @('sec_ManagedCredential*')

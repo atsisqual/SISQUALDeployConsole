@@ -266,6 +266,7 @@ try {
     # 9. Files that must never be in a package ---------------------------------------------------------------------------------------------------
     $badFiles = [ordered]@{
         'credentials.db'         = 'credentials.db'
+        'a credential package'   = 'credentials.pkg'
         'a vault file'           = 'secrets.vault'
         'a certificate with key' = 'cert.pfx'
         'a log'                  = 'run.log'
