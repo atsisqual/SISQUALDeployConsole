@@ -1,11 +1,11 @@
 # Phase 1B - Machine identity with non-exportable CNG key
 
 **Date:** 2026-10-05
-**Status:** [PROPOSED] spike under runner validation. No product implementation or ADR decision is made by this document.
+**Status:** [PROPOSED] CNG candidate; [CONFIRMED] two-VM technical viability at accepted run `37377769448`.
 **Branch:** `spike/phase1b-machine-identity-cng`
 **Base:** `main` at `ad598215fe3ab0bc715a797a37e2bcf9331eaa56`.
 
-Tags: [CONFIRMED] repository content or recorded execution is verified; [PROPOSED] implementation/design candidate or not-yet-approved contract choice; [PENDING] still needs a decision or completed evidence; [V] requires target/sandbox validation.
+Tags: [CONFIRMED] repository content or recorded execution is verified; [PROPOSED] implementation/design candidate or not-yet-approved contract choice; [PENDING] still needs a decision; [V] requires target/sandbox validation.
 
 ## 1. Requirement status
 
@@ -13,148 +13,135 @@ Tags: [CONFIRMED] repository content or recorded execution is verified; [PROPOSE
 
 [CONFIRMED] The current `contracts/credential-package.md` draft specifies binding a package to `target.serverCode` plus the SHA-256 fingerprint of the machine public key; the public key is carried to the credential tool while the private key remains on the target machine.
 
-[CONFIRMED] `docs/decisions-log.md` records owner answer Q2 as ECDH P-256 for credential entries with SHA-256 fingerprints. The integrated `Sisqual.Credentials` module accepts an `ECDiffieHellman` object for decryption, allowing a CNG-backed key to exercise that selected cryptographic shape.
+[CONFIRMED] `docs/decisions-log.md` records owner answer Q2 as ECDH P-256 for credential entries with SHA-256 fingerprints. The integrated `Sisqual.Credentials` module accepts an `ECDiffieHellman` object for decryption.
 
 [CONFIRMED] The Phase 1 roadmap calls for a two-VM copied-folder spike before the machine-key implementation is selected.
 
 ## 2. Candidate
 
-[PROPOSED] Windows CNG, `Microsoft Software Key Storage Provider`, ECDH P-256, machine key store, `CngExportPolicies.None`.
-
-The spike does not choose the final product key name or ACL. Its test key name is unique per workflow run and is deleted during cleanup.
+[PROPOSED] Windows CNG using `Microsoft Software Key Storage Provider`, ECDH P-256, machine key store and `CngExportPolicies.None`.
 
 [PROPOSED] CNG is preferred over a DPAPI-wrapped exportable key because it directly models the proposed requirement: persisted private material outside the portable folder that normal cryptographic export APIs reject.
 
 [PENDING] DPAPI remains a fallback only if CNG fails a required gate or cannot be operated under the final application identity.
 
-## 3. Spike and trigger
-
-Files:
+## 3. Spike files and trigger
 
 - `spikes/phase1B/machine-identity/Invoke-MachineIdentityCngSpike.ps1`
 - `.github/workflows/phase1b-machine-identity.yml`
 - `docs/phase1/evidence/phase1b-machine-identity/README.md`
 
-[CONFIRMED external] GitHub documents that `workflow_dispatch` only receives events when the workflow file exists on the default branch. Therefore this pre-merge spike also has a `push` trigger restricted to this branch and to the spike/workflow paths. `workflow_dispatch` remains for later use after integration.
+[CONFIRMED external] GitHub documents that `workflow_dispatch` only receives events when the workflow file exists on the default branch. The pre-merge spike therefore also uses a `push` trigger restricted to this branch and to the spike/workflow paths. `workflow_dispatch` remains for later use after integration.
 
-Recorded runs:
-
-- [CONFIRMED] run `37376755238`, run number 1, commit `53cccd67cee9cd5e2cd9a9210995a6987c563adf`: harness failure before CNG key creation; Machine A job `111987660696`; Machine B job `111988756769` skipped.
-- [CONFIRMED] run `37377236061`, run number 2, commit `3df9c920409b9061cf34f4f88ebdd0f28001809f`: second harness binder failure before CNG key creation; Machine A job `111989440871`; Machine B job `111990541311` skipped.
-- [PENDING] run `37377769448`, run number 3, commit `09de75cb90eedc6015e7125d54da0d25253052c7`: Machine A job `111991358773` received runner `GitHub Actions 1000000539` (`runner_id=1000000539`). At the latest recorded check, key creation and reopen-after-folder-replacement steps had both succeeded; cleanup was still running. No final two-VM conclusion is claimed yet.
-
-No real key, credential or secret is committed. Test keys and random secret bytes exist only inside disposable runner VMs.
+No real credential, private key or secret is committed. Test keys and random secret bytes exist only inside disposable runner VMs.
 
 ## 4. Machine A gates
 
-Machine A runs the pinned portable PowerShell 7.6.6 after SHA-256 verification.
+Machine A uses `windows-2022` and the pinned portable PowerShell 7.6.6 after SHA-256 verification.
 
-| Gate | Required result |
-|---|---|
-| Key absent | unique CNG key name does not pre-exist |
-| Machine scope | `IsMachineKey = true` |
-| Provider | Microsoft Software Key Storage Provider |
-| Algorithm | ECDH P-256 / 256-bit curve |
-| Export policy | `None` |
-| Public export | SubjectPublicKeyInfo export succeeds |
-| PKCS#8 private export | rejected |
-| CNG private blob export | rejected |
-| Credential interop | `Sisqual.Credentials` encrypts to public key and decrypts through non-exportable key |
-| Persistence | key can be reopened by name in a later process |
-| Folder replacement | delete first portable copy, run replacement copy, fingerprint remains identical |
+Required gates:
 
-The source identity artifact contains public data only: key name, provider, algorithm, key size, machine-key flag, export-policy label, SHA-256 fingerprint and public SPKI.
+- key name absent before creation;
+- machine-scope CNG key;
+- Microsoft Software Key Storage Provider;
+- ECDH P-256;
+- export policy `None`;
+- public SPKI export succeeds;
+- PKCS#8 private export rejected;
+- CNG private-blob export rejected;
+- `Sisqual.Credentials` encrypt/decrypt interoperability;
+- key reopen succeeds in a later process;
+- deleting the first portable folder and running from its copied replacement preserves the same public-key fingerprint;
+- cleanup deletes the test key.
 
 ## 5. Machine B gates
 
-Machine B uses `windows-2025` and downloads the exact replacement portable-folder artifact produced by Machine A.
+Machine B uses `windows-2025` and downloads the exact Machine A portable-folder artifact.
 
-| Gate | Required result |
-|---|---|
-| Source private key absent | same logical CNG key name cannot be opened before local creation |
-| Local creation | same logical key name creates a local non-exportable key |
-| Different identity | Machine B fingerprint differs from Machine A |
-| Private export | PKCS#8 and CNG private-blob export rejected |
-| Credential interop | local B key works with `Sisqual.Credentials` |
-| Wrong-machine rejection | entry encrypted to Machine A public key cannot decrypt with Machine B private key |
+Required gates:
 
-A PASS demonstrates that copying the portable folder and public identity is insufficient to transfer the usable private identity.
+- Machine A private key is absent on Machine B;
+- same logical key name creates a different local identity;
+- private exports remain rejected;
+- local `Sisqual.Credentials` interoperability succeeds;
+- an entry encrypted to Machine A public key cannot decrypt with Machine B private key;
+- cleanup deletes the test key.
 
-## 6. Key lifecycle and cleanup
+## 6. Execution history
 
-[CONFIRMED by code review] The private key is created only in the Windows machine CNG store. The script never serializes private-key bytes to a file or artifact.
+### Run 1 - harness failure
 
-[CONFIRMED by code review] Private-export attempts are negative tests. If an export unexpectedly succeeds, the returned buffer is cleared and the gate fails.
+[CONFIRMED] Run `37376755238`, run number 1, attempt 1, commit `53cccd67cee9cd5e2cd9a9210995a6987c563adf` failed before key creation because an empty generic list was enumerated to no pipeline output. Machine A job `111987660696`; Machine B job `111988756769` skipped.
 
-[CONFIRMED by code review] Both jobs explicitly delete their test CNG key and preserve a cleanup report. GitHub-hosted runners are disposable as an additional boundary, not as a substitute for cleanup.
+Evidence: `docs/phase1/evidence/phase1b-machine-identity-37376755238/README.md`.
 
-[PROPOSED] The current credential contract draft describes first-run identity creation and manual recovery/rotation requiring a new identity and credential package (owner answer Q5). Product lifecycle remains subject to contract approval.
+### Run 2 - harness binder failure
 
-## 7. Credential-module integration
+[CONFIRMED] Run `37377236061`, run number 2, attempt 1, commit `3df9c920409b9061cf34f4f88ebdd0f28001809f` failed before key creation because the mandatory parameter binder rejected an empty collection. Machine A job `111989440871`; Machine B job `111990541311` skipped.
 
-[CONFIRMED] The spike reuses the integrated `modules/Sisqual.Credentials/Sisqual.Credentials.psm1`; it does not duplicate ECDH/HKDF/AES-GCM implementation.
+Evidence: `docs/phase1/evidence/phase1b-machine-identity-37377236061/README.md`.
 
-[CONFIRMED] `Protect-CredentialEntry` consumes only the exported public SPKI.
+### Run 3 - accepted technical evidence
 
-[CONFIRMED] `Unprotect-CredentialEntry` accepts `System.Security.Cryptography.ECDiffieHellman`; the CNG-backed `ECDiffieHellmanCng` tests the intended integration path.
+[CONFIRMED] Run `37377769448`, run number 3, attempt 1, commit `09de75cb90eedc6015e7125d54da0d25253052c7` completed successfully on both machines.
 
-[PROPOSED] CNG selection requires this interop gate to pass on Machine A creation, Machine A reopen and Machine B local identity.
+Machine A:
+
+- job `111991358773`;
+- runner `GitHub Actions 1000000539`, `runner_id=1000000539`;
+- all create, folder-replacement/reopen and cleanup gates passed;
+- artifact ID `11373000213`;
+- artifact digest `sha256:a8ffa576c2331b555f9e15cb841c071c14eb058c8fca56863b4203d07fdcb132`.
+
+Machine B:
+
+- job `111992501724`;
+- runner `GitHub Actions 1000000542`, `runner_id=1000000542`;
+- downloaded and digest-verified Machine A artifact;
+- all copied-folder, different-identity, wrong-machine-decrypt, interop and cleanup gates passed;
+- artifact ID `11373310252`;
+- artifact digest `sha256:fddf5bb8175218c851ed102c90284e82cac922d6ea460bd4b6261ec9e67f4579`.
+
+Full evidence and the five versioned gate reports:
+
+`docs/phase1/evidence/phase1b-machine-identity-37377769448/`
+
+## 7. Technical conclusions
+
+[CONFIRMED] A machine-scope ECDH P-256 key in Microsoft Software Key Storage Provider with export policy `None` worked on the tested Windows Server 2022 runner.
+
+[CONFIRMED] Public-key export succeeded while PKCS#8 and CNG private-blob export were rejected.
+
+[CONFIRMED] `Sisqual.Credentials` interoperated with the non-exportable CNG-backed key.
+
+[CONFIRMED] Replacing the portable folder on Machine A preserved the same identity.
+
+[CONFIRMED] Copying that folder to the Windows Server 2025 runner did not transfer the private identity; Machine B created a different identity and could not decrypt an entry intended for Machine A.
+
+[CONFIRMED] Test keys were explicitly deleted on both machines.
 
 ## 8. Security boundary
 
-The spike assumes the Windows OS and local administrator are trusted, consistent with the project threat boundary. A non-exportable software-KSP key does not defend against a fully compromised local administrator or kernel.
+The spike assumes the Windows OS and local administrator are trusted. A non-exportable software-KSP key is not a defence against a fully compromised local administrator or kernel.
 
-The final application must control the CNG key name/provider; neither may come from arbitrary browser input.
+The final application must control the CNG key name/provider; neither should come from browser input.
 
-The public identity is not secret. Private key material, decrypted credential bytes and random test secrets are never included in reports or artifacts.
+The public identity is not secret. Private key material, decrypted credential bytes and random test secrets are not included in evidence files.
 
 [PROPOSED] Once credentials have been issued, a missing expected key should fail closed rather than silently creating a replacement identity.
 
-## 9. Evidence ledger
+## 9. Decision boundary
 
-The canonical live ledger is:
+The accepted run proves technical viability only; it does not approve the proposed credential contract or select CNG as an architectural decision by itself.
 
-`docs/phase1/evidence/phase1b-machine-identity/README.md`
+[PROPOSED] Adopt this CNG approach for the V1 machine identity, subject to reviewer/owner acceptance and final ACL validation.
 
-Run-specific failed evidence is preserved under:
+[PENDING] A later ADR/contract update should close the Phase 1B machine-key item only after that acceptance.
 
-- `docs/phase1/evidence/phase1b-machine-identity-37376755238/README.md`
-- `docs/phase1/evidence/phase1b-machine-identity-37377236061/README.md`
+## 10. [PENDING] / [V]
 
-The ledger records workflow/run/attempt/job IDs, exact commit, runner identity, UTC timestamps, steps, artifacts and supersession/retry reasons. No missing identifier is invented.
-
-Expected Machine A evidence:
-
-- replacement portable folder;
-- `machine-identity-source.json`;
-- create, reopen and cleanup reports.
-
-Expected Machine B evidence:
-
-- destination report;
-- cleanup report.
-
-A cancellation with no runner or zero probe steps is infrastructure evidence only. A harness failure before key creation is a harness failure only. Neither is a CNG technical PASS/FAIL.
-
-## 10. Acceptance rule
-
-CNG is technically viable only if one explicitly named `run ID + run_attempt + commit SHA` proves every required gate on both VMs and preserves the artifact IDs.
-
-A green two-VM result would support:
-
-- [CONFIRMED] non-exportable machine-scope CNG ECDH P-256 works on the tested Windows images;
-- [CONFIRMED] replacing the portable folder on one VM preserves identity;
-- [CONFIRMED] copying the folder to another VM does not transfer private identity;
-- [CONFIRMED] the existing credential module interoperates with the key;
-- [PROPOSED] adopt this CNG implementation;
-- [PENDING] reviewer/owner acceptance and ADR/contract update closing the Phase 1B machine-key item;
-- [V] final application identity/ACL validation on a SISQUAL target or sandbox server.
-
-## 11. [PENDING]
-
-1. Complete run `37377769448` (or preserve its result and name a later accepted run) and record both job/artifact IDs.
-2. Decide final product CNG key name; recommendation: application-controlled and derived from `ServerCode`, never browser supplied.
-3. Define the CNG key ACL and Windows account(s) allowed to open it.
-4. Confirm whether the machine-key default ACL is sufficient or an explicit application-identity grant is needed.
-5. [V] Validate reopen and credential decryption under the intended real operator/application identity on a target/sandbox Windows server.
-6. Use DPAPI only if CNG fails a required gate; do not maintain two V1 identity mechanisms without demonstrated need.
+1. Decide the final product CNG key name; recommendation: application-controlled and derived from `ServerCode`, never browser supplied.
+2. Define the final CNG key ACL and the Windows account(s) permitted to open it.
+3. Confirm whether the default machine-key ACL is sufficient or an explicit application-identity grant is needed.
+4. [V] Validate reopen and credential decryption under the intended real operator/application identity on a SISQUAL target/sandbox Windows server.
+5. Use DPAPI only if CNG fails a required operational gate; do not maintain two V1 identity mechanisms without demonstrated need.
