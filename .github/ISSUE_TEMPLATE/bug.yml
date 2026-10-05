@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a reproducible defect
+title: "bug: "
+labels: []
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Use [CONFIRMED], [PROPOSED], [PENDING], and [V]. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, PowerShell version, and relevant component versions only.
+    validations:
+      required: true
