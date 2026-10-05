@@ -282,3 +282,140 @@ A scan of the carried tables found literal secret values in a global rule table,
 ### 3.4 Executable text inside carried tables
 
 `ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` hold SQL text that the old system executed. [PROPOSED] they are carried as data but never executed by the new application (the application runs only local versioned modules, R-019, R-027); during the engine ports each is replaced by a module or dropped. The `...Template` columns are templates, expanded by the ported `ExpandTemplate`.
+
+## 4. Credentials in two phases
+
+### 4.1 Phase (i): now, catalogs without secrets
+
+[PROPOSED] The catalogs are built and shipped with no secret at all. Until phase (ii) an engine that needs a credential stops with a clear "credential package missing" result. The pilot server needs no import from the old system: its credentials are entered directly in the vault by the credential tool when the machine is ready.
+
+### 4.2 One-time import into the vault (before the old database disappears)
+
+- [CONFIRMED] The 191 values in `sec.ManagedCredential` are ciphertext made with the SQL Server symmetric key `SISQUAL_ManagedCredential_Key`, protected by the certificate `SISQUAL_ManagedCredential_Certificate`, with the authenticator `InstanceCode|CredentialType`. They are readable only through the LIVE database. The sync file cannot be used for this step.
+- [PROPOSED] The import runs once, by a person, with a login that can execute the existing read path (`cfg.ManagedInstanceRuntime` or `app.GetManagedCredentialRuntime`, which runs `WITH EXECUTE AS OWNER` and decrypts through the certificate), over a direct read-only connection (no linked server, R-020). It only reads.
+- [PROPOSED] What is imported: the 191 instance credentials (76 `IIS_IDENTITY`, 76 `WEB_ACCESS`, 39 `MOBILE_APP_TOKEN`) keyed by `InstanceCode` and `CredentialType`, plus the 16 literal rule secrets of 3.3 (kind `RULE_SECRET`, keyed by `RuleCode`), read from the live database so that current values are taken. Expected total: 207; the tool compares counts per kind with the source and reports them, never values.
+- [PROPOSED] Each plaintext value exists only in memory and is encrypted into the vault immediately; nothing is written in clear, nothing is logged. For later verification the vault stores, per entry, a salted SHA-256 fingerprint of the value (salt kept in the vault), so a re-read of the source can be compared without exposing it.
+- [V] Check on the live server that the read path does not write audit rows or change state (`sec.ManagedCredentialAudit` exists and `app.GetManagedCredentialRuntime` is a procedure), and which login may use the certificate.
+- [PROPOSED] Order of events: (1) import into the vault; (2) verify counts and fingerprints; (3) make two encrypted backups of the vault in two places; (4) only then may the owner decommission `_sisqualMANAGEMENT`. Losing the vault after step 4 means resetting every credential at the services.
+
+### 4.3 Vault protection
+
+[PROPOSED] (format and algorithms [PENDING], decided with the machine-key ADR of Phase 1B and `contracts/credential-package.md` Q2)
+
+- One encrypted file, outside Git and outside the portable folder, on the credential tool operator's machine only; never on a shared folder or a synchronised cloud folder; restrictive file permissions; `*.vault` and similar patterns in `.gitignore` and in the CI secret scan.
+- Protection by a key derived from a passphrase held by the owner, optionally combined with protection bound to the operator's Windows identity. The passphrase is not stored anywhere in the repository or in the tool.
+- Entries: `credentialRef`, kind, instance code, ciphertext, creation and import time, source description, salted fingerprint. Metadata is not secret; values are.
+- An access log with metadata only (who, when, which refs), never values.
+- Two encrypted backups, tested by a restore into a temporary folder.
+
+### 4.4 Phase (ii): per machine, after its public key exists
+
+[PROPOSED] When a machine has run the portable once and its machine identity text (public key and fingerprint, `contracts/credential-package.md` 3a) has been carried to the credential tool, the tool selects from the vault the entries of the instances in that machine's catalog plus the `RULE_SECRET` entries its engines need, encrypts them for that machine key, signs the package with the tool key and issues it with `sequence` greater than the previous one. Whether the result is a text package imported by the operator or a `credentials.db` file is the open question Q3 of the credential contract and is not decided here. The same issuer key signs the package manifest (ADR-0007 item 3).
+
+## 5. Tools
+
+All tools live under `tools/`, are run on demand by a person, are not part of the portable application, are written for Windows PowerShell 5.1 and pass the 5.1 parser check in CI [PROPOSED; running under PowerShell 7 would need a vendored SQL client, [PENDING]]. All output is ASCII with LF except where a tool copies bytes it must not change (5.4).
+
+### 5.1 `tools/Convert-ManagementDb.ps1`
+
+- Reads SQL Server over a direct connection, read-only (`ApplicationIntent=ReadOnly`, integrated security, SELECT statements against an explicit whitelist of the 62 carried tables). It refuses any other table, never touches `sec.*`, and never logs the connection string.
+- Parameters [PROPOSED]: `-SqlInstance`, `-Database` (default `_sisqualMANAGEMENT`), `-OutputFolder`, `-ServerCode` (one, several or `ALL`), `-NewMachine` with `-MachineName`, `-TemplateServerCode`, and `-WhatIf`. The pinned `sqlite3.exe` 3.53.4 is taken from `vendor/manifest.json` and its SHA-256 is verified before use.
+- Output per machine: `catalog-<ServerCode>.db`, plus one `conversion-manifest.json` with the SHA-256 of each `.db`, row counts per table (source and destination), source identity (server, database, collation, read time), tool version, findings (for example the 5 orphan rows) and the list of excluded objects. No values.
+- Method [PROPOSED]: the tool generates a UTF-8 SQL script without BOM and with LF (`CREATE TABLE ... STRICT`, one transaction of `INSERT` statements, text escaped by doubling quotes, BLOBs as `X'..'` literals) and runs `sqlite3.exe` on it, then `PRAGMA integrity_check`, `foreign_key_check` and `VACUUM`, and sets `PRAGMA user_version` to the schema version. It needs no managed SQLite provider.
+- Applies, in this order: column exclusions by name, rowversion dropping, type conversion (1.1), the cut (2.2), the rule-secret redaction and the safety-net scan (3.3), the `catalog_meta` row (`contracts/catalog-schema.md`).
+- Builds the new-machine mode first, because the pilot is a server that does not exist in the old database (2.6).
+- Writes to a temporary folder and renames at the end, so a failed run leaves no half-written catalog.
+
+### 5.2 `tools/Test-CatalogConversion.ps1`
+
+Checks the result against the source without printing values. It exits non-zero on the first failed group and writes a report with counts and hashes only [PROPOSED]:
+
+- counts source versus destination per table and per machine (carried rows equal source rows after the cut, minus the reported orphans);
+- primary-key sets (hash of the sorted keys) per table, and null counts per column;
+- completeness of the cut: the union of the instance-cut rows over all catalogs equals the source set, no instance appears in two catalogs, every instance of the source appears in one;
+- global tables hold identical logical content in every catalog (hash per table);
+- exclusions: no `sec_*` table, no excluded column, no `ScriptText`, no rowversion column;
+- secret safety: the scan of 3.3 on every text column, and a marker test (known marker values planted in the fixture must not appear anywhere in the output);
+- SQLite checks: `integrity_check`, `foreign_key_check`, `STRICT` tables, opens read-only (`mode=ro`) and a write attempt fails;
+- the manifest hashes recomputed and compared.
+
+### 5.3 Seal tool
+
+Name [PENDING], for example `tools/Seal-Package.ps1`. Used when the owner edits the catalog by hand (ADR-0007 item 7). It [PROPOSED]:
+
+- recomputes SHA-256 and size of every file of the package folder, updates the package manifest (`contracts/package-manifest.schema.json`) with `origin = manual-edit-sealed`, a new `packageId` and `builtAt`;
+- validates the edited catalog before sealing: `catalog_meta` agrees with the manifest, `integrity_check`, `foreign_key_check`, the secret scan of 3.3, and that the schema version is supported;
+- shows the owner a summary of what changed (files and tables) and asks for confirmation;
+- signs the manifest with the issuer key of the credential tool; the private key is never in the repository and never in the portable folder;
+- appends a line to a local seal log (time, package id, file count), without secrets.
+
+Because it uses the issuer key it is built with, or next to, the credential tool; whether it is the same program is [PENDING].
+
+### 5.4 Engine export
+
+[PROPOSED] A mode or small script of the conversion tool (`tools/Export-ManagementEngines.ps1`) reads `ops.Engine` read-only and writes each `ScriptText` to a file `<SourceFileName>` plus `engines-export-manifest.json` (engine code, version, stored hash, computed hash, size, line endings, encoding). From PR #12 it is known that the stored `ScriptSha256` equals the SHA-256 of the UTF-16LE text and that the text uses CRLF; the tool must reproduce this exactly and report any mismatch. Two constraints [PENDING]: the exported files are not ASCII-only and use CRLF, which conflicts with the repository rule (ASCII and LF) and would be changed by line-ending normalisation. [PROPOSED] keep the export outside Git as a hash-verified artifact; each engine port PR then writes a clean ASCII/LF file of its own. The files are scanned for secrets before being handed over. They are only the base for the port; they are never copied into a catalog or executed (R-027).
+
+### 5.5 Order of step B (after approval)
+
+One small PR per tool [PROPOSED]: B1 engine export; B2 `Convert-ManagementDb.ps1` new-machine mode plus the SQLite script writer and tests; B3 the cut mode; B4 `Test-CatalogConversion.ps1`; B5 seal tool; B6 the vault import and issue steps of the credential tool (after the credential contract questions are answered). The pilot machine is served after B2.
+
+## 6. Test strategy without real servers
+
+Principle [PROPOSED]: the real `ManagementSync.sql` is not copied into CI. It contains real data and the 16 literal secrets of 3.3, and would duplicate that exposure. CI uses a fixture built from the SHAPE of the sync file and synthetic rows.
+
+| Level | What | Where |
+|---|---|---|
+| L1 static | Windows PowerShell 5.1 parser, ASCII and LF, secret scan on every changed file (the existing CI of PR #10) | windows-2022 |
+| L2 unit | pure functions: type conversion, literal escaping, `ExpandTemplate`-style placeholder detection, rule-secret redaction, cut-rule SQL generation, manifest hashing | windows-2022, Pester [PENDING vendoring] |
+| L3 integration | a SQL Server restored from a generated fixture: the 117 `CREATE TABLE` blocks of the sync file plus synthetic rows (6 servers, instances spread over them, 5 orphan rows, sensitive rules with MARKER values, rows in `sec.ManagedCredential` with marker ciphertext, a server without policy rows, a rule with no placeholder); run the converter for every `ServerCode` and the new-machine mode, then `Test-CatalogConversion.ps1` | SQL Server in a container on a Linux runner, or a SQL Server on the Windows runner [PENDING: whether the runner images can host SQL Server, the roadmap already lists it as open; a probe step settles it] |
+| L4 SQLite | the pinned `sqlite3.exe` 3.53.4 verified by hash; integrity and read-only opening of each produced catalog | windows-2022 |
+| Negative tests | marker found in output (must fail), a table outside the whitelist (refused), an instance claimed by two servers (fail), a changed catalog byte (seal tool and manifest check fail), an unsupported schema version (refused) | L2 and L3 |
+
+Only on the real servers [V]:
+
+- the collation and the real constraints (`sys.foreign_keys`, checks, defaults, indexes) of the live database;
+- the real row counts compared with the 2026-10-05 snapshot, and the real orphans and duplicates;
+- the permission to read credentials, whether the read path writes audit, and the credential import with decryption through the certificate;
+- the `datetime2` columns (time zone of the data in the live database);
+- opening every catalog from the portable on the real machine and with its machine identity;
+- the policy defaults chosen for PRESALES, TENDERS and the pilot machine;
+- performance and size of the real catalogs.
+
+## 7. Risks
+
+| Id | Risk | Mitigation proposed |
+|---|---|---|
+| C-01 | 16 literal secrets in `cfg.ConfigRule`, plain in the reference repository | redaction to references, vault import, scan in tool and CI, rotate after cutover |
+| C-02 | The credentials exist only as certificate-bound ciphertext in the live database; if it is retired before the import they are lost | import before decommission, counts and fingerprints, two tested backups (4.2) |
+| C-03 | The vault is lost or stolen | passphrase, restrictive permissions, backups, never in Git or shared folders |
+| C-04 | A stale catalog is used without anyone noticing (the old and new systems coexist until each server is switched) | catalog source and build time shown in the UI, re-run the conversion before each cutover and agree a change freeze [PENDING] |
+| C-05 | Manual edits of the SQLite catalog have no review history and can break invariants | the seal tool validates; edits recorded in the seal log; authority later decided (deferred by the owner) |
+| C-06 | Case and collation differences between SQL Server and SQLite break joins silently | read the collation, `COLLATE NOCASE` on code columns, tests with mixed-case codes |
+| C-07 | Source times have no zone | keep as text, document, never assume UTC |
+| C-08 | The sync file has no foreign keys; relations are implicit; hidden orphans (5 found) | derived relationship list, orphan report, live metadata when available |
+| C-09 | PRESALES and TENDERS have no policy rows; the pilot machine has no row at all | new-machine mode, template server decision |
+| C-10 | Template expansion lives in a SQL function (`cfg.ExpandTemplate`) | port with tests before any engine that uses templates |
+| C-11 | Executable SQL text in `ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` | carried as data, never executed (R-019, R-027) |
+| C-12 | A conversion bug lets a secret column or value through | explicit whitelist, exclusion by name, scan, marker tests, review of every PR of step B |
+| C-13 | 11.5 MB of global images duplicated in six catalogs | assets as files in the package (2.5) |
+| C-14 | The old database changes between the snapshot (2026-10-05 02:00) and the conversion | convert from the live database, record read time, compare counts with the snapshot |
+| C-15 | Reading credentials through the old procedure may write audit rows or fail on permissions | verify on the live server before the import [V] |
+
+## 8. Decisions needed from the owner
+
+1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
+2. Binary content: global assets as files in the package (proposed) or as BLOBs in every catalog; per-instance logos as BLOBs.
+3. Which server is the template for the policy rows of PRESALES, TENDERS and the pilot machine; or whether those machines start with empty policies.
+4. Whether a catalog needs a directory of instances of other machines (cross-machine operations), and what a machine's Pulse needs of other hubs.
+5. `COLLATE NOCASE` on code columns, after the collation of the live database is read.
+6. Whether the four pure-read views are recreated.
+7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.
+8. Tool runtime: Windows PowerShell 5.1 (proposed) or PowerShell 7 with a vendored SQL client.
+9. Vault format, protection (passphrase and Windows identity) and where the two backups are kept.
+10. The credential contract questions Q1 to Q8, especially Q3 (text package or `credentials.db`) and Q6 (kinds, including `RULE_SECRET`).
+11. Whether the seal tool and the credential tool are the same program.
+12. How CI gets a SQL Server (container, runner image or none).
+13. Machines without a local database (not decided).
+14. Whether the 16 exposed values are rotated after the cutover, and the change freeze and refresh cadence for catalogs while the old system is still in production.
+
+Not decided and not assumed anywhere in this plan: the long-term authority of the catalog (deferred by the owner), the SQLite managed provider (Phase 1B), and the crypto algorithms (Phase 1B).
