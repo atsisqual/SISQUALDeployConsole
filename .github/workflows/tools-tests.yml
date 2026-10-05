@@ -65,6 +65,24 @@ jobs:
           if ($failed) { throw 'ASCII/LF policy failed.' }
           Write-Host 'PASS ASCII/LF'
 
+      - name: Pinned sqlite3 (3.53.4), SHA-256 verified
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Same artifact and hash as vendor/manifest.json (PR #10) and spikes/phase1A/Test-Phase1A.ps1.
+          $url = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip'
+          $expected = 'F46EE2475DE4CBE287E6E5F7D43C838796B14E7379CD216BDBB28D391429F9FC'
+          $zip = Join-Path $env:RUNNER_TEMP 'sqlite-tools.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw ('sqlite tools SHA-256 mismatch: {0}' -f $actual) }
+          $dir = Join-Path $env:RUNNER_TEMP 'sqlite-tools'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+          $exe = Get-ChildItem -LiteralPath $dir -Recurse -Filter 'sqlite3.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'sqlite3.exe was not found in the archive.' }
+          & $exe.FullName --version
+          ('SQLITE3_PATH=' + $exe.FullName) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Unit tests
         shell: pwsh
         run: |
