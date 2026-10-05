@@ -240,7 +240,7 @@ function Get-SecretPatternCounts {
     $patterns = [ordered]@{
         passwordLiteral   = '(?i)\b(password|pwd|passwd)\s*[=:]\s*' + $literal
         secretLiteral     = '(?i)\b(secret|apikey|api_key|token)\s*[=:]\s*' + $literal
-        connectionUserPwd = '(?i)User ID\s*=\s*[^;]+;\s*Password\s*='
+        connectionUserAndSecret = '(?i)User ID\s*=\s*[^;]+;\s*Password\s*='
         privateKeyBlock   = '-----BEGIN [A-Z ]*PRIVATE KEY-----'
     }
     $result = [ordered]@{}

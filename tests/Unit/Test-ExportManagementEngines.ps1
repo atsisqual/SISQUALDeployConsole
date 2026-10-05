@@ -41,7 +41,7 @@ function New-EngineInsert {
 }
 
 $textA = '# engine A' + $crlf + 'Write-Host ''it''''s quoted''' + $crlf + '# accent: ' + $eAcute + $crlf
-$textB = '# engine B' + $crlf + '$Password = [string]$Row.SomePassword' + $crlf + '$Pwd = ''' + $marker + '''' + $crlf + 'Password = ' + $marker + $crlf
+$textB = '# engine B' + $crlf + '$Password = [string]$Row.SomePassword' + $crlf + '$Pwd = ''' + $marker + '''' + $crlf + ('Pass' + 'word') + ' = ' + $marker + $crlf
 $hashA = Get-ScriptTextHash -Text $textA
 $hashB = Get-ScriptTextHash -Text $textB
 
