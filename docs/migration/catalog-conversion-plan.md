@@ -1,6 +1,7 @@
 # Catalog conversion plan (task 4, step A)
 
 **Status:** [PROPOSED] plan only. No code. Nothing here is approved; step B (implementation) starts only after the owner approves this plan.
+**Update 2026-10-05 (owner answers, [CONFIRMED]):** (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
 Tags: [CONFIRMED] read from the source or decided by the owner; [PROPOSED] design proposal; [PENDING] open decision; [V] only verifiable on a real server.
@@ -243,12 +244,14 @@ None of these is converted: a catalog contains tables only. What each group mean
 ### 2.5 Binary content
 
 [CONFIRMED] `cfg.LinksPageAsset` holds 45 image rows (about 11.5 MB of INSERT text, 41 percent of all INSERT text); `cfg.PulseResource.BinaryContent` and `cfg.WebsiteBrandingAsset.BinaryContent` hold a few more; `dbo.ManagedInstance.CustomerLogo` is set on 62 of 76 instances (about 1 MB together).
-[PROPOSED] global binary assets are not stored in the catalogs (they would be duplicated in six files): the converter writes them as files under `assets/` in the package, the catalog keeps file name, mime type and SHA-256, and the package manifest lists each file. Per-instance logos stay as BLOB in the catalog of their machine. [PENDING] owner decision.
+[CONFIRMED] Owner answer of 2026-10-05: binary content stays as BLOB in EVERY catalog. Global assets are therefore duplicated in each catalog file; per-instance logos stay in the catalog of their machine. Consequences [PROPOSED]: each catalog is roughly 13 to 14 MB larger than a catalog without images (an estimate from the INSERT text, to be measured); six catalogs add up to about 80 MB; each is hashed in its package manifest; the catalog must still open read-only quickly, so BLOBs are read on demand and never selected with `SELECT *`. The `Content` columns keep their SHA-256 (`ContentSha256`) so a test can verify every BLOB against it.
 
 ### 2.6 Machines without policy rows, and new machines
 
-- [CONFIRMED] PRESALES and TENDERS exist in `dbo.ManagedServer` and have instances (8 and 6), but have NO rows in the four server policy tables, which exist only for BR_DEMO, ES_DEMO, PT_DEMO and SANDBOX_HUB. A plain cut would give these two machines empty policy tables, and engines that read `cfg.IisServerPolicy` (such as `IIS_RECONCILE`) would have nothing to apply. [PENDING] whether they get copies of a template server's policy rows.
-- [PROPOSED] The pilot server has no row in `dbo.ManagedServer`, so it cannot be cut. The conversion tool gets a new-machine mode: all global tables, one `dbo_ManagedServer` row built from parameters (`ServerCode`, `MachineName`, roots), policy rows copied from a named template server [PENDING which one], and no instances. Because the pilot comes first, this mode is built before the cut mode (step B order).
+- [CONFIRMED] PRESALES and TENDERS exist in `dbo.ManagedServer` and have instances (8 and 6), but have NO rows in the four server policy tables (`cfg.IisServerPolicy`, `cfg.WebAccessPolicy`, `cfg.LinksPagePolicy`, `cfg.DatabaseCopyPolicy`), which exist only for BR_DEMO, ES_DEMO, PT_DEMO and SANDBOX_HUB.
+- [CONFIRMED] Owner answer of 2026-10-05: there is no template server. Machines without policy rows, and the pilot, are cut exactly as they are in the source: empty policy tables, nothing copied from another server. The owner's reason is that the engines already create these settings.
+- [CONFIRMED, from the source] This is NOT what the reference system does today: `cfg.GetIisDeploymentPlan` stops with error 50010 when the machine is not an enabled `ManagedServer` and with error 50011 ("No enabled IIS server policy exists for the resolved ManagedServer") when the server has no row in `cfg.IisServerPolicy`. No stored procedure and none of the 19 engine scripts inserts rows into the four policy tables; the only rows are the data rows of the sync file. So the defaults would have to come from the new engines. [PENDING] the owner confirms that the ported engines carry built-in defaults (and which), or that the first run on a machine without policy rows reports "policy missing" and stops. The converter and tests make no assumption: an empty policy table is valid and is reported as a finding, never filled.
+- [PROPOSED] The pilot server has no row in `dbo.ManagedServer`, so it cannot be cut. The converter gets a new-machine mode: all global tables, one `dbo_ManagedServer` row built from parameters (`ServerCode`, `MachineName`, roots), no instances and no policy rows. Because the pilot comes first, this mode is built before the cut mode (step B order).
 - [PENDING] Machines without a local database: not decided; nothing is assumed.
 
 ## 3. What does NOT enter a catalog
@@ -314,12 +317,18 @@ A scan of the carried tables found literal secret values in a global rule table,
 
 ## 5. Tools
 
-All tools live under `tools/`, are run on demand by a person, are not part of the portable application, are written for Windows PowerShell 5.1 and pass the 5.1 parser check in CI [PROPOSED; running under PowerShell 7 would need a vendored SQL client, [PENDING]]. All output is ASCII with LF except where a tool copies bytes it must not change (5.4).
+All tools live under `tools/`, are run on demand by a person, and are not part of the portable application. [CONFIRMED] Owner answer of 2026-10-05: they run on PowerShell 7 with a SQL client shipped with them. [PROPOSED] consequences:
+
+- The SQL client is a new vendored runtime dependency, so under AGENTS.md it needs explicit owner approval: package (for example `Microsoft.Data.SqlClient`, the maintained client for PowerShell 7), exact version, SHA-256 and licence, added to `vendor/manifest.json` and verified before use. The sandbox of this session could not reach NuGet, so the hash must be taken from the official package on a Windows runner [PENDING]. The tools use PowerShell 7 from the pinned `vendor/` ZIP (7.6.6), not a machine installation.
+- The CI parser step of PR #10 parses every `.ps1` with the Windows PowerShell 5.1 parser. A tool that uses PowerShell 7 only syntax (`??`, `?:`, `&&`, `||`) would fail it. [PENDING] either the tools keep to syntax both parsers accept, or CI adds a PowerShell 7 parse step for `tools/` and keeps the 5.1 step for engines.
+- Integrated authentication to SQL Server works with the client from PowerShell 7; encryption and certificate trust settings of the connection are decided with the live server [V].
+
+All output is ASCII with LF except where a tool copies bytes it must not change (5.4).
 
 ### 5.1 `tools/Convert-ManagementDb.ps1`
 
-- Reads SQL Server over a direct connection, read-only (`ApplicationIntent=ReadOnly`, integrated security, SELECT statements against an explicit whitelist of the 62 carried tables). It refuses any other table, never touches `sec.*`, and never logs the connection string.
-- Parameters [PROPOSED]: `-SqlInstance`, `-Database` (default `_sisqualMANAGEMENT`), `-OutputFolder`, `-ServerCode` (one, several or `ALL`), `-NewMachine` with `-MachineName`, `-TemplateServerCode`, and `-WhatIf`. The pinned `sqlite3.exe` 3.53.4 is taken from `vendor/manifest.json` and its SHA-256 is verified before use.
+- Reads SQL Server over a direct connection with the vendored SQL client, read-only (`ApplicationIntent=ReadOnly`, integrated security, SELECT statements against an explicit whitelist of the 62 carried tables). It refuses any other table, never touches `sec.*`, and never logs the connection string.
+- Parameters [PROPOSED]: `-SqlInstance`, `-Database` (default `_sisqualMANAGEMENT`), `-OutputFolder`, `-ServerCode` (one, several or `ALL`), `-NewMachine` with `-MachineName` (no template server, see 2.6), and `-WhatIf`. The pinned `sqlite3.exe` 3.53.4 is taken from `vendor/manifest.json` and its SHA-256 is verified before use.
 - Output per machine: `catalog-<ServerCode>.db`, plus one `conversion-manifest.json` with the SHA-256 of each `.db`, row counts per table (source and destination), source identity (server, database, collation, read time), tool version, findings (for example the 5 orphan rows) and the list of excluded objects. No values.
 - Method [PROPOSED]: the tool generates a UTF-8 SQL script without BOM and with LF (`CREATE TABLE ... STRICT`, one transaction of `INSERT` statements, text escaped by doubling quotes, BLOBs as `X'..'` literals) and runs `sqlite3.exe` on it, then `PRAGMA integrity_check`, `foreign_key_check` and `VACUUM`, and sets `PRAGMA user_version` to the schema version. It needs no managed SQLite provider.
 - Applies, in this order: column exclusions by name, rowversion dropping, type conversion (1.1), the cut (2.2), the rule-secret redaction and the safety-net scan (3.3), the `catalog_meta` row (`contracts/catalog-schema.md`).
@@ -393,24 +402,26 @@ Only on the real servers [V]:
 | C-06 | Case and collation differences between SQL Server and SQLite break joins silently | read the collation, `COLLATE NOCASE` on code columns, tests with mixed-case codes |
 | C-07 | Source times have no zone | keep as text, document, never assume UTC |
 | C-08 | The sync file has no foreign keys; relations are implicit; hidden orphans (5 found) | derived relationship list, orphan report, live metadata when available |
-| C-09 | PRESALES and TENDERS have no policy rows; the pilot machine has no row at all | new-machine mode, template server decision |
+| C-09 | PRESALES, TENDERS and the pilot have no policy rows, and the reference plan procedures fail (errors 50010, 50011) without them | no template (owner); empty policy tables are valid and reported; the ported engines must supply defaults or stop with a clear message [PENDING owner] |
 | C-10 | Template expansion lives in a SQL function (`cfg.ExpandTemplate`) | port with tests before any engine that uses templates |
 | C-11 | Executable SQL text in `ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` | carried as data, never executed (R-019, R-027) |
 | C-12 | A conversion bug lets a secret column or value through | explicit whitelist, exclusion by name, scan, marker tests, review of every PR of step B |
-| C-13 | 11.5 MB of global images duplicated in six catalogs | assets as files in the package (2.5) |
+| C-13 | 11.5 MB of global images duplicated in six catalogs (owner chose BLOB in every catalog) | accept about 80 MB in total; measure real sizes; read BLOBs on demand; verify each against `ContentSha256` |
+| C-16 | The SQL client is a new vendored dependency of the tools and is not yet pinned | owner approval, pin version and SHA-256 in `vendor/manifest.json`, verify before use |
+| C-17 | PowerShell 7 syntax in `tools/` breaks the 5.1 parser step of CI | keep syntax compatible or add a PowerShell 7 parse step for `tools/` |
 | C-14 | The old database changes between the snapshot (2026-10-05 02:00) and the conversion | convert from the live database, record read time, compare counts with the snapshot |
 | C-15 | Reading credentials through the old procedure may write audit rows or fail on permissions | verify on the live server before the import [V] |
 
 ## 8. Decisions needed from the owner
 
 1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
-2. Binary content: global assets as files in the package (proposed) or as BLOBs in every catalog; per-instance logos as BLOBs.
-3. Which server is the template for the policy rows of PRESALES, TENDERS and the pilot machine; or whether those machines start with empty policies.
+2. [DECIDED 2026-10-05] Binary content: BLOB in every catalog (global assets duplicated; per-instance logos in their machine catalog).
+3. [DECIDED 2026-10-05] No template server for policy rows. Still to confirm: where the defaults come from when a machine has no policy rows (built into the ported engines, or stop with a message), because the reference procedures fail in that case (2.6).
 4. Whether a catalog needs a directory of instances of other machines (cross-machine operations), and what a machine's Pulse needs of other hubs.
 5. `COLLATE NOCASE` on code columns, after the collation of the live database is read.
 6. Whether the four pure-read views are recreated.
 7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.
-8. Tool runtime: Windows PowerShell 5.1 (proposed) or PowerShell 7 with a vendored SQL client.
+8. [DECIDED 2026-10-05] Tool runtime: PowerShell 7 with a SQL client shipped with the tools. Still to approve: which SQL client package and version, its SHA-256 and licence, and how CI parses `tools/` (see section 5).
 9. Vault format, protection (passphrase and Windows identity) and where the two backups are kept.
 10. The credential contract questions Q1 to Q8, especially Q3 (text package or `credentials.db`) and Q6 (kinds, including `RULE_SECRET`).
 11. Whether the seal tool and the credential tool are the same program.
