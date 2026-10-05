@@ -474,3 +474,8 @@ Evidence: 70 unit checks (five mutations caught). On the real catalog of a new m
 [PROPOSED] contract points that came out of this step (PR #13): the manifest is `package-manifest.json` at the package root; the seal log lives outside; `catalog_meta.built_at_utc` is the time the catalog content was produced or last sealed after an edit, while the manifest `builtAt` is the time of the last seal of the whole package (the earlier text required them to agree, which cannot hold when only other files change).
 
 Left for the owner: approve the canonical form and the algorithm (with the credential tool, B6); the names and places of the manifest and of the seal log.
+
+## 12. Owner answers on the credential contract (2026-10-05)
+
+[DECIDED] Vault (section 4.3, Q9): one encrypted file outside Git protected by the owner's passphrase (PBKDF2-HMAC-SHA256), two encrypted backups in two places, restore tested, no Windows-account binding. Credential kinds (Q6): `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN` and `RULE_SECRET` (the 16 literal rule secrets). One package per machine (Q8), valid at most one year with a 15-minute clock tolerance (Q7). Issuer key pinned on the machine after an out-of-band fingerprint check (Q1); ECDSA P-256 with SHA-256 for signatures and ECDH P-256 with AES-256-GCM for entries (Q2); installed-package sequence as replay reference (Q4); manual reissue and re-pinning on key loss or rotation (Q5); manifest and seal-log names as proposed (Q10). Details and the two readings to confirm are in `contracts/credential-package.md` section 8.
+[PENDING] Q3 (how the package reaches the machine) and whether the 16 exposed secrets are rotated after the cutover.
