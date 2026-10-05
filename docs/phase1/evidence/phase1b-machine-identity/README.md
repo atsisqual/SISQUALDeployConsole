@@ -4,57 +4,87 @@
 **Base main:** `ad598215fe3ab0bc715a797a37e2bcf9331eaa56`
 **Workflow:** `phase1b-machine-identity`
 **Workflow ID:** `375831032`
-**Current run ID:** `37376755238`
-**Run number:** `1`
-**Run attempt:** `1`
-**Event:** `push`
-**Head commit:** `53cccd67cee9cd5e2cd9a9210995a6987c563adf`
-**Created UTC:** `2026-10-05T21:34:40Z`
-**Status:** [PENDING] first Windows execution is in progress.
+**Status:** [PENDING] corrected run `37377236061` is executing.
 
-## Why the trigger changed
+## Trigger model
 
 [CONFIRMED] PR #36 recorded three GitHub-hosted Windows attempts that never received a runner and executed zero steps.
 
 [CONFIRMED external] GitHub documents that `workflow_dispatch` only receives events when the workflow file exists on the default branch. Because this spike must be validated before merge, the workflow also has a `push` trigger limited to `spike/phase1b-machine-identity-cng` and only the spike/workflow paths. `workflow_dispatch` remains for later use after integration.
 
-## Current execution ledger
+## Run history
 
-### Run `37376755238`, attempt `1`
+### Run `37376755238` - preserved harness failure
 
-| Job | Job ID | Label | Runner | Created UTC | Started UTC | State |
-|---|---:|---|---|---|---|---|
-| Machine A - create and reopen CNG identity | `111987660696` | `windows-2022` | `GitHub Actions 1000000536` (`runner_id=1000000536`) | 2026-10-05T21:34:41Z | 2026-10-05T21:34:43Z | in progress at latest check |
-| Machine B - copied folder has no source private key | [PENDING] | `windows-2025` | [PENDING] | [PENDING] | [PENDING] | created only after Machine A succeeds |
+- run number: `1`;
+- attempt: `1`;
+- event: `push`;
+- commit: `53cccd67cee9cd5e2cd9a9210995a6987c563adf`;
+- created: `2026-10-05T21:34:40Z`;
+- conclusion: `failure`.
 
-[CONFIRMED] At the latest recorded check, Machine A had received a real GitHub-hosted runner. `Set up job` and `actions/checkout@v4` had succeeded; `Download verified portable PowerShell` was in progress. No CNG compatibility result is claimed yet.
+Machine A:
 
-[PENDING] Machine B has no job ID yet because the workflow uses `needs: machine-a`; GitHub will materialize it after Machine A reaches the dependency point. No ID is invented.
+- job ID `111987660696`;
+- `windows-2022`;
+- runner `GitHub Actions 1000000536`, `runner_id=1000000536`;
+- started `2026-10-05T21:34:43Z`;
+- completed `2026-10-05T21:37:18Z`;
+- failed before CNG key creation because the empty check-list helper returned `$null` through PowerShell pipeline enumeration.
+
+Machine B:
+
+- job ID `111988756769`;
+- label `windows-2025`;
+- no runner assigned;
+- skipped because Machine A failed.
+
+No artifact ID exists. The upload step ran but found no matching files.
+
+Full record: `docs/phase1/evidence/phase1b-machine-identity-37376755238/README.md`.
+
+### Run `37377236061` - corrected harness
+
+- run number: `2`;
+- attempt: `1`;
+- event: `push`;
+- commit: `3df9c920409b9061cf34f4f88ebdd0f28001809f`;
+- created: `2026-10-05T21:38:56Z`;
+- current status: [PENDING] in progress at latest check.
+
+Machine A:
+
+- job ID `111989440871`;
+- `windows-2022`;
+- runner `GitHub Actions 1000000537`, `runner_id=1000000537`;
+- started `2026-10-05T21:38:58Z`;
+- at latest check, setup and checkout passed and the verified PowerShell download step was running.
+
+Machine B job ID does not exist yet at this recorded point because it is materialized after the Machine A dependency. No ID is invented.
 
 ## Required ledger for every execution
 
-For every workflow execution record:
+For every workflow execution record preserve:
 
 - workflow ID;
-- run ID;
-- run number;
-- `run_attempt`;
+- run ID and run number;
+- every `run_attempt`;
 - event and triggering actor;
 - exact head commit SHA;
 - Machine A and Machine B job IDs;
 - runner labels, runner ID and runner name;
 - created, started and completed UTC timestamps;
 - conclusion of every job and every step;
-- artifact name and GitHub artifact ID;
+- artifact names and GitHub artifact IDs;
 - retry, cancellation and supersession reason.
 
-A retry caused only by runner infrastructure stays under the same run ID with a new attempt. A code or workflow change creates a new commit and new run; older evidence remains visible.
+A retry caused only by runner infrastructure stays under the same run ID with a new attempt. A code/workflow change creates a new commit and a new run; older evidence remains visible.
 
 ## Expected artifacts
 
 ### `phase1b-machine-identity-machine-a`
 
-- copied replacement portable folder used by Machine A;
+- copied replacement portable folder;
 - `machine-identity-source.json` (public data only);
 - `report-machine-a-create.json`;
 - `report-machine-a-reopen.json`;
@@ -65,7 +95,7 @@ A retry caused only by runner infrastructure stays under the same run ID with a 
 - `report-machine-b.json`;
 - `report-machine-b-cleanup.json`.
 
-The final evidence record must preserve artifact IDs as well as display names.
+The final record preserves artifact IDs as well as display names.
 
 ## Required PASS checks
 
@@ -92,16 +122,16 @@ Machine B:
 - `CREDENTIAL_MODULE_INTEROP`;
 - `SOURCE_ENTRY_REJECTED_ON_DESTINATION`.
 
-Cleanup must report `KEY_REMOVED` for each VM when the cleanup action runs.
+Cleanup must report `KEY_REMOVED` for each VM.
 
 ## Acceptance rule
 
-[PENDING] CNG machine identity is not [CONFIRMED] until one named `run ID + run_attempt + commit SHA` actually executes both VMs and all required checks pass.
+[PENDING] CNG machine identity is not [CONFIRMED] until one named `run ID + run_attempt + commit SHA` executes both VMs and every required check passes.
 
-A job cancellation with no assigned runner or zero executed probe steps is infrastructure evidence only and must never be counted as a CNG PASS or FAIL.
+A cancellation with no runner or zero probe steps is infrastructure evidence only. A harness failure before key creation is a harness FAIL only. Neither may be relabelled as a CNG technical result.
 
-After a successful runner validation, keep the reports in a run-specific subdirectory:
+After an accepted run, preserve its reports under:
 
 `docs/phase1/evidence/phase1b-machine-identity-<run-id>/`
 
-and update `docs/phase1/phase1b-machine-identity-cng.md` with the exact evidence and remaining [V] items.
+and update `docs/phase1/phase1b-machine-identity-cng.md` with exact evidence and remaining [V] items.
