@@ -2,7 +2,7 @@
 
 **Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
 **Owner answers of 2026-10-05, second round ([CONFIRMED]): the SQL client is pinned with a Windows-runner workflow (spike PR, see section 5); `dbo.ManagedServer.ManagementDatabaseName` is dropped; collation is `Latin1_General_CI_AS` in every database.**
-**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16); B3 to B6 not started.**
+**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16), the SQL client pin is PR #18; B3 to B6 not started.**
 **Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
@@ -323,7 +323,7 @@ Where SQL Server appears in this plan [CONFIRMED, answer to an owner question of
 
 All tools live under `tools/`, are run on demand by a person, and are not part of the portable application. [CONFIRMED] Owner answer of 2026-10-05: they run on PowerShell 7 with a SQL client shipped with them. [PROPOSED] consequences:
 
-- The SQL client is a new vendored runtime dependency, so under AGENTS.md it needs explicit owner approval: package (for example `Microsoft.Data.SqlClient`, the maintained client for PowerShell 7), exact version, SHA-256 and licence, added to `vendor/manifest.json` and verified before use. The sandbox of this session could not reach NuGet, so the hash must be taken from the official package on a Windows runner [PENDING]. The tools use PowerShell 7 from the pinned `vendor/` ZIP (7.6.6), not a machine installation.
+- The SQL client is a new vendored dependency. [CONFIRMED] approved by the owner (`Microsoft.Data.SqlClient`) and pinned by the spike of PR #18 (docs/phase1/sqlclient-pin.md): version 7.1.1, package SHA-256 `1da22a633fb44406d9a9400b00471039e8895ac3e717afe2e3beedba2f049e37`, SHA-512 equal to the NuGet catalog `packageHash`, signature valid (Microsoft Corporation), MIT, a closure of 25 files pinned one by one, loads in the pinned PowerShell 7.6.6 on .NET 10.0.12. [PENDING] how the 25 files reach the operator machine, and the encryption and certificate-trust defaults for the real servers [V]. The tools use PowerShell 7 from the pinned `vendor/` ZIP (7.6.6), not a machine installation.
 - [CONFIRMED] Owner answer of 2026-10-05: everything in the latest PowerShell. The CI parser step of PR #10 parses every `.ps1` with the Windows PowerShell 5.1 parser, which rejects PowerShell 7 syntax. [PROPOSED] CI parses `tools/` with the PowerShell 7 parser (`pwsh`) and keeps the 5.1 parser only for files that must run in 5.1 (the engines, because ADR-0006 keeps a 5.1 fallback). [PENDING] the owner confirms whether the engines also move fully to PowerShell 7.
 - Integrated authentication to SQL Server works with the client from PowerShell 7; encryption and certificate trust settings of the connection are decided with the live server [V].
 
@@ -380,7 +380,7 @@ Principle [PROPOSED]: the real `ManagementSync.sql` is not copied into CI. It co
 |---|---|---|
 | L1 static | Windows PowerShell 5.1 parser, ASCII and LF, secret scan on every changed file (the existing CI of PR #10) | windows-2022 |
 | L2 unit | pure functions: type conversion, literal escaping, `ExpandTemplate`-style placeholder detection, rule-secret redaction, cut-rule SQL generation, manifest hashing | windows-2022, Pester [PENDING vendoring] |
-| L3 integration | a SQL Server restored from a generated fixture: the 117 `CREATE TABLE` blocks of the sync file plus synthetic rows (6 servers, instances spread over them, 5 orphan rows, sensitive rules with MARKER values, rows in `sec.ManagedCredential` with marker ciphertext, a server without policy rows, a rule with no placeholder); run the converter for every `ServerCode` and the new-machine mode, then `Test-CatalogConversion.ps1` | SQL Server in a container on a Linux runner, or a SQL Server on the Windows runner [PENDING: whether the runner images can host SQL Server, the roadmap already lists it as open; a probe step settles it] |
+| L3 integration | a SQL Server restored from a generated fixture: the 117 `CREATE TABLE` blocks of the sync file plus synthetic rows (6 servers, instances spread over them, 5 orphan rows, sensitive rules with MARKER values, rows in `sec.ManagedCredential` with marker ciphertext, a server without policy rows, a rule with no placeholder); run the converter for every `ServerCode` and the new-machine mode, then `Test-CatalogConversion.ps1` | SQL Server in a container on a Linux runner, or a SQL Server on the Windows runner [CONFIRMED by the spike of PR #18: the `windows-2022` runner carries SQL Server LocalDB (15.0.4382.1) and the pinned client queried it; its default collation is `SQL_Latin1_General_CP1_CI_AS`, so the test database must be created with `Latin1_General_CI_AS`. The next step is an integration test that runs both tools with `-SqlInstance` against LocalDB] |
 | L4 SQLite | the pinned `sqlite3.exe` 3.53.4 verified by hash; integrity and read-only opening of each produced catalog | windows-2022 |
 | Negative tests | marker found in output (must fail), a table outside the whitelist (refused), an instance claimed by two servers (fail), a changed catalog byte (seal tool and manifest check fail), an unsupported schema version (refused) | L2 and L3 |
 
@@ -429,7 +429,7 @@ Only on the real servers [V]:
 9. Vault format, protection (passphrase and Windows identity) and where the two backups are kept.
 10. The credential contract questions Q1 to Q8, especially Q3 (text package or `credentials.db`) and Q6 (kinds, including `RULE_SECRET`).
 11. Whether the seal tool and the credential tool are the same program.
-12. How CI gets a SQL Server (container, runner image or none).
+12. [DECIDED by evidence, PR #18] CI gets a SQL Server from the runner image (LocalDB). Still to approve: the integration test that uses it.
 13. Machines without a local database (not decided).
 14. Whether the 16 exposed values are rotated after the cutover, and the change freeze and refresh cadence for catalogs while the old system is still in production.
 
