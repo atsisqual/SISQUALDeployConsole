@@ -242,7 +242,7 @@ None of these is converted: a catalog contains tables only. What each group mean
 
 ### 2.5 Binary content
 
-[CONFIRMED] `cfg.LinksPageAsset` holds 45 image rows (about 11.5 MB of INSERT text, 41 percent of the whole file); `cfg.PulseResource.BinaryContent` and `cfg.WebsiteBrandingAsset.BinaryContent` hold a few more; `dbo.ManagedInstance.CustomerLogo` is set on 62 of 76 instances (about 1 MB together).
+[CONFIRMED] `cfg.LinksPageAsset` holds 45 image rows (about 11.5 MB of INSERT text, 41 percent of all INSERT text); `cfg.PulseResource.BinaryContent` and `cfg.WebsiteBrandingAsset.BinaryContent` hold a few more; `dbo.ManagedInstance.CustomerLogo` is set on 62 of 76 instances (about 1 MB together).
 [PROPOSED] global binary assets are not stored in the catalogs (they would be duplicated in six files): the converter writes them as files under `assets/` in the package, the catalog keeps file name, mime type and SHA-256, and the package manifest lists each file. Per-instance logos stay as BLOB in the catalog of their machine. [PENDING] owner decision.
 
 ### 2.6 Machines without policy rows, and new machines
