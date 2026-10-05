@@ -26,6 +26,7 @@ if (-not (Test-Path -LiteralPath $PodeModulePath -PathType Leaf)) {
 
 $Results = [System.Collections.Generic.List[object]]::new()
 $SecretsForLeakCheck = [System.Collections.Generic.List[string]]::new()
+$CaptureErrors = [System.Collections.Generic.List[string]]::new()
 $TempRoot = Join-Path $env:TEMP ('SISQUALDeployConsole-Phase1C-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
@@ -209,17 +210,38 @@ function Stop-ProbeServer {
     }
 
     $process = $Server.Process
-    if (-not $process.HasExited) {
-        try { $process.Kill($true) } catch { try { $process.Kill() } catch {} }
-        $null = $process.WaitForExit(5000)
-    }
-
     try {
-        $process.StandardOutput.ReadToEnd() | Set-Content -LiteralPath $Server.StdoutPath -Encoding ascii
-        $process.StandardError.ReadToEnd() | Set-Content -LiteralPath $Server.StderrPath -Encoding ascii
+        if (-not $process.HasExited) {
+            try {
+                $process.Kill($true)
+            }
+            catch {
+                $process.Kill()
+            }
+            $null = $process.WaitForExit(5000)
+        }
+
+        if (-not $process.HasExited) {
+            $CaptureErrors.Add('Probe process did not exit before output capture.') | Out-Null
+            return
+        }
+
+        try {
+            $stdoutText = $process.StandardOutput.ReadToEnd()
+            $stderrText = $process.StandardError.ReadToEnd()
+            Set-Content -LiteralPath $Server.StdoutPath -Value $stdoutText -Encoding ascii -ErrorAction Stop
+            Set-Content -LiteralPath $Server.StderrPath -Value $stderrText -Encoding ascii -ErrorAction Stop
+        }
+        catch {
+            $CaptureErrors.Add(('Server output capture failed: ' + $_.Exception.GetType().FullName)) | Out-Null
+        }
     }
-    catch {}
-    $process.Dispose()
+    catch {
+        $CaptureErrors.Add(('Server stop failed before complete output capture: ' + $_.Exception.GetType().FullName)) | Out-Null
+    }
+    finally {
+        $process.Dispose()
+    }
 }
 
 function Wait-ForServer {
@@ -244,7 +266,7 @@ $client = New-HttpClient
 $server = $null
 $server2 = $null
 $fatal = $null
-$sessionCookie = $null
+$sessionToken = $null
 $csrf = $null
 $bootstrap1 = New-RandomToken
 $SecretsForLeakCheck.Add($bootstrap1) | Out-Null
@@ -273,7 +295,7 @@ try {
     }
 
     $unauth = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected"
-    Add-Check 'SESSION_REQUIRED' ($unauth.Status -eq 401) 'Protected route rejects a request without a session.' @{ Status = $unauth.Status }
+    Add-Check 'SESSION_REQUIRED' ($unauth.Status -eq 401) 'Protected route rejects a request without an explicit session header.' @{ Status = $unauth.Status }
 
     $forgedHost = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/health" -Headers @{ Host = "evil.example:$Port" }
     Add-Check 'HOST_REJECTED' ($forgedHost.Status -eq 400) 'Unexpected Host header is rejected.' @{ Status = $forgedHost.Status }
@@ -283,15 +305,13 @@ try {
         'X-SISQUAL-Bootstrap' = $bootstrap1
     }
     $bootstrapJson = $bootstrap.Body | ConvertFrom-Json
+    $sessionToken = [string]$bootstrapJson.session
     $csrf = [string]$bootstrapJson.csrf
+    $SecretsForLeakCheck.Add($sessionToken) | Out-Null
     $SecretsForLeakCheck.Add($csrf) | Out-Null
-    $setCookie = [string]$bootstrap.Headers['Set-Cookie']
-    $sessionCookie = ($setCookie -split ';')[0]
-    if ($sessionCookie -match '=(.+)$') { $SecretsForLeakCheck.Add($Matches[1]) | Out-Null }
-    Add-Check 'BOOTSTRAP_ACCEPTED' ($bootstrap.Status -eq 200 -and -not [string]::IsNullOrWhiteSpace($csrf) -and $sessionCookie -like 'SISQUAL-SESSION=*') 'One-time bootstrap creates an in-memory session and CSRF token.' @{ Status = $bootstrap.Status }
-    Add-Check 'COOKIE_HTTPONLY' ($setCookie -match '(?i)(^|;\s*)HttpOnly($|;)') 'Session cookie is HttpOnly.' $null
-    Add-Check 'COOKIE_SAMESITE_STRICT' ($setCookie -match '(?i)SameSite=Strict') 'Session cookie explicitly uses SameSite=Strict.' $null
-    Add-Check 'COOKIE_PATH_ROOT' ($setCookie -match '(?i)Path=/') 'Session cookie is scoped to the application root.' $null
+    $hasSessionCookie = $bootstrap.Headers.Contains('Set-Cookie')
+    Add-Check 'BOOTSTRAP_ACCEPTED' ($bootstrap.Status -eq 200 -and -not [string]::IsNullOrWhiteSpace($sessionToken) -and -not [string]::IsNullOrWhiteSpace($csrf)) 'One-time bootstrap returns explicit in-memory session and CSRF credentials.' @{ Status = $bootstrap.Status }
+    Add-Check 'NO_SESSION_COOKIE' (-not $hasSessionCookie) 'Bootstrap does not create an ambient browser cookie that can cross loopback ports.' @{ SetCookiePresent = $hasSessionCookie }
 
     $replay = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/bootstrap" -Headers @{
         Origin = $canonicalOrigin
@@ -299,40 +319,47 @@ try {
     }
     Add-Check 'BOOTSTRAP_SINGLE_USE' ($replay.Status -eq 403) 'Consumed bootstrap token cannot be replayed.' @{ Status = $replay.Status }
 
-    $validRead = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{ Cookie = $sessionCookie }
-    Add-Check 'SESSION_ACCEPTED' ($validRead.Status -eq 200) 'Valid session cookie reaches a protected route.' @{ Status = $validRead.Status }
+    $wrongSession = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{
+        'X-SISQUAL-Session' = (New-RandomToken)
+    }
+    Add-Check 'WRONG_SESSION_REJECTED' ($wrongSession.Status -eq 401) 'An incorrect explicit session credential is rejected.' @{ Status = $wrongSession.Status }
+
+    $validRead = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{
+        'X-SISQUAL-Session' = $sessionToken
+    }
+    Add-Check 'SESSION_ACCEPTED' ($validRead.Status -eq 200) 'Valid explicit session header reaches a protected route.' @{ Status = $validRead.Status }
 
     $foreignOrigin = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/mutate" -Headers @{
-        Cookie = $sessionCookie
+        'X-SISQUAL-Session' = $sessionToken
         Origin = 'https://attacker.invalid'
         'X-SISQUAL-CSRF' = $csrf
     }
     Add-Check 'ORIGIN_REJECTED' ($foreignOrigin.Status -eq 403) 'State-changing request from a foreign Origin is rejected.' @{ Status = $foreignOrigin.Status }
 
     $missingCsrf = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/mutate" -Headers @{
-        Cookie = $sessionCookie
+        'X-SISQUAL-Session' = $sessionToken
         Origin = $canonicalOrigin
     }
     Add-Check 'CSRF_REQUIRED' ($missingCsrf.Status -eq 403) 'State-changing request without CSRF token is rejected.' @{ Status = $missingCsrf.Status }
 
     $wrongCsrf = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/mutate" -Headers @{
-        Cookie = $sessionCookie
+        'X-SISQUAL-Session' = $sessionToken
         Origin = $canonicalOrigin
         'X-SISQUAL-CSRF' = (New-RandomToken)
     }
     Add-Check 'CSRF_WRONG_REJECTED' ($wrongCsrf.Status -eq 403) 'Wrong CSRF token is rejected.' @{ Status = $wrongCsrf.Status }
 
     $validMutation = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/mutate" -Headers @{
-        Cookie = $sessionCookie
+        'X-SISQUAL-Session' = $sessionToken
         Origin = $canonicalOrigin
         'X-SISQUAL-CSRF' = $csrf
     }
-    Add-Check 'MUTATION_ACCEPTED' ($validMutation.Status -eq 200) 'Valid same-origin session plus CSRF token reaches the mutation route.' @{ Status = $validMutation.Status }
+    Add-Check 'MUTATION_ACCEPTED' ($validMutation.Status -eq 200) 'Valid same-origin explicit session plus CSRF token reaches the mutation route.' @{ Status = $validMutation.Status }
 
     $preflight = Invoke-ProbeRequest -Client $client -Method 'OPTIONS' -Uri "$baseUri/api/mutate" -Headers @{
         Origin = 'https://attacker.invalid'
         'Access-Control-Request-Method' = 'POST'
-        'Access-Control-Request-Headers' = 'X-SISQUAL-CSRF'
+        'Access-Control-Request-Headers' = 'X-SISQUAL-Session, X-SISQUAL-CSRF'
     }
     $hasAcao = $preflight.Headers.Contains('Access-Control-Allow-Origin')
     Add-Check 'CORS_PREFLIGHT_DENIED' ($preflight.Status -eq 403 -and -not $hasAcao) 'Foreign CORS preflight is denied and no Access-Control-Allow-Origin header is emitted.' @{ Status = $preflight.Status; AccessControlAllowOriginPresent = $hasAcao }
@@ -363,7 +390,9 @@ try {
     Add-Check 'SERVER_RESTARTED' $ready2 'A fresh process starts on the same loopback endpoint.' @{ Port = $Port }
     if (-not $ready2) { throw 'Restarted probe server did not become ready.' }
 
-    $oldSessionAfterRestart = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{ Cookie = $sessionCookie }
+    $oldSessionAfterRestart = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{
+        'X-SISQUAL-Session' = $sessionToken
+    }
     Add-Check 'SESSION_INVALID_AFTER_RESTART' ($oldSessionAfterRestart.Status -eq 401) 'In-memory session from the previous process is invalid after restart.' @{ Status = $oldSessionAfterRestart.Status }
 
     $bootstrapAgain = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/bootstrap" -Headers @{
@@ -371,21 +400,21 @@ try {
         'X-SISQUAL-Bootstrap' = $bootstrap2
     }
     $bootstrapAgainJson = $bootstrapAgain.Body | ConvertFrom-Json
+    $sessionToken2 = [string]$bootstrapAgainJson.session
     $csrf2 = [string]$bootstrapAgainJson.csrf
-    $setCookie2 = [string]$bootstrapAgain.Headers['Set-Cookie']
-    $sessionCookie2 = ($setCookie2 -split ';')[0]
+    $SecretsForLeakCheck.Add($sessionToken2) | Out-Null
     $SecretsForLeakCheck.Add($csrf2) | Out-Null
-    if ($sessionCookie2 -match '=(.+)$') { $SecretsForLeakCheck.Add($Matches[1]) | Out-Null }
 
     $logout = Invoke-ProbeRequest -Client $client -Method 'POST' -Uri "$baseUri/api/logout" -Headers @{
-        Cookie = $sessionCookie2
+        'X-SISQUAL-Session' = $sessionToken2
         Origin = $canonicalOrigin
         'X-SISQUAL-CSRF' = $csrf2
     }
-    $logoutCookie = [string]$logout.Headers['Set-Cookie']
-    Add-Check 'LOGOUT_INVALIDATES' ($logout.Status -eq 204 -and $logoutCookie -match '(?i)Max-Age=0') 'Logout clears in-memory session state and expires the browser cookie.' @{ Status = $logout.Status }
+    Add-Check 'LOGOUT_INVALIDATES' ($logout.Status -eq 204) 'Logout clears the in-memory session.' @{ Status = $logout.Status }
 
-    $afterLogout = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{ Cookie = $sessionCookie2 }
+    $afterLogout = Invoke-ProbeRequest -Client $client -Method 'GET' -Uri "$baseUri/api/protected" -Headers @{
+        'X-SISQUAL-Session' = $sessionToken2
+    }
     Add-Check 'SESSION_INVALID_AFTER_LOGOUT' ($afterLogout.Status -eq 401) 'Logged-out session cannot be reused.' @{ Status = $afterLogout.Status }
 }
 catch {
@@ -397,22 +426,37 @@ finally {
     $client.Dispose()
 
     $logText = ''
-    foreach ($file in Get-ChildItem -LiteralPath $TempRoot -Filter 'server-*.txt' -File -ErrorAction SilentlyContinue) {
-        $logText += (Get-Content -LiteralPath $file.FullName -Raw -ErrorAction SilentlyContinue)
+    $captureFiles = @(Get-ChildItem -LiteralPath $TempRoot -Filter 'server-*.txt' -File -ErrorAction SilentlyContinue)
+    if ($captureFiles.Count -ne 4) {
+        $CaptureErrors.Add(('Expected 4 server output files but found ' + $captureFiles.Count + '.')) | Out-Null
     }
 
-    $leaked = $false
-    foreach ($secret in $SecretsForLeakCheck) {
-        if (-not [string]::IsNullOrEmpty($secret) -and $logText.Contains($secret, [StringComparison]::Ordinal)) {
-            $leaked = $true
-            break
+    foreach ($file in $captureFiles) {
+        try {
+            $logText += (Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop)
+        }
+        catch {
+            $CaptureErrors.Add(('Could not read captured server output: ' + $_.Exception.GetType().FullName)) | Out-Null
         }
     }
-    Add-Check 'NO_TOKEN_LOG_LEAK' (-not $leaked) 'Bootstrap, session and CSRF token values are absent from captured server stdout/stderr.' $null
+
+    $captureComplete = ($CaptureErrors.Count -eq 0)
+    Add-Check 'OUTPUT_CAPTURE_COMPLETE' $captureComplete 'All stdout/stderr streams from both probe server processes were captured and readable.' @{ ErrorCount = $CaptureErrors.Count; FileCount = $captureFiles.Count }
+
+    $leaked = $false
+    if ($captureComplete) {
+        foreach ($secret in $SecretsForLeakCheck) {
+            if (-not [string]::IsNullOrEmpty($secret) -and $logText.Contains($secret, [StringComparison]::Ordinal)) {
+                $leaked = $true
+                break
+            }
+        }
+    }
+    Add-Check 'NO_TOKEN_LOG_LEAK' ($captureComplete -and -not $leaked) 'Bootstrap, session and CSRF token values are absent from completely captured server stdout/stderr.' $null
 
     $failed = @($Results | Where-Object Status -eq 'FAIL')
     $report = [pscustomobject][ordered]@{
-        Schema = 'SISQUAL_PHASE1C_LOCAL_WEB_SECURITY_V1'
+        Schema = 'SISQUAL_PHASE1C_LOCAL_WEB_SECURITY_V2'
         StartedOn = $env:COMPUTERNAME
         PowerShell = $PSVersionTable.PSVersion.ToString()
         PodeModule = $PodeModulePath
