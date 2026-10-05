@@ -138,12 +138,12 @@ try {
     $parallelDone = Wait-OperationTerminal -Coordinator $coordinator -OperationId $parallel.OperationId
     Add-Check 'PARALLEL_OPERATIONS_COMPLETE' ($firstDone.Status -eq 'SUCCEEDED' -and $parallelDone.Status -eq 'SUCCEEDED') 'Concurrent non-conflicting operations both complete successfully.' @{ First = $firstDone.Status; Second = $parallelDone.Status }
 
-    $markerALines = Get-MarkerLines $markerA
+    $markerALines = @(Get-MarkerLines $markerA)
     Add-Check 'DUPLICATE_EXECUTES_ONCE' ($markerALines.Count -eq 1 -and $markerALines[0] -eq $first.OperationId) 'Duplicate request did not execute the worker twice.' @{ MarkerCount = $markerALines.Count }
 
     $afterCompleteReplay = Start-SisqualOperation -Coordinator $coordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'A' -PlanFingerprint $planA -IdempotencyKey $keyA -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = $markerA; CheckCancellation = $true })
     Start-Sleep -Milliseconds 100
-    $markerALines2 = Get-MarkerLines $markerA
+    $markerALines2 = @(Get-MarkerLines $markerA)
     Add-Check 'REPLAY_AFTER_COMPLETE_REUSES_RESULT' ($afterCompleteReplay.Accepted -and $afterCompleteReplay.Reused -and $afterCompleteReplay.OperationId -eq $first.OperationId -and $markerALines2.Count -eq 1) 'Idempotent replay after completion returns the original operation and does not mutate again.' @{ MarkerCount = $markerALines2.Count }
 
     $postLockMarker = Join-Path $tempRoot 'marker-post-lock.txt'
@@ -169,7 +169,7 @@ try {
     $cancelDone = Wait-OperationTerminal -Coordinator $cancelCoordinator -OperationId $cancelOp.OperationId -TimeoutMilliseconds 3000
     Add-Check 'EXPLICIT_CANCEL_ACCEPTED' ($cancelRequest.Accepted -and $cancelRequest.Reason -eq 'CANCELLATION_REQUESTED') 'Explicit cooperative cancellation request is accepted.'
     Add-Check 'COOPERATIVE_CANCEL_TERMINATES' ($cancelDone.Status -eq 'CANCELLED' -and $cancelDone.CancellationRequested) 'Cooperative worker reaches CANCELLED terminal state.' @{ Status = $cancelDone.Status }
-    Add-Check 'CANCEL_BEFORE_MUTATION' ((Get-MarkerLines $cancelMarker).Count -eq 0) 'Cancelled worker did not reach its simulated mutation marker.'
+    Add-Check 'CANCEL_BEFORE_MUTATION' (@(Get-MarkerLines $cancelMarker).Count -eq 0) 'Cancelled worker did not reach its simulated mutation marker.'
     Close-SisqualOperationCoordinator -Coordinator $cancelCoordinator
 
     $shutdownCoordinator = New-SisqualOperationCoordinator
@@ -180,7 +180,7 @@ try {
     $shutdown = Request-SisqualCoordinatorShutdown -Coordinator $shutdownCoordinator -WaitMilliseconds 3000 -CancelCooperativeOperations
     $shutdownDone = Get-SisqualOperation -Coordinator $shutdownCoordinator -OperationId $shutdownOp.OperationId
     Add-Check 'SHUTDOWN_CANCELS_COOPERATIVE' ($shutdown.ReadyToExit -and $shutdownDone.Status -eq 'CANCELLED') 'Controlled shutdown cancels cooperative active operation and drains before exit.' @{ Status = $shutdownDone.Status }
-    Add-Check 'SHUTDOWN_CANCEL_NO_MUTATION' ((Get-MarkerLines $shutdownMarker).Count -eq 0) 'Shutdown-cancelled operation did not reach simulated mutation marker.'
+    Add-Check 'SHUTDOWN_CANCEL_NO_MUTATION' (@(Get-MarkerLines $shutdownMarker).Count -eq 0) 'Shutdown-cancelled operation did not reach simulated mutation marker.'
     $rejectedAfterShutdown = Start-SisqualOperation -Coordinator $shutdownCoordinator -EngineCode 'TEST_ENGINE' -InstanceCode 'E' -PlanFingerprint $planB -IdempotencyKey (New-IdempotencyKey) -CancellationMode COOPERATIVE -WorkerScript $worker -WorkerArgument ([pscustomobject]@{ DurationMs = 50; MarkerPath = ''; CheckCancellation = $true })
     Add-Check 'SHUTDOWN_STOPS_ADMISSION' (-not $rejectedAfterShutdown.Accepted -and $rejectedAfterShutdown.Reason -eq 'SHUTTING_DOWN') 'Once shutdown begins, new operations are rejected.' @{ Reason = $rejectedAfterShutdown.Reason }
     Close-SisqualOperationCoordinator -Coordinator $shutdownCoordinator
@@ -208,7 +208,7 @@ try {
     $blockingDone = Wait-OperationTerminal -Coordinator $blockingCoordinator -OperationId $blockingOp.OperationId -TimeoutMilliseconds 3000
     $drainedShutdown = Request-SisqualCoordinatorShutdown -Coordinator $blockingCoordinator -WaitMilliseconds 500
     Add-Check 'SHUTDOWN_READY_AFTER_DRAIN' ($blockingDone.Status -eq 'SUCCEEDED' -and $drainedShutdown.ReadyToExit) 'Shutdown becomes ready only after the non-cancellable operation reaches a terminal state.' @{ Status = $blockingDone.Status }
-    Add-Check 'NONCANCELLABLE_OPERATION_NOT_KILLED' ((Get-MarkerLines $blockingMarker).Count -eq 1) 'Non-cancellable worker completed its simulated mutation instead of being force-killed.'
+    Add-Check 'NONCANCELLABLE_OPERATION_NOT_KILLED' (@(Get-MarkerLines $blockingMarker).Count -eq 1) 'Non-cancellable worker completed its simulated mutation instead of being force-killed.'
     Close-SisqualOperationCoordinator -Coordinator $blockingCoordinator
 
     $snapshot = Get-SisqualOperation -Coordinator $coordinator -OperationId $first.OperationId
