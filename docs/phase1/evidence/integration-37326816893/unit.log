@@ -1,0 +1,125 @@
+?
+=== Test-ConvertManagementDb.ps1?
+PASS  schema: columns, identity and composite key are read?
+PASS  rows: only the whitelisted tables are read?
+PASS  rows: a string that looks like an INSERT is skipped, not parsed?
+PASS  rows: bit, long and bytes get native types?
+PASS  rows: quotes and non-ASCII text are unescaped?
+PASS  catalog and manifest are written, no temp files left?
+PASS  integrity check and user_version?
+PASS  catalog_meta has the one expected row?
+PASS  all tables are STRICT?
+PASS  global rows are copied (4 rules, 1 asset, 1 engine, 2 resources)?
+PASS  cut tables are empty; only the new ManagedServer row exists?
+PASS  the old server row of the source is not copied?
+PASS  secret, script, rowversion and ManagementDatabaseName columns do not exist?
+PASS  the history trap row never appears?
+PASS  marker value is not in the catalog file: MARKERA?
+PASS  marker value is not in the manifest: MARKERA?
+PASS  marker value is not in the catalog file: MARKERB?
+PASS  marker value is not in the manifest: MARKERB?
+PASS  marker value is not in the catalog file: MARKERC?
+PASS  marker value is not in the manifest: MARKERC?
+PASS  a whole-value secret becomes a reference token?
+PASS  a label=value secret keeps its label?
+PASS  placeholder and non-sensitive templates are unchanged?
+PASS  redaction is reported by rule code, count 2?
+PASS  a secret-like literal outside the rule tables stops the run?
+PASS  nothing is written when the safety net stops the run?
+PASS  multi-line text keeps CRLF, lone LF, lone CR and tab byte for byte?
+PASS  the stored multi-line value is still TEXT?
+PASS  a normal value with quotes is stored without hex casting and unchanged?
+PASS  text case is never changed (mixed-case code stored as given)?
+PASS  datetime2 keeps its value, with T and no zone?
+PASS  identity value is kept; bit is 0 or 1; char column holds text?
+PASS  BLOB is a real blob that hashes to its stored SHA-256?
+PASS  non-ASCII text is stored as UTF-8?
+PASS  by default code columns compare exactly (no folding)?
+PASS  a bit CHECK rejects other values?
+PASS  with -CodeCollation NoCase the same lookup folds ASCII case?
+PASS  with NoCase the stored text is still exactly as given?
+PASS  manifest is ASCII and LF?
+PASS  manifest SHA-256 and size match the file?
+PASS  manifest lists redacted rule codes, empty-policy findings and excluded columns?
+PASS  manifest row counts match?
+PASS  no collation finding when every code is ASCII?
+PASS  a non-ASCII code value is reported as a finding (count only, no value)?
+PASS  an existing ServerCode is refused (cut mode is B3)?
+PASS  an invalid ServerCode is refused?
+PASS  a missing sqlite3 is refused?
+PASS  a whitelisted table missing from the source is an error?
+  SRV_A: 2 instance(s), 94208 bytes?
+  SRV_B: 2 instance(s), 94208 bytes?
+  SRV_C: 0 instance(s), 94208 bytes?
+PASS  cut ALL writes one catalog per server and one manifest?
+PASS  machine A: its server, 2 instances, its policy, 2 profile links, its pulse hub and its windows group (name match ignores case)?
+PASS  machine B: 2 instances (one matched only by ignoring case), 1 policy, 2 profile links, no pulse, no windows group?
+PASS  machine C: only its server row; every cut table is empty?
+PASS  each of the 4 instances appears in exactly one catalog?
+PASS  global tables are identical in every catalog?
+PASS  stored text is unchanged: the case-only match keeps its own spelling?
+PASS  manifest: mode cut and completeness says each instance is in exactly one catalog?
+PASS  manifest: completeness counts add up for every cut table?
+PASS  manifest: rows that belong to no machine are reported with their codes and not carried?
+PASS  manifest: the case-only match is a finding for the machine that needed it?
+PASS  manifest: a machine without a policy row gets a finding for it?
+PASS  no marker value in any catalog or in the manifest (secret columns are not carried)?
+PASS  the original server rows were not modified in the source (ManagementDatabaseName still there)?
+  SRV_A: 2 instance(s), 94208 bytes?
+PASS  a subset (code given in other case) builds only that machine, named with the code as stored?
+PASS  an unknown ServerCode in cut mode is refused?
+PASS  ALL cannot be mixed with codes?
+PASS  an instance whose server is not in the source is an error (it would belong to no catalog)?
+PASS  nothing is written when the cut stops on an error?
+PASS  two instances that differ only by case are refused?
+PASS  a MachineName shared by two servers is refused (the cut would be ambiguous)?
+PASS  a secret-like literal in a cut table stops the run?
+70 passed, 0 failed?
+=== Test-ExportManagementEngines.ps1?
+PASS  parses exactly the two ops.Engine rows?
+PASS  quotes are unescaped?
+PASS  metadata is read?
+PASS  stored hash equals UTF-16LE hash?
+PASS  export reports 2 engines and 0 mismatches?
+PASS  file is UTF-8 without BOM and keeps CRLF?
+PASS  manifest is ASCII and LF?
+PASS  manifest records CRLF and the non-ASCII character?
+PASS  literal password values are counted?
+PASS  a type cast is not a hit?
+PASS  a placeholder is not a hit?
+PASS  the marker value never reaches the manifest?
+PASS  a hash mismatch stops the export?
+PASS  the mismatching file is not written?
+PASS  the mismatch is recorded in the manifest?
+PASS  an output folder inside the repository is refused?
+PASS  the refused folder was not created?
+PASS  a path in SourceFileName is refused?
+PASS  the engine filter exports only the selected engine?
+PASS  an unknown engine code is an error?
+PASS  two engines with the same file name are refused?
+21 passed, 0 failed?
+=== Test-SqlStrictness.ps1?
+PASS  the heuristic flags a double-quoted separator and accepts a single-quoted one?
+PASS  no SQL text with a double-quoted separator in 8 files?
+2 passed, 0 failed?
+=== Test-TestCatalogConversion.ps1?
+PASS  intact cut catalogs: no check fails?
+PASS  intact cut catalogs: all eight groups ran?
+PASS  intact cut catalogs: the stored hash of the multi-line template matches in every catalog?
+PASS  intact new-machine catalog: no check fails?
+PASS  one text cell changed by a single letter case: values and manifest fail, and the table and key are named?
+PASS  CRLF turned into LF in a multi-line text: caught by values and by the stored hash?
+PASS  a row missing in a catalog: values fail with the count?
+PASS  an instance of another machine copied into a catalog: cut checks fail (in two catalogs, foreign row)?
+PASS  a secret column added to a catalog: exclusions fail?
+PASS  a table of the secret schema added: exclusions fail?
+PASS  the original secret put back in a rule: secrets fail (needle found), values fail (not a reference token)?
+PASS  a secret-like literal planted in a text cell: the pattern scan fails?
+PASS  a code whose case was changed: values fail (stored case is compared exactly)?
+PASS  a wrong SHA-256 in the manifest: manifest fails?
+PASS  an unlisted catalog file next to the others: manifest fails?
+PASS  a global table changed in one catalog only: global and values fail?
+PASS  a missing manifest: the tool fails instead of passing?
+PASS  the planted value is never printed (output carries names, keys and counts only)?
+PASS  the in-memory source rows are unchanged after all runs?
+19 passed, 0 failed?
