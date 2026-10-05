@@ -499,7 +499,7 @@ try {
 
         # 2b. Cut mode against SQL Server: every catalog must equal the one built from the file ---
         $outCutSql = Join-Path $work 'cut-sql'
-        $rCutSql = Invoke-Tool $convertTool (@($sqlArgs) + @('-OutputFolder', $outCutSql))
+        $rCutSql = Invoke-Tool $convertTool (@($sqlArgs) + @('-OutputFolder', $outCutSql, '-Sqlite3Path', $Sqlite3Path))
         Assert-That 'cut, sql: conversion of all machines succeeds' ($rCutSql.ExitCode -eq 0) $rCutSql.Output.Substring(0, [Math]::Min(900, $rCutSql.Output.Length))
         if ($rCutSql.ExitCode -eq 0) {
             $cutManifestSql = [System.IO.File]::ReadAllText((Join-Path $outCutSql 'conversion-manifest.json')) | ConvertFrom-Json
