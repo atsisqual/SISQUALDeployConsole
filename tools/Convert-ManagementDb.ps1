@@ -52,7 +52,11 @@ param(
     [string]$ConfigBackupRoot,
 
     [string]$SourceReference = '',
-    [switch]$NoCodeCollation
+
+    # Binary (default) compares text exactly, like SQLite does by default. NoCase declares every
+    # text column whose name ends in Code as COLLATE NOCASE (ASCII folding only).
+    [ValidateSet('Binary', 'NoCase')]
+    [string]$CodeCollation = 'Binary'
 )
 
 Set-StrictMode -Version Latest
@@ -451,7 +455,7 @@ function Test-NoSecretLiterals {
 function Get-SqliteTableName { param([string]$Table) return $Table.Replace('.', '_') }
 
 function Get-NonAsciiCodeFindings {
-    # SQL Server collation Latin1_General_CI_AS (owner, 2026-10-05) is case-insensitive for all of Latin1.
+    # Only relevant with -CodeCollation NoCase. SQL Server Latin1_General_CI_AS folds all of Latin1;
     # SQLite NOCASE folds ASCII letters only. They agree while every *Code value is ASCII, so a
     # non-ASCII value in a NOCASE column is reported (counts only, never values).
     param([hashtable]$Schema, [hashtable]$Rows, [bool]$UseCodeCollation)
@@ -529,6 +533,13 @@ function ConvertTo-SqliteLiteral {
         '^(datetime2|datetime|smalldatetime)$' { $s = $s.Replace(' ', 'T') }
         '^uniqueidentifier$' { $s = $s.ToLowerInvariant() }
         '^(char|nchar)$' { $s = $s.TrimEnd(' ') }
+    }
+    # The sqlite3 shell removes the CR of every CRLF it reads, even inside a quoted literal, and a
+    # NUL cannot be written in one. Any text with a control character is therefore written as the
+    # hex of its UTF-8 bytes and cast back to TEXT, so the stored value is byte-exact.
+    if ([regex]::IsMatch($s, '[\u0000-\u001F\u007F]')) {
+        $utf8Bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($s)
+        return "CAST(X'" + [Convert]::ToHexString($utf8Bytes) + "' AS TEXT)"
     }
     return "'" + $s.Replace("'", "''") + "'"
 }
@@ -658,7 +669,7 @@ function Invoke-NewMachineConversion {
         [Parameter(Mandatory)][string]$Services,
         [Parameter(Mandatory)][string]$BackupRoot,
         [string]$SourceRef,
-        [bool]$UseCodeCollation = $true
+        [bool]$UseCodeCollation = $false
     )
     if ($Code -notmatch '^[A-Za-z0-9_-]{1,30}$') { throw 'ServerCode must be 1 to 30 characters from A-Z, a-z, 0-9, underscore and hyphen.' }
     if ($Machine.Length -lt 1 -or $Machine.Length -gt 128) { throw 'MachineName must be 1 to 128 characters.' }
@@ -765,7 +776,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         $source = Read-SqlServerSource -Instance $SqlInstance -DatabaseName $Database -ClientPath $SqlClientPath -Tables $tables
         $info = @{ kind = 'sql-server'; instance = $SqlInstance; database = $Database; readOnly = $true }
     }
-    $result = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Code $ServerCode -Machine $MachineName -Services $ServicesRoot -BackupRoot $ConfigBackupRoot -SourceRef $SourceReference -UseCodeCollation (-not $NoCodeCollation)
+    $result = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $OutputFolder -Sqlite3 $Sqlite3Path -Code $ServerCode -Machine $MachineName -Services $ServicesRoot -BackupRoot $ConfigBackupRoot -SourceRef $SourceReference -UseCodeCollation ($CodeCollation -eq 'NoCase')
     Write-Host ('Catalog: {0}' -f $result.Catalog)
     Write-Host ('Manifest: {0}' -f $result.Manifest)
     Write-Host ('Redacted rule templates: {0}' -f $result.Redacted)

@@ -107,6 +107,8 @@ $data += New-Insert 'dbo' 'ManagedServer' @('ServerCode', 'MachineName', 'Servic
 $data += New-Insert 'dbo' 'ManagedInstance' @('InstanceCode', 'ServerCode', 'IisIdentityPassword', 'WebAccessPassword', 'MobileAppToken', 'Notes') "N'INST1', N'OLD_SRV', N'$markerC', N'$markerC', N'$markerC', NULL"
 $data += New-Insert 'cfg' 'IisServerPolicy' @('ServerCode', 'ReconcileMode') "N'OLD_SRV', N'CREATE_AND_CORRECT'"
 $data += New-Insert 'ui' 'Resource' @('ResourceCode', 'CultureCode', 'ResourceValue') "N'HELLO', N'pt-PT', N'Ol${eAcute} it''s fine'"
+$multi = 'line1' + "`r`n" + 'line2' + "`n" + 'line3' + "`r" + 'line4' + "`t" + 'tab ' + $eAcute + " 'q' " + "`r`n" + 'end' + "`r`n"
+$data += New-Insert 'ui' 'Resource' @('ResourceCode', 'CultureCode', 'ResourceValue') ("N'MULTI', N'xx-XX', N'" + $multi.Replace("'", "''") + "'")
 # A history table with a statement that looks like another INSERT inside a string (must be skipped, not parsed).
 $data += New-Insert 'app' 'Job' @('JobID', 'ResultMessage') "1, N'line one${nl}INSERT INTO [cfg].[ConfigRule] ([RuleCode]) VALUES (N''TRAP'');${nl}end'"
 $fixture = '/* header */' + $nl + $ddl + $data
@@ -146,7 +148,7 @@ try {
     Assert-That 'all tables are STRICT' ((Invoke-Query $db "SELECT count(*) FROM pragma_table_list WHERE schema='main' AND strict=0 AND name NOT LIKE 'sqlite_%';") -eq '0')
 
     # 3. What does and does not enter ---------------------------------------------
-    Assert-That 'global rows are copied (4 rules, 1 asset, 1 engine, 1 resource)' ((Invoke-Query $db 'SELECT (SELECT count(*) FROM cfg_ConfigRule), (SELECT count(*) FROM cfg_LinksPageAsset), (SELECT count(*) FROM ops_Engine), (SELECT count(*) FROM ui_Resource);') -eq '4|1|1|1')
+    Assert-That 'global rows are copied (4 rules, 1 asset, 1 engine, 2 resources)' ((Invoke-Query $db 'SELECT (SELECT count(*) FROM cfg_ConfigRule), (SELECT count(*) FROM cfg_LinksPageAsset), (SELECT count(*) FROM ops_Engine), (SELECT count(*) FROM ui_Resource);') -eq '4|1|1|2')
     Assert-That 'cut tables are empty; only the new ManagedServer row exists' ((Invoke-Query $db 'SELECT (SELECT count(*) FROM dbo_ManagedInstance), (SELECT count(*) FROM cfg_IisServerPolicy), (SELECT count(*) FROM dbo_ManagedServer), (SELECT ServerCode || MachineName FROM dbo_ManagedServer);') -eq '0|0|1|NEW_SRVNEW-HOST')
     Assert-That 'the old server row of the source is not copied' ((Invoke-Query $db "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'OLD_SRV';") -eq '0')
     $columns = Invoke-Query $db "SELECT group_concat(m.name || '.' || p.name) FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type='table';"
@@ -169,15 +171,23 @@ try {
     Assert-Throws 'a secret-like literal outside the rule tables stops the run' { Invoke-NewMachineConversion -Source $leak -SourceInfo $info -Folder (Join-Path $work 'leak') -Sqlite3 $sqlite3 -Code 'X1' -Machine 'H' -Services 'S' -BackupRoot 'B' } '*Safety net*'
     Assert-That 'nothing is written when the safety net stops the run' (-not (Test-Path (Join-Path $work 'leak' 'catalog-X1.db')))
 
+    # 4b. Text is byte-exact (owner: nothing about case or line endings may change) ------------
+    $expectedHex = [Convert]::ToHexString([System.Text.UTF8Encoding]::new($false).GetBytes($multi))
+    Assert-That 'multi-line text keeps CRLF, lone LF, lone CR and tab byte for byte' ((Invoke-Query $db "SELECT hex(ResourceValue) FROM ui_Resource WHERE ResourceCode = 'MULTI';") -eq $expectedHex)
+    Assert-That 'the stored multi-line value is still TEXT' ((Invoke-Query $db "SELECT typeof(ResourceValue) FROM ui_Resource WHERE ResourceCode = 'MULTI';") -eq 'text')
+    Assert-That 'a normal value with quotes is stored without hex casting and unchanged' ((Invoke-Query $db "SELECT ResourceValue FROM ui_Resource WHERE ResourceCode = 'HELLO';") -eq ('Ol' + $eAcute + " it's fine"))
+    Assert-That 'text case is never changed (mixed-case code stored as given)' ((Invoke-Query $db "SELECT ServerCode FROM dbo_ManagedServer;") -ceq 'NEW_SRV')
+
     # 5. Types and constraints -------------------------------------------------------
     Assert-That 'datetime2 keeps its value, with T and no zone' ((Invoke-Query $db "SELECT ModifiedAt FROM cfg_ConfigRule WHERE RuleID = 10;") -eq '2026-01-02T03:04:05.1234567')
     Assert-That 'identity value is kept; bit is 0 or 1; char column holds text' ((Invoke-Query $db "SELECT RuleID || '|' || IsSensitive || '|' || CountryCode FROM cfg_ConfigRule WHERE RuleID = 10;") -eq '10|0|PT')
     Assert-That 'BLOB is a real blob that hashes to its stored SHA-256' ((Invoke-Query $db "SELECT typeof(Content) || '|' || upper(hex(Content)) FROM cfg_LinksPageAsset;") -eq ('blob|' + [Convert]::ToHexString($blob)))
     Assert-That 'non-ASCII text is stored as UTF-8' ((Invoke-Query $db "SELECT hex(ResourceValue) FROM ui_Resource;") -match 'C3A9')
-    Assert-That 'code columns compare without case (NOCASE)' ((Invoke-Query $db "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'new_srv';") -eq '1')
+    Assert-That 'by default code columns compare exactly (no folding)' ((Invoke-Query $db "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'new_srv';") -eq '0')
     Assert-That 'a bit CHECK rejects other values' ((Invoke-Sqlite3 -Exe $sqlite3 -Arguments @($db, "SELECT sql FROM sqlite_master WHERE name = 'cfg_ConfigRule';")) -match 'CHECK \("IsSensitive" IN \(0, 1\)\)')
-    $r2 = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'binary') -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'x' -UseCodeCollation $false
-    Assert-That 'without NOCASE the same lookup is case-sensitive' ((Invoke-Query $r2.Catalog "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'new_srv';") -eq '0')
+    $r2 = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder (Join-Path $work 'nocase') -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'x' -UseCodeCollation $true
+    Assert-That 'with -CodeCollation NoCase the same lookup folds ASCII case' ((Invoke-Query $r2.Catalog "SELECT count(*) FROM dbo_ManagedServer WHERE ServerCode = 'new_srv';") -eq '1')
+    Assert-That 'with NoCase the stored text is still exactly as given' ((Invoke-Query $r2.Catalog "SELECT ServerCode FROM dbo_ManagedServer;") -ceq 'NEW_SRV')
 
     # 6. Manifest ----------------------------------------------------------------------
     $manifestRaw = [System.IO.File]::ReadAllBytes($r.Manifest)
@@ -192,7 +202,7 @@ try {
     # 8. Collation finding ---------------------------------------------------------------
     Assert-That 'no collation finding when every code is ASCII' (@($entry.findings | Where-Object { $_ -like '*non-ASCII*' }).Count -eq 0)
     $accent = New-Source -Text $fixture.Replace("N'PLAIN_RULE'", "N'PLAIN_R${eAcute}GLE'")
-    $r3 = Invoke-NewMachineConversion -Source $accent -SourceInfo $info -Folder (Join-Path $work 'accent') -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'x'
+    $r3 = Invoke-NewMachineConversion -Source $accent -SourceInfo $info -Folder (Join-Path $work 'accent') -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'x' -UseCodeCollation $true
     $m3 = ([System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($r3.Manifest)) | ConvertFrom-Json).catalogs[0]
     Assert-That 'a non-ASCII code value is reported as a finding (count only, no value)' (@($m3.findings | Where-Object { $_ -like 'cfg_ConfigRule.RuleCode: 1 value(s) contain non-ASCII*' }).Count -eq 1 -and -not ($m3 | ConvertTo-Json -Depth 8).Contains('PLAIN_R'))
 
