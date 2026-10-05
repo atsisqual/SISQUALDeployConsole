@@ -2,7 +2,7 @@
 
 **Status:** [CONFIRMED] approved by the owner on 2026-10-05 ("Sim"), including the answers below. Plan only in this PR: no code. Step B (one small PR per tool) starts after this approval.
 **Owner answers of 2026-10-05, second round ([CONFIRMED]): the SQL client is pinned with a Windows-runner workflow (spike PR, see section 5); `dbo.ManagedServer.ManagementDatabaseName` is dropped; collation is `Latin1_General_CI_AS` in every database.**
-**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16), the SQL client pin is PR #18, the LocalDB integration test of the SQL Server path is PR #19 (stacked on #17), B3 (cut mode for the six machines) is PR #20 (stacked on #19); B4 to B6 not started.**
+**Step B progress: B1 `Export-ManagementEngines` is PR #16, B2 `Convert-ManagementDb` (new-machine mode) is PR #17 (stacked on #16), the SQL client pin is PR #18, the LocalDB integration test of the SQL Server path is PR #19 (stacked on #17), B3 (cut mode for the six machines) is PR #20 (stacked on #19), B4 (`Test-CatalogConversion.ps1`) is PR #21 (stacked on #20); B5 and B6 not started.**
 **Approval and answers of 2026-10-05 (owner, [CONFIRMED]): the plan is approved; engines without a policy row STOP (no built-in defaults); the SQL client is `Microsoft.Data.SqlClient` (version and hash still to be pinned); all tools and their CI parsing use the latest PowerShell (7).** Earlier answers: (1) no template server for policy rows; (2) global images stay as BLOB in every catalog; (3) the tools run on PowerShell 7 with a SQL client shipped with them. Sections 2.5, 2.6, 5, 7 and 8 were changed accordingly.
 **Depends on:** ADR-0007 (proposed, PR #11), `contracts/` drafts (PR #13), owner decisions of 2026-10-05.
 **Does not change:** `docs/decisions-log.md`, `docs/roadmap.md` (the reviewer records decisions).
@@ -452,3 +452,13 @@ Findings in the real data:
 - [CONFIRMED] PRESALES and TENDERS carry empty policy tables, as decided in 2.6; each catalog records a finding.
 - [CONFIRMED] `cfg.Application.LinksHubInstanceCode` refers to `DEMOPT` (on PT_DEMO); the other five catalogs carry the value and a finding.
 - [V] The live database may differ from the 2026-10-05 snapshot.
+
+## 10. Result of step B4 (value-level verification, PR #21)
+
+[CONFIRMED] `tools/Test-CatalogConversion.ps1` verifies the catalogs against the source in eight groups (manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash). It is read-only, prints counts, table names and primary keys but never a cell value, and exits 1 when any check fails. On the real snapshot the six cut catalogs pass 88 checks in 57 s (about 19,000 cells compared per catalog) and the new-machine catalog passes 23. Four deliberate damages to a copy of the real catalogs (a name in upper case, CRLF turned into LF in two templates, one row deleted, a Keycloak password put back in a rule) produced 11 failing checks, each naming table and key and no value. 19 unit checks include 16 kinds of damage that must each be reported in the right group. CI run 37326816893: unit tests pass and the LocalDB integration test passes with 41 checks, running this tool on the file-built and on the SQL Server-built catalogs.
+
+Defects found by the tamper tests in the tool itself (fixed): putting the original secret back into a redacted rule was not reported by the values group; integer primary keys and missing rows printed no key; a missing manifest returned no result.
+
+Lesson, recorded for every future SQL in these tools [CONFIRMED by CI]: the Linux `sqlite3` accepts a double-quoted word that is not a column as a string (a legacy fallback); the pinned Windows `sqlite3` 3.53.4 does not ("no such column"). A separator written as `"|"` passed every Linux run and failed on Windows. Text values in SQL use single quotes only; double quotes are for identifiers. `tests/Unit/Test-SqlStrictness.ps1` now enforces the most common form of the mistake.
+
+The 5 hub links of section 9 are still [PENDING owner]. The data supports "obsolete" (the sandbox instances are now `SANDBOX1` to `SANDBOX5` and `SANDBOXMAIN`), but no confirmation by the owner was found, so it is not recorded as a decision.
