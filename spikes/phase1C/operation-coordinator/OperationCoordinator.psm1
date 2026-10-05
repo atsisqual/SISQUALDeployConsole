@@ -61,10 +61,7 @@ function Get-RequestFingerprint {
 }
 
 function New-OrdinalDictionary {
-    param([type]$ValueType = [object])
-
-    $generic = [System.Collections.Generic.Dictionary``2].MakeGenericType([string], $ValueType)
-    return [Activator]::CreateInstance($generic, [StringComparer]::Ordinal)
+    return [System.Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
 }
 
 function Invoke-WithCoordinatorLock {
@@ -192,7 +189,7 @@ function Start-SisqualOperation {
     )
 
     Update-SisqualOperationCoordinator -Coordinator $Coordinator
-    $canonicalLocks = Get-CanonicalLockKeys -InstanceCode $InstanceCode -LockKeys $LockKeys
+    $canonicalLocks = @(Get-CanonicalLockKeys -InstanceCode $InstanceCode -LockKeys $LockKeys)
     if ($canonicalLocks.Count -eq 0) {
         throw 'At least one instance or explicit lock key is required.'
     }
