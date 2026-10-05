@@ -187,3 +187,98 @@ Class: **Global** = identical in every catalog; **Cut** = only the rows of the m
 | `ui.PublishedEnvironmentLinkAudit` | 12 | Excluded | - | `AuditID` | audit history |
 | `ui.Resource` | 214 | Global | `ui_Resource` | `ResourceCode, CultureCode` | UI definitions |
 
+
+### 1.4 Views, procedures, functions and triggers
+
+None of these is converted: a catalog contains tables only. What each group means for the port [PROPOSED]:
+
+| Group | Count | Decision |
+|---|---:|---|
+| Views | 6 | `cfg.ManagedInstanceRuntime` decrypts passwords and tokens (see section 3), not converted; `app.HousekeepingStorageLatest` depends on an excluded table; the other four (`cfg.ApplicationCatalog`, `cfg.ExpectedValue`, `cfg.IisServiceAutoStartProviderCatalog`, `cfg.LinksPageInstanceApplicationCatalog`) are pure reads, to be recreated as SQLite views or as queries in the engines [PENDING] |
+| Procedures `cfg.*` | 42 | 17 `Get*Plan` procedures (for example `cfg.GetIisDeploymentPlan`, `cfg.GetIisServiceAutoStartProviderPlan`, `cfg.GetIisApplicationAutoStartPlan`, `cfg.GetWebAccessDeploymentPlan`, `cfg.GetRepairPlan`) and 13 `Review*` procedures are the read model of the engines and must be reimplemented as modules over the catalog tables during the engine ports; `cfg.GetLocalManagementContext` is replaced by `catalog_meta` |
+| Procedures `app.*` | 124 | queue, job, plan and worker logic of the old system; not needed (history and workflow are excluded) |
+| Procedures `ops.*`, `ui.*`, `dbo.*` | 28, 5, 1 | locks, schedules, approvals, audit: not needed in V1; `ui.GetNavigation` and `ui.GetResourceSet` are simple reads over carried tables |
+| Credential procedures | 6 | `app.SetManagedCredential`, `app.GetManagedCredentialRuntime`, `app.GetManagedCredentialCatalogue`, `app.GetManagedCredentialAudit`, `app.QueueManagedCredentialTest`, `cfg.SetManagedInstanceCredentials`: replaced by the credential tool and package |
+| Engine distribution | 2 | `ops.GetEngineScript` and `ops.UpsertEngine` are replaced by files (R-027) |
+| Functions | 5 | `cfg.ExpandTemplate` expands the `...Template` columns (paths, URLs, names) and must be ported into a PowerShell module with tests, because the catalog stores templates, not values; `cfg.NormalizeConnectionString`, `cfg.NormalizeValue`, `ui.ResolveResource` likewise; `ops.CalculateNextScheduleRun` belongs to schedules (excluded) |
+| Triggers | 5 | all on excluded tables; dropped |
+
+## 2. Cut rules per machine
+
+### 2.1 Keys
+
+[CONFIRMED] `dbo.ManagedServer.ServerCode` is the machine key (6 rows). Each instance belongs to exactly one server through `dbo.ManagedInstance.ServerCode` (primary key `InstanceCode`, one `ServerCode` per row), so every instance appears in exactly one catalog by construction. Instances per server: BR_DEMO 21, ES_DEMO 19, PT_DEMO 16, PRESALES 8, SANDBOX_HUB 6, TENDERS 6 (76 in total).
+
+### 2.2 Rules by class
+
+| Class | Tables | Rule |
+|---|---|---|
+| Global (51) | `cfg.*` definitions, rules and policies without a server key; `ops.Action`, `ActionRequirement`, `ActionStep`, `ActionUiMetadata`, `ConsoleProfile`, `MenuGroup`, `ReviewDefinition`, `ops.Engine` (metadata only); `sec.Policy`; `ui.NavigationItem`, `ui.Resource`; `app.*Policy`, `app.*Profile`, `app.Product`, `app.VersionBaseline` | copied in full; every catalog must hold the same logical content (tested, see 6) |
+| Cut by ServerCode (7) | `dbo.ManagedServer`, `cfg.IisServerPolicy`, `cfg.WebAccessPolicy`, `cfg.LinksPagePolicy`, `cfg.DatabaseCopyPolicy`, `cfg.PulseProfile`, `sec.WindowsGroupPolicy` | `ServerCode = :ServerCode`; `cfg.PulseProfile` by the `ServerCode` of its `HubInstanceCode`; `sec.WindowsGroupPolicy` by the `MachineName` of the server (0 rows today) |
+| Cut by InstanceCode (4) | `dbo.ManagedInstance`, `cfg.LinksPageInstanceApplication`, `cfg.LinksProfileInstance`, `ui.PublishedEnvironmentLink` | `InstanceCode IN (instances whose ServerCode = :ServerCode)` |
+| Scoped values | `cfg.SettingValue` (0 rows today) | would be cut by `ScopeType` and `ScopeCode`; rows with `IsEncrypted = 1` are never carried |
+
+### 2.3 Rows per machine (from the source file)
+
+[CONFIRMED] counts of cut rows:
+
+| Table | BR_DEMO | ES_DEMO | PT_DEMO | SANDBOX_HUB | PRESALES | TENDERS |
+|---|---:|---:|---:|---:|---:|---:|
+| `dbo.ManagedInstance` | 21 | 19 | 16 | 6 | 8 | 6 |
+| `ui.PublishedEnvironmentLink` | 21 | 18 | 16 | 0 | 0 | 0 |
+| `cfg.LinksProfileInstance` | 21 | 18 | 16 | 1 | 0 | 0 |
+| `cfg.LinksPageInstanceApplication` | 0 | 12 | 0 | 0 | 0 | 0 |
+| `cfg.IisServerPolicy`, `cfg.WebAccessPolicy`, `cfg.LinksPagePolicy`, `cfg.DatabaseCopyPolicy` (each) | 1 | 1 | 1 | 1 | 0 | 0 |
+| `cfg.PulseProfile` | 1 | 1 | 1 | 1 | 0 | 0 |
+
+`cfg.LinksProfileInstance` has 61 source rows: 56 match an existing instance (21 + 18 + 16 + 1) and 5 are orphans (see 2.4).
+
+### 2.4 Cross-machine references and data problems
+
+- [CONFIRMED] 5 rows of `cfg.LinksProfileInstance` reference instance codes that do not exist in `dbo.ManagedInstance`. [PROPOSED] they are dropped and written to the conversion report as findings, never silently.
+- [CONFIRMED] `cfg.Application.LinksHubInstanceCode` is NULL in 35 of 36 rows; the one value points to an instance of PT_DEMO. As a global table this value appears in every catalog. [PROPOSED] it is stored as a plain code without a foreign key; whether other machines need more data of that instance is [PENDING].
+- [CONFIRMED] Hub profiles: the 4 `cfg.PulseProfile` rows have their hub on BR_DEMO, ES_DEMO, PT_DEMO and SANDBOX_HUB. [PENDING] whether a machine's Pulse needs to know the hub of another machine.
+- [PENDING] The old database lets one machine's console plan operations between instances of different machines (database copy, environment clone, folder copy). The plans are excluded and V1 executes locally, but the owner must say whether a catalog needs a small directory of instances of OTHER machines for such operations.
+
+### 2.5 Binary content
+
+[CONFIRMED] `cfg.LinksPageAsset` holds 45 image rows (about 11.5 MB of INSERT text, 41 percent of the whole file); `cfg.PulseResource.BinaryContent` and `cfg.WebsiteBrandingAsset.BinaryContent` hold a few more; `dbo.ManagedInstance.CustomerLogo` is set on 62 of 76 instances (about 1 MB together).
+[PROPOSED] global binary assets are not stored in the catalogs (they would be duplicated in six files): the converter writes them as files under `assets/` in the package, the catalog keeps file name, mime type and SHA-256, and the package manifest lists each file. Per-instance logos stay as BLOB in the catalog of their machine. [PENDING] owner decision.
+
+### 2.6 Machines without policy rows, and new machines
+
+- [CONFIRMED] PRESALES and TENDERS exist in `dbo.ManagedServer` and have instances (8 and 6), but have NO rows in the four server policy tables, which exist only for BR_DEMO, ES_DEMO, PT_DEMO and SANDBOX_HUB. A plain cut would give these two machines empty policy tables, and engines that read `cfg.IisServerPolicy` (such as `IIS_RECONCILE`) would have nothing to apply. [PENDING] whether they get copies of a template server's policy rows.
+- [PROPOSED] The pilot server has no row in `dbo.ManagedServer`, so it cannot be cut. The conversion tool gets a new-machine mode: all global tables, one `dbo_ManagedServer` row built from parameters (`ServerCode`, `MachineName`, roots), policy rows copied from a named template server [PENDING which one], and no instances. Because the pilot comes first, this mode is built before the cut mode (step B order).
+- [PENDING] Machines without a local database: not decided; nothing is assumed.
+
+## 3. What does NOT enter a catalog
+
+### 3.1 Tables
+
+- Secrets (owner): `sec.ManagedCredential` (191 rows: 76 `IIS_IDENTITY`, 76 `WEB_ACCESS`, 39 `MOBILE_APP_TOKEN`). Goes to the vault (section 4), never to a catalog or to Git.
+- Credential history: `sec.ManagedCredentialAudit` (384 rows).
+- Job history (owner): `app.Job` (766), `app.JobStep` (7,793), `app.JobTarget` (7,631), `app.JobLog` (0 rows), `ops.ExecutionLog` (8,068), `ops.ConsoleSession` (774), `ops.GovernanceAudit`, `ui.PublishedEnvironmentLinkAudit`.
+- `app.HousekeepingArtifact` (owner, 0 rows) and `dbo.DemoProfileImage` (owner, 0 rows).
+- Engine scripts (owner): the `ScriptText` of `ops.Engine` (19 rows) and of `ops.Engine_BackupIisFix`. The engines are exported as files, see 5.4. In the catalog, `ops_EngineCatalog` keeps only `EngineCode`, `DisplayName`, `SourceFileName`, `EngineVersion`, `MinimumPowerShell`, `RequiresAdministrator`, `IsEnabled`, `ModifiedAt`.
+- Everything else classed Excluded in 1.3 (plans, inventories, locks, schedules, approvals, workers, backups of tables).
+
+### 3.2 Columns and views
+
+- `dbo.ManagedInstance.IisIdentityPassword`, `WebAccessPassword` and `MobileAppToken` are not carried. [CONFIRMED] they are NULL in all 76 rows of the sync file (the sync already empties them), but the live table may differ, so the tool excludes them by name and not by value.
+- `rowversion` columns (7 in carried tables) and `ops.Engine.ScriptText` / `ScriptSha256`.
+- View `cfg.ManagedInstanceRuntime` (decrypts `MobileAppToken`, `IisIdentityPassword`, `WebAccessPassword` through the certificate; referenced 25 times in the file). [PROPOSED] replaced by a plain view `cfg_ManagedInstanceCatalog` over `dbo_ManagedInstance` without the three secret columns. Every code path that read secrets through the old view or through `app.GetManagedCredentialRuntime` must ask the credential package instead (engine ports).
+
+### 3.3 Secrets found INSIDE carried tables [CONFIRMED]
+
+A scan of the carried tables found literal secret values in a global rule table, not only in the credential tables:
+
+- `cfg.ConfigRule` has 55 rows with `IsSensitive = 1`. 39 of them are connection-string templates with placeholders and Windows integrated security (no secret). **16 rows hold a literal value in `ExpectedTemplate`**: 12 client secrets (rule codes ending `CLIENT_SECRET` or `CLIENTSECRET`), 1 API key (`API_V8_API_KEY`), 1 access token (`API_V8_KEYCLOAK_ACCESS_TOKEN`) and 2 Keycloak passwords (`KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD`, `KEYCLOAK_KEYSTORE_PASSWORD`). Eight of them are mapped to Keycloak client ids by `cfg.KeycloakClientSecretRule` (8 rows, no secret value in that table).
+- `cfg.DatabaseObjectSettingRule` (3 sensitive rows) and `cfg.DatabaseSettingRule` (1 sensitive row) were checked by shape only and look like placeholder templates; [V] confirm on the live data.
+- `cfg.SettingDefinition` has no row with `IsSecret = 1`; `cfg.SettingValue` has no rows.
+- [PROPOSED] Rule for the conversion tool: in any row with `IsSensitive = 1` whose template has no placeholder, the literal part is replaced by a reference token (syntax [PENDING], for example `{{secret:RULE:<RuleCode>}}`), and the literal goes to the vault as a credential of kind `RULE_SECRET`, so the engines get it from the credential package like any other credential. The kind must be added to `contracts/credential-package.md` (open question Q6).
+- [PROPOSED] Safety net: before writing a catalog the tool scans every text column of every carried table for secret patterns (`password=`, `pwd=`, `secret=`, `token=`, long random strings in sensitive rows) against an explicit allowlist, and refuses to write the file on any other hit. The same scan is part of `Test-CatalogConversion.ps1` (section 5).
+- [CONFIRMED] These literals are also present in plain text in `ManagementSync.sql` in the reference repository. They have therefore been exposed to everyone with access to that repository and its history. [PROPOSED] rotate the 16 values after the cutover; the plan and the test reports never print them.
+
+### 3.4 Executable text inside carried tables
+
+`ops.Action.SqlCommand` and `ops.ReviewDefinition.CommandText` hold SQL text that the old system executed. [PROPOSED] they are carried as data but never executed by the new application (the application runs only local versioned modules, R-019, R-027); during the engine ports each is replaced by a module or dropped. The `...Template` columns are templates, expanded by the ported `ExpandTemplate`.
