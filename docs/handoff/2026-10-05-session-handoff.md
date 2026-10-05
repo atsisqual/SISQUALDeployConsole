@@ -45,7 +45,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 |---|---|---|---|
 | #9 | (merged) | roadmap | merged |
 | #10 | `phase2/repository-foundation` | Task 1: repository foundation (README, AGENTS, CLAUDE, Copilot instructions, CONTRIBUTING, SECURITY, CHANGELOG, templates, 5 skill skeletons, `vendor/manifest.json`, `.gitignore`, `tests/`, CI) | open, mergeable. Started by the previous assistant; this session added 2 commits: `SECURITY.md` signing-identity wording, and `.gitattributes`. CI: all earlier runs FAILED; cause [CONFIRMED by the fix, logs not readable]: the Windows runner checked out CRLF so the ASCII/LF step failed; `.gitattributes` (`* text=auto eol=lf`) fixed it and run on `ef42a49` is green. Hashes in `vendor/manifest.json` match `spikes/phase1A/Test-Phase1A.ps1` [CONFIRMED] |
-| #11 | `docs/adr-0007-embedded-catalog` | ADR-0007 embedded read-only catalog, no runtime sync, text logs | open, status Proposed; the owner must accept it |
+| #11 | `docs/adr-0007-embedded-catalog` | ADR-0007 embedded read-only catalog, no runtime sync, text logs | open; ACCEPTED by the owner on 2026-10-05 (the status line says so; the reviewer records it in the decisions log) |
 | #12 | `phase1/iis-reconcile-mwa-equivalence` | Task 2: `docs/phase1/iis-reconcile-mwa-equivalence.md` | open, complete (draft for review) |
 | #13 | `phase2/contracts-draft` | Task 3: `contracts/` (README, `package-manifest.schema.json`, `catalog-schema.md`, `engine-result.schema.json`, `credential-package.md`, `api/openapi.yaml`) | open, complete (draft, all PROPOSED) |
 | #14 | `docs/catalog-conversion-plan` | Task 4 step A: `docs/migration/catalog-conversion-plan.md` | open, complete; waits for owner approval before step B |
@@ -244,3 +244,10 @@ Two [PROPOSED] process rules were added for the owner to accept or drop: stacked
 Not touched, by instruction, and stale until the reviewer updates them: `docs/decisions-log.md` lines 7, 8 and 16, `docs/roadmap.md` (phase 4 "Central snapshot sync", phase 5 "signed by the central side", the decided "central sync transport", the credential-package proposal on the central server, and the target scenario "syncs central configuration"), and ADR-0001 (superseded in part by ADR-0007 only after its acceptance). They are listed in the PR body.
 
 State of the open PRs after this section: #10 and #23 (foundation and its audit), #11 (ADR-0007), #12 (IIS matrix), #13 (contracts), #14 (plan), #15 (this note), #16 to #22 (tools, stacked), #18 (SQL client pin).
+
+## 21. Owner answers of 2026-10-05 after the audit (added later the same day)
+
+- [DECIDED] The two process rules are accepted: a task that depends on an open PR is a stacked PR (branch from that PR, integration order in the PR body); an owner decision is recorded only when it can be traced to a message or an approved document.
+- [DECIDED] The engines also move to PowerShell 7. The Windows PowerShell 5.1 requirement is removed everywhere (AGENTS.md, CONTRIBUTING.md, Copilot instructions, PR template), and `ci.yml` parses every `.ps1` with the PowerShell 7 parser (PR #23). A script designated as a 5.1 fallback child under ADR-0006 would get its own check; none exists.
+- [DECIDED] ADR-0007 is ACCEPTED (PR #11 status line, the audit documents, the plan and the contract files now say so). Its credential items 4 and 9 keep their [PROPOSED] label until the credential contract is approved. `docs/decisions-log.md` and `docs/roadmap.md` are still for the reviewer.
+- Next: the owner answers the credential questions (`contracts/credential-package.md` section 8, Q1 to Q8) plus the vault protection and the manifest and seal-log names; then step B6.
