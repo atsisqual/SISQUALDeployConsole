@@ -93,24 +93,84 @@ jobs:
         shell: pwsh
         working-directory: spikes/phase1B/sqlite-provider
         run: |
-          if (Test-Path '.\packages.lock.json') {
-            Copy-Item '.\packages.lock.json' "$env:GITHUB_WORKSPACE\packages.lock-${{ matrix.os }}.json"
+          $ErrorActionPreference = 'Stop'
+          $lockPath = '.\packages.lock.json'
+          if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+            throw 'packages.lock.json was not produced; dependency evidence is incomplete.'
           }
-          $packages = Join-Path $env:USERPROFILE '.nuget\packages'
-          $rows = @()
-          foreach ($name in @('microsoft.data.sqlite','microsoft.data.sqlite.core','sqlitepclraw.bundle_e_sqlite3','sqlitepclraw.core','sqlitepclraw.lib.e_sqlite3','sqlitepclraw.provider.e_sqlite3')) {
-            $root = Join-Path $packages $name
-            if (Test-Path $root) {
-              Get-ChildItem $root -Directory | ForEach-Object {
-                $nupkg = Get-ChildItem $_.FullName -Filter '*.nupkg' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                $rows += [pscustomobject]@{
-                  package = $name
-                  version = $_.Name
-                  nupkgSha256 = $(if ($nupkg) { (Get-FileHash $nupkg.FullName -Algorithm SHA256).Hash } else { $null })
+
+          Copy-Item -LiteralPath $lockPath "$env:GITHUB_WORKSPACE\packages.lock-${{ matrix.os }}.json"
+          $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+          $resolved = @{}
+
+          foreach ($target in $lock.dependencies.PSObject.Properties) {
+            foreach ($package in $target.Value.PSObject.Properties) {
+              $version = [string]$package.Value.resolved
+              if ([string]::IsNullOrWhiteSpace($version)) { continue }
+              $id = [string]$package.Name
+              $key = $id.ToLowerInvariant() + '|' + $version.ToLowerInvariant()
+              if (-not $resolved.ContainsKey($key)) {
+                $resolved[$key] = [pscustomobject]@{
+                  id = $id
+                  version = $version
+                  contentHash = [string]$package.Value.contentHash
                 }
               }
             }
           }
+
+          if ($resolved.Count -eq 0) {
+            throw 'No resolved NuGet packages were found in packages.lock.json.'
+          }
+
+          $downloadRoot = Join-Path $env:RUNNER_TEMP 'phase1b-nupkgs'
+          New-Item -ItemType Directory -Path $downloadRoot -Force | Out-Null
+          $rows = @()
+
+          foreach ($item in ($resolved.Values | Sort-Object id, version)) {
+            $idLower = $item.id.ToLowerInvariant()
+            $versionLower = $item.version.ToLowerInvariant()
+            $fileName = "$idLower.$versionLower.nupkg"
+            $uri = "https://api.nuget.org/v3-flatcontainer/$idLower/$versionLower/$fileName"
+            $archive = Join-Path $downloadRoot $fileName
+
+            Invoke-WebRequest -Uri $uri -OutFile $archive
+            if (-not (Test-Path -LiteralPath $archive -PathType Leaf) -or (Get-Item -LiteralPath $archive).Length -le 0) {
+              throw "NuGet archive was not retained for $($item.id) $($item.version)."
+            }
+
+            $sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+            $sha512Hex = (Get-FileHash -LiteralPath $archive -Algorithm SHA512).Hash
+            $sha512Bytes = [byte[]]::new($sha512Hex.Length / 2)
+            for ($i = 0; $i -lt $sha512Bytes.Length; $i++) {
+              $sha512Bytes[$i] = [Convert]::ToByte($sha512Hex.Substring($i * 2, 2), 16)
+            }
+            $sha512Base64 = [Convert]::ToBase64String($sha512Bytes)
+            $lockHashPresent = -not [string]::IsNullOrWhiteSpace($item.contentHash)
+            $lockHashMatch = $lockHashPresent -and ($sha512Base64 -ceq $item.contentHash)
+
+            if ([string]::IsNullOrWhiteSpace($sha256)) {
+              throw "SHA-256 was not calculated for $($item.id) $($item.version)."
+            }
+            if (-not $lockHashPresent) {
+              throw "Lock-file contentHash is missing for $($item.id) $($item.version)."
+            }
+            if (-not $lockHashMatch) {
+              throw "Downloaded package hash does not match packages.lock.json for $($item.id) $($item.version)."
+            }
+
+            $rows += [pscustomobject]@{
+              package = $item.id
+              version = $item.version
+              source = $uri
+              bytes = (Get-Item -LiteralPath $archive).Length
+              nupkgSha256 = $sha256
+              nupkgSha512Base64 = $sha512Base64
+              lockContentHash = $item.contentHash
+              lockHashMatch = $lockHashMatch
+            }
+          }
+
           $rows | ConvertTo-Json -Depth 4 | Set-Content "$env:GITHUB_WORKSPACE\nuget-graph-${{ matrix.os }}.json" -Encoding utf8NoBOM
 
       - name: Summarize
