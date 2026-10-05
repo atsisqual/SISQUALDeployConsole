@@ -10,7 +10,7 @@ Plan and validate an instance-code rename across all known dependent surfaces.
 
 - current InstanceCode;
 - proposed InstanceCode;
-- synchronized central dependency inventory;
+- dependency inventory taken from the catalog of the machine (an instance belongs to exactly one machine);
 - target server identity.
 
 ## Known dependency examples
@@ -19,7 +19,7 @@ Plan and validate an instance-code rename across all known dependent surfaces.
 
 ## Safety rules
 
-- V1 does not author a central rename.
+- V1 does not edit the catalog: a rename is planned here and applied by the owner to the catalog, which is then sealed.
 - Never assume `dbo.ManagedInstance` is the only dependency.
 - Produce a complete dependency preview before any local/target-system mutation.
 - Abort on unresolved foreign-key or semantic references.
@@ -28,10 +28,10 @@ Plan and validate an instance-code rename across all known dependent surfaces.
 
 - dependency map;
 - previewed rename plan;
-- central changes required for a human-controlled process;
+- catalog changes the owner must apply and seal;
 - local/target changes, if an approved engine supports them;
 - `[PENDING]` and `[V]` validation items.
 
 ## Dependencies
 
-[PENDING] Final workflow depends on approved engine ports and the V1 central sync contract.
+[PENDING] Final workflow depends on approved engine ports and the approved catalog contract.

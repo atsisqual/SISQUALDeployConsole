@@ -18,7 +18,7 @@ Provision or reconcile SISQUAL Keycloak client configuration using approved engi
 - Never log or echo client secrets.
 - Never copy client secrets from a cloned source environment without explicit target validation.
 - Validate target URLs, client identity, and machine ownership before apply.
-- Central configuration remains read-only in V1.
+- The catalog remains read-only for the application in V1.
 
 ## Expected outputs
 
