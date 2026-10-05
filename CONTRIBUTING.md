@@ -4,7 +4,7 @@
 
 1. Read `AGENTS.md`, `docs/decisions-log.md`, and the relevant ADRs/contracts.
 2. List open pull requests before starting.
-3. Create one branch from current `main` for one task.
+3. Create one branch from current `main` for one task. If the task depends on an open PR, branch from that PR and use it as the base, and state the integration order in the PR ([PROPOSED]).
 4. Keep commits small and focused.
 5. Open a PR; do not push directly to `main` and do not merge your own PR unless explicitly delegated.
 6. After a timeout or interrupted session, resume the same branch and PR.
@@ -21,13 +21,13 @@ Use:
 ## Text and PowerShell requirements
 
 - New or changed text files use ASCII and LF unless approved evidence requires otherwise.
-- All changed `.ps1` files must parse with Windows PowerShell 5.1.
+- Changed engine `.ps1` files must parse with Windows PowerShell 5.1. Files under `tools/` and `tests/` are PowerShell 7 and must parse with the PowerShell 7 parser (owner decision of 2026-10-05).
 - Do not add real secrets, private keys, tokens, or production connection strings.
 - Keep generated evidence separate from product code.
 
 ## Architecture and safety
 
-- V1 never writes central configuration back to `_sisqualMANAGEMENT`.
+- There is no central configuration database: the application never writes configuration and the catalog is read-only (ADR-0007, Proposed until formally accepted).
 - `atsisqual/SISQUALManagementConsole` is read-only reference material.
 - Pode is an adapter only; engines must not depend on it.
 - IIS implementation uses `Microsoft.Web.Administration` according to ADR-0006.
