@@ -18,7 +18,7 @@ Describe the single task covered by this PR.
 
 ## Validation
 
-- [ ] Changed PowerShell parses (Windows PowerShell 5.1 for engine scripts, PowerShell 7 for `tools/` and `tests/`).
+- [ ] Changed PowerShell parses with the PowerShell 7 parser (and with Windows PowerShell 5.1 if it is a designated fallback script).
 - [ ] Changed text files use ASCII and LF unless approved evidence requires otherwise.
 - [ ] Relevant tests/checks pass.
 

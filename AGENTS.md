@@ -13,7 +13,7 @@ Use these labels in design, code comments, PRs, and reports:
 - `[PENDING]` - information, decision, or validation still required.
 - `[V]` - implemented or analysed but still requires the specified real Windows/SISQUAL validation.
 
-Never promote an inference to `[CONFIRMED]`. A decision is recorded as made by the owner only when it can be traced to an owner message or an approved document; otherwise write `[PENDING]` with the supporting evidence and ask.
+Never promote an inference to `[CONFIRMED]`. A decision is recorded as made by the owner only when it can be traced to an owner message or an approved document; otherwise write `[PENDING]` with the supporting evidence and ask (rule accepted by the owner on 2026-10-05).
 
 ## Source-of-truth order
 
@@ -42,7 +42,7 @@ Before work:
 
 Do not push directly to `main`. Do not merge the PR unless the project owner explicitly delegates that action.
 
-[PROPOSED] If a task depends on an open PR, branch from that PR's branch and use it as the base (a stacked PR); state the integration order in the PR body. The reviewer merges in that order.
+If a task depends on an open PR, branch from that PR's branch and use it as the base (a stacked PR); state the integration order in the PR body. The reviewer merges in that order (rule accepted by the owner on 2026-10-05).
 
 ## What an agent may decide without new approval
 
@@ -118,13 +118,13 @@ Requirements:
 - destructive work has idempotency expectations and backup/restore evidence;
 - output is structured and secret-safe;
 - engine code does not depend on the HTTP adapter;
-- engine scripts must parse with Windows PowerShell 5.1 until that compatibility requirement is explicitly removed (ADR-0006 keeps a 5.1 fallback); the tools under `tools/` and their tests under `tests/` are PowerShell 7 and are parsed with the PowerShell 7 parser (owner decision of 2026-10-05); whether the engines also move fully to PowerShell 7 is [PENDING].
+- all PowerShell (engines, tools and tests) targets PowerShell 7 and is parsed with the PowerShell 7 parser (owner decision of 2026-10-05, which removes the earlier Windows PowerShell 5.1 requirement); Windows PowerShell 5.1 is needed only for a script explicitly designated as a 5.1 fallback child process under ADR-0006, and such a script must also parse with 5.1.
 
 ## Current architecture constraints
 
 - [CONFIRMED] Portable PowerShell 7.6.6, Pode 2.14.1, SQLite 3.53.4 engine.
 - [CONFIRMED] Pode is an adapter only.
-- [CONFIRMED] Owner decision of 2026-10-05, recorded in ADR-0007 (status Proposed until formally accepted): `_sisqualMANAGEMENT` ceases to exist; configuration is a read-only SQLite catalog, one per machine, inside the portable package; the application writes no database and makes no runtime connection to any server to obtain configuration.
+- [CONFIRMED] Owner decision of 2026-10-05, recorded in ADR-0007 (Accepted by the owner on 2026-10-05; its credential items 4 and 9 keep their [PROPOSED] label until the credential contract is approved): `_sisqualMANAGEMENT` ceases to exist; configuration is a read-only SQLite catalog, one per machine, inside the portable package; the application writes no database and makes no runtime connection to any server to obtain configuration.
 - [CONFIRMED] Same decision: the package carries a manifest with the SHA-256 of every file, signed by the credential tool and verified at startup; updating means replacing the whole folder; the owner may edit the catalog by hand and re-seal it with the seal tool.
 - [CONFIRMED] Same decision: credentials are never in the catalog or in the portable folder; a separate credential tool issues a package bound to one machine; there is no permanent master server.
 - [CONFIRMED] The conversion, verification, seal and credential tools live under `tools/`, run on demand by a person, are not part of the portable application and use PowerShell 7 (owner decisions of 2026-10-05).
@@ -140,6 +140,6 @@ Requirements:
 - evidence labels are correct;
 - no secrets added;
 - ASCII and LF for changed text files unless an approved evidence file requires otherwise;
-- the PowerShell parser check passes for changed `.ps1` files (Windows PowerShell 5.1 for engine scripts, PowerShell 7 for `tools/` and `tests/`);
+- the PowerShell 7 parser check passes for changed `.ps1` files (and the 5.1 parser for a designated 5.1 fallback script);
 - tests and docs updated together when behaviour changes;
 - remaining `[PENDING]` and `[V]` items are stated in the PR body.

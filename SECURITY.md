@@ -18,7 +18,7 @@ Use synthetic fixtures only.
 
 ## V1 trust boundaries
 
-- [CONFIRMED] There is no central configuration database (owner decision of 2026-10-05, ADR-0007, Proposed until formally accepted). The catalog is a read-only SQLite file inside the package; the application never writes it and never contacts a server to obtain configuration.
+- [CONFIRMED] There is no central configuration database (owner decision of 2026-10-05, ADR-0007, accepted by the owner on 2026-10-05). The catalog is a read-only SQLite file inside the package; the application never writes it and never contacts a server to obtain configuration.
 - [CONFIRMED] Pode binds to loopback only by default.
 - [PROPOSED] The package manifest lists the SHA-256 of every file and is signed by the credential tool. The application refuses a package whose files or signature do not match, except with an explicit, logged development flag. The signature algorithm and the trust bootstrap are [PENDING] owner approval.
 - [CONFIRMED] Secrets never enter a catalog, the package, the repository or the logs. Credentials live outside the portable folder.

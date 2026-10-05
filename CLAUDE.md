@@ -4,7 +4,7 @@ Read `AGENTS.md` first. It is the normative operating policy for AI agents in th
 
 ## Project purpose
 
-SISQUALDeployConsole is a portable Windows administration console for SISQUAL WFM. V1 reads a read-only configuration catalog (SQLite, one per machine, inside the signed portable package) and executes approved operations on the local machine. There is no central database and no master server (owner decision of 2026-10-05, ADR-0007, Proposed). It writes no configuration and no database.
+SISQUALDeployConsole is a portable Windows administration console for SISQUAL WFM. V1 reads a read-only configuration catalog (SQLite, one per machine, inside the signed portable package) and executes approved operations on the local machine. There is no central database and no master server (owner decision of 2026-10-05, ADR-0007, accepted 2026-10-05). It writes no configuration and no database.
 
 ## Required context before changes
 
@@ -20,7 +20,7 @@ Use `[CONFIRMED]`, `[PROPOSED]`, `[PENDING]`, and `[V]` exactly as defined in `A
 ## Repository process
 
 - List open PRs before starting a task.
-- One branch and one PR per task, from current `main`; if the task depends on an open PR, branch from that PR and use it as the base, and say so in the PR ([PROPOSED]).
+- One branch and one PR per task, from current `main`; if the task depends on an open PR, branch from that PR and use it as the base, and say so in the PR (rule accepted by the owner on 2026-10-05).
 - Record an owner decision only when it can be traced to a message or an approved document; otherwise write `[PENDING]` and ask.
 - After a timeout, resume the same branch and PR.
 - Never push directly to `main`.
@@ -42,7 +42,7 @@ Use `[CONFIRMED]`, `[PROPOSED]`, `[PENDING]`, and `[V]` exactly as defined in `A
 - [CONFIRMED] Pode 2.14.1 as HTTP adapter only.
 - [CONFIRMED] SQLite 3.53.4 engine for the read-only catalog; the managed provider (read-only open only) remains Phase 1B until approved.
 - [CONFIRMED] IIS integration through `Microsoft.Web.Administration`, subject to ADR-0006 conditions.
-- [CONFIRMED] Owner decision of 2026-10-05 (ADR-0007, Proposed until formally accepted): no central database, no runtime sync, no master server; a read-only catalog per machine; a signed manifest verified at startup; credentials from a separate credential tool.
+- [CONFIRMED] Owner decision of 2026-10-05 (ADR-0007, accepted by the owner on 2026-10-05): no central database, no runtime sync, no master server; a read-only catalog per machine; a signed manifest verified at startup; credentials from a separate credential tool.
 - [CONFIRMED] The conversion, verification, seal and credential tools are under `tools/`, outside the portable application, and use PowerShell 7.
 
 When unsure whether a change is local implementation detail or an architectural decision, stop at `[PROPOSED]` and request review instead of silently deciding it.

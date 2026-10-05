@@ -36,16 +36,15 @@ jobs:
           Write-Host ('Changed files: ' + $files.Count)
           $files | ForEach-Object { Write-Host ('  ' + $_) }
 
-      # tools/ and tests/ are PowerShell 7 (owner decision 2026-10-05); the tool PRs add tools-tests.yml,
-      # which parses them with the PowerShell 7 parser. Everything else still has to parse in 5.1.
-      - name: Parse PowerShell outside tools/ and tests/ with Windows PowerShell 5.1
-        shell: powershell
+      # All PowerShell targets PowerShell 7 (owner decision 2026-10-05, which removes the 5.1 requirement).
+      # A script designated as a Windows PowerShell 5.1 fallback child (ADR-0006) would need its own 5.1 step.
+      - name: Parse all PowerShell with the PowerShell 7 parser
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
           $files = @(Get-ChildItem -LiteralPath . -Recurse -File -Filter '*.ps1' | Where-Object {
-              $_.FullName -notmatch '[\\/]\.git[\\/]' -and
-              $_.FullName -notmatch '[\\/](tools|tests)[\\/]'
+              $_.FullName -notmatch '[\\/]\.git[\\/]'
           })
           foreach ($file in $files) {
               $tokens = $null
@@ -57,7 +56,7 @@ jobs:
               )
               if (@($errors).Count -gt 0) {
                   $failed = $true
-                  Write-Error ("PowerShell 5.1 parse failure in {0}" -f $file.FullName) -ErrorAction Continue
+                  Write-Error ("PowerShell 7 parse failure in {0}" -f $file.FullName) -ErrorAction Continue
                   foreach ($parseError in @($errors)) {
                       Write-Host ("  line {0}: {1}" -f $parseError.Extent.StartLineNumber, $parseError.Message)
                   }
@@ -66,7 +65,7 @@ jobs:
                   Write-Host ("PASS parser: {0}" -f $file.FullName)
               }
           }
-          if ($failed) { throw 'One or more PowerShell files failed the Windows PowerShell 5.1 parser.' }
+          if ($failed) { throw 'One or more PowerShell files failed the PowerShell 7 parser.' }
 
       - name: Verify ASCII and LF on changed text files
         shell: powershell
