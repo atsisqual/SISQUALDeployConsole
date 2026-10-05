@@ -1,7 +1,7 @@
 # Roadmap to completion
 
 **Date:** 2026-10-05
-**Status:** [PROPOSED] - needs project owner approval.
+**Status:** [PROPOSED] - needs project owner approval. Section 4 records the owner's answers of 2026-10-05; items 3 and 4 are still open.
 Based on: the approved architecture plan, the Phase 0 documents, ADR-0001 (approved), ADR-0006 (accepted with conditions, owner confirmation requested) and the Phase 1A/1A-2 results.
 
 ## 1. Where we are
@@ -51,11 +51,11 @@ Not testable on a runner: TSplus and Web Access (`WEB_ACCESS`), a real Keycloak 
 
 ## 4. Decisions and access needed from the project owner
 
-1. Confirm ADR-0006 (IIS through Microsoft.Web.Administration, four conditions).
-2. Central sync transport: direct read-only SQL or exported snapshot.
-3. Where credential packages are produced, and who owns the central signing key. If it means changing the current Management Console, the read-only rule for that repository needs an explicit exception.
-4. Access to the SISQUAL sandbox for the real-topology IIS run (ADR-0006 condition 2) and for the other [V] checks.
-5. Engine scope for V1, in case some engines can wait.
+1. [DECIDED 2026-10-05] ADR-0006 confirmed by the project owner (IIS through Microsoft.Web.Administration, four conditions).
+2. [DECIDED 2026-10-05] Central sync transport: direct read-only SQL connection.
+3. [OPEN] Credential packages. Proposal: a script in this repository that runs on the central server, only reads the central database and produces one package per target machine; the signing key stays on the central server; the current Management Console is not changed. Needs owner agreement.
+4. [OPEN] Real-topology IIS run (ADR-0006 condition 2). Question: which machine may be used to run the write test, which creates and removes prefixed test sites, a local user and a certificate? Alternative: a read-only topology probe on a real server plus the runner results.
+5. [DECIDED 2026-10-05] V1 scope: all engines.
 
 ## 5. Parallelism and cadence
 
