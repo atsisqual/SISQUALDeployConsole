@@ -60,9 +60,9 @@ The V1 run remains preserved under `docs/phase1/evidence/phase1c-local-web-secur
 
 ## 5. Corrected V2 model
 
-[CONFIRMED by implementation/evidence] No session cookie is emitted.
+[CONFIRMED] By implementation and executed evidence, no session cookie is emitted.
 
-[PROPOSED product direction]:
+[PROPOSED] Product direction:
 
 1. process generates a 256-bit one-time bootstrap token;
 2. browser launch carries it in a URL fragment, not query string;
