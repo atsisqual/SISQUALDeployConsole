@@ -8,11 +8,11 @@ Tags: [CONFIRMED] verified in this session; [PROPOSED] design proposal; [PENDING
 
 ## 1. First ten minutes for the next session
 
-1. Ask the owner for a NEW fine-grained GitHub token (repository access only to `atsisqual/SISQUALDeployConsole` and read access to `atsisqual/SISQUALManagementConsole`; contents, pull requests, actions read). Do not reuse the old one.
+1. The old token was still valid at the end of the session (it was used again to record the answers). Ask the owner for a NEW fine-grained GitHub token (repository access only to `atsisqual/SISQUALDeployConsole` and read access to `atsisqual/SISQUALManagementConsole`; contents, pull requests, actions read). Do not reuse the old one.
 2. Read, in this order: `docs/decisions-log.md`, `docs/architecture/ADR-0001-*.md`, `ADR-0006-*.md`, the ADR-0007 branch (PR #11), `docs/roadmap.md`, and from PR #10: `AGENTS.md`, `CLAUDE.md`.
 3. List open PRs (rule of the project) and the branches. Reuse an existing branch for the same work after any timeout.
 4. Read `docs/migration/catalog-conversion-plan.md` (PR #14) section 8 and section 7 of this file: they hold the open decisions.
-5. Do not start step B of the conversion until the owner approves the plan (PR #14).
+5. Do not start step B of the conversion until the owner approves the plan (PR #14). The owner answered three questions on 2026-10-05 but has not yet said "approved"; ask.
 
 ## 2. Project in one paragraph
 
@@ -36,6 +36,7 @@ SISQUALDeployConsole is a Windows-only portable administration tool for SISQUAL 
 - [CONFIRMED] V1 scope: all engines. Sync: SQL is read-only when a local database exists; the case of machines without a local database is undecided (assume nothing).
 - [CONFIRMED] `_sisqualMANAGEMENT` ceases to exist. Configuration becomes read-only SQLite files, one per existing machine (`ServerCode`): PT_DEMO, SANDBOX_HUB, ES_DEMO, BR_DEMO, PRESALES, TENDERS (rows of `dbo.ManagedServer`). The pilot is a server without the current system, so catalogs for new machines come first.
 - [CONFIRMED] The sync contract no longer exists: it is replaced by the signed package manifest (hashes of all files) and the per-machine catalog schema.
+- [CONFIRMED] Answers of 2026-10-05 (after the plan, PR #14): (1) NO template server for policy rows; machines without policy rows are cut empty, the owner says the engines create them. Note: in the reference system `cfg.GetIisDeploymentPlan` fails with errors 50010 and 50011 when there is no policy row and no engine inserts policy rows, so the defaults must come from the ported engines [PENDING owner]. (2) Binary content stays as BLOB in every catalog. (3) The conversion tools run on PowerShell 7 with a SQL client shipped with them (a new vendored dependency: package, version and SHA-256 still to approve; NuGet was not reachable from the sandbox).
 - [CONFIRMED] Catalog authority long term is DEFERRED; in V1 the owner may edit the catalog by hand and re-seal it with a seal tool (ADR-0007, proposed in PR #11).
 
 ## 5. State of every PR (as of this note)
@@ -81,7 +82,7 @@ No PR of this session has CI yet except #10, because `ci.yml` lives only on #10'
 ## 7. Open decisions (consolidated)
 
 1. ADR-0007 acceptance (PR #11). Until then `SECURITY.md`, `README.md`, `AGENTS.md` and `CLAUDE.md` of PR #10 may still describe a central authority and snapshot sync [NOT DONE: those four files were not audited against ADR-0007 in this session].
-2. Conversion plan section 8: 14 decisions (classification and redaction, binary assets as files or BLOBs, template server for policy rows, cross-machine instance directory, `COLLATE NOCASE`, views, engine export location and the ASCII/LF exception, tool runtime 5.1 or 7, vault format, credential contract Q1..Q8, seal tool, CI SQL Server, machines without a database, rotation and freeze).
+2. Conversion plan section 8: 14 decisions, of which 3 are now decided (binary as BLOB, no template server, PowerShell 7 tools). Still open: classification and redaction of the 16 secrets, source of policy defaults, cross-machine instance directory, `COLLATE NOCASE`, views, engine export location and the ASCII/LF exception, SQL client package and CI parsing of `tools/`, vault format, credential contract Q1..Q8, seal tool, CI SQL Server, machines without a database, rotation and freeze.
 3. IIS matrix section 7: Windows features mechanism, vdir conversion policy, central certificate store scope, swallowed errors, backup mechanism, pool-password interface.
 4. Credential contract Q1..Q8, especially Q3 (text package or `credentials.db`) and Q4 (where the replay `sequence` is stored while the application writes no database).
 5. ADR-0006 conditions 2 to 4 are still open; condition 1 (the matrix) is addressed by PR #12 once reviewed.
