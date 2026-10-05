@@ -251,3 +251,10 @@ State of the open PRs after this section: #10 and #23 (foundation and its audit)
 - [DECIDED] The engines also move to PowerShell 7. The Windows PowerShell 5.1 requirement is removed everywhere (AGENTS.md, CONTRIBUTING.md, Copilot instructions, PR template), and `ci.yml` parses every `.ps1` with the PowerShell 7 parser (PR #23). A script designated as a 5.1 fallback child under ADR-0006 would get its own check; none exists.
 - [DECIDED] ADR-0007 is ACCEPTED (PR #11 status line, the audit documents, the plan and the contract files now say so). Its credential items 4 and 9 keep their [PROPOSED] label until the credential contract is approved. `docs/decisions-log.md` and `docs/roadmap.md` are still for the reviewer.
 - Next: the owner answers the credential questions (`contracts/credential-package.md` section 8, Q1 to Q8) plus the vault protection and the manifest and seal-log names; then step B6.
+
+## 22. Owner answers on the credential contract (added later the same day)
+
+[DECIDED] Q1 A, Q2 A, Q4 A, Q5 A, Q6 A, Q7 A, Q8 A, Q9 A, Q10 A (details in `contracts/credential-package.md` section 8): issuer key pinned on the machine after an out-of-band fingerprint check; ECDSA P-256/SHA-256, ECDH P-256 + AES-256-GCM, canonical form as implemented by the seal tool; installed-package sequence as replay reference; manual reissue and re-pinning; four credential kinds (including `RULE_SECRET`); 1 year and 15 minutes; one package per machine; passphrase vault (PBKDF2-HMAC-SHA256) with two backups; manifest and seal-log names as proposed.
+Readings to confirm with the owner: "A" to Q2 was taken as also approving the canonical form; "A" to Q10 (a Sim/Nao question) as yes.
+[PENDING] Q3 (how the package reaches the machine; the owner asked for a better explanation) and whether the 16 exposed secrets are rotated after the cutover (not answered).
+Step B6 can start on the parts that do not depend on Q3: the vault, the package issue, the real signer and verifier. The one-time import from the live database needs a real server [V], but its decryption path can be tested on LocalDB with a synthetic key and certificate.
