@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: phase1a-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   phase1a:
     name: Phase 1A on ${{ matrix.os }}
@@ -22,6 +26,8 @@ jobs:
         os: [windows-2022, windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    permissions:
+      contents: write   # only to publish the report to a results/* branch
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +61,8 @@ jobs:
         shell: powershell
         working-directory: spikes/phase1A
         run: |
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Phase1A.ps1 -ReportPath "$env:GITHUB_WORKSPACE\report-${{ matrix.os }}.json"
+          $ErrorActionPreference = 'Continue'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-Phase1A.ps1 -ReportPath "$env:GITHUB_WORKSPACE\report-${{ matrix.os }}.json" 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\console-${{ matrix.os }}.txt"
 
       - name: Upload report
         if: always()
@@ -76,3 +83,18 @@ jobs:
           foreach ($c in $r.Checks) { $lines += ('| {0} | {1} | {2} |' -f $c.Id, $c.Status, ([string]$c.Message -replace '\|', '/')) }
           $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           if ($r.Overall -eq 'FAIL') { exit 1 }
+
+      - name: Publish results to a results/* branch (readable through the API)
+        if: always()
+        shell: powershell
+        run: |
+          $branch = 'results/phase1a-${{ github.run_id }}-${{ matrix.os }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --orphan $branch
+          git rm -rf --cached . | Out-Null
+          $files = @('report-${{ matrix.os }}.json', 'console-${{ matrix.os }}.txt') | Where-Object { Test-Path $_ }
+          if (-not $files) { Write-Host 'Nothing to publish.'; exit 1 }
+          git add -f -- $files
+          git commit -m 'phase1a results ${{ matrix.os }} run ${{ github.run_id }}'
+          git push origin $branch
