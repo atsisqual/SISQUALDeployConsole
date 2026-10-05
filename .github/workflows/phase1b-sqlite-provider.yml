@@ -123,6 +123,15 @@ jobs:
             throw 'No resolved NuGet packages were found in packages.lock.json.'
           }
 
+          $globalPackagesOutput = @(dotnet nuget locals global-packages --list)
+          if ($LASTEXITCODE -ne 0 -or $globalPackagesOutput.Count -eq 0) {
+            throw 'Unable to resolve the NuGet global-packages folder.'
+          }
+          $globalPackagesRoot = ([string]$globalPackagesOutput[0] -replace '^[^:]+:\s*', '').Trim()
+          if (-not (Test-Path -LiteralPath $globalPackagesRoot -PathType Container)) {
+            throw "NuGet global-packages folder not found: $globalPackagesRoot"
+          }
+
           $downloadRoot = Join-Path $env:RUNNER_TEMP 'phase1b-nupkgs'
           New-Item -ItemType Directory -Path $downloadRoot -Force | Out-Null
           $rows = @()
@@ -145,9 +154,16 @@ jobs:
             for ($i = 0; $i -lt $sha512Bytes.Length; $i++) {
               $sha512Bytes[$i] = [Convert]::ToByte($sha512Hex.Substring($i * 2, 2), 16)
             }
-            $sha512Base64 = [Convert]::ToBase64String($sha512Bytes)
+            $rawSha512Base64 = [Convert]::ToBase64String($sha512Bytes)
+
+            $cacheHashPath = Join-Path $globalPackagesRoot (Join-Path $idLower (Join-Path $versionLower "$idLower.$versionLower.nupkg.sha512"))
+            if (-not (Test-Path -LiteralPath $cacheHashPath -PathType Leaf)) {
+              throw "NuGet content-hash file was not retained for $($item.id) $($item.version): $cacheHashPath"
+            }
+            $nugetContentHash = (Get-Content -LiteralPath $cacheHashPath -Raw).Trim()
             $lockHashPresent = -not [string]::IsNullOrWhiteSpace($item.contentHash)
-            $lockHashMatch = $lockHashPresent -and ($sha512Base64 -ceq $item.contentHash)
+            $cacheHashPresent = -not [string]::IsNullOrWhiteSpace($nugetContentHash)
+            $lockHashMatch = $lockHashPresent -and $cacheHashPresent -and ($nugetContentHash -ceq $item.contentHash)
 
             if ([string]::IsNullOrWhiteSpace($sha256)) {
               throw "SHA-256 was not calculated for $($item.id) $($item.version)."
@@ -155,8 +171,11 @@ jobs:
             if (-not $lockHashPresent) {
               throw "Lock-file contentHash is missing for $($item.id) $($item.version)."
             }
+            if (-not $cacheHashPresent) {
+              throw "NuGet cached content hash is missing for $($item.id) $($item.version)."
+            }
             if (-not $lockHashMatch) {
-              throw "Downloaded package hash does not match packages.lock.json for $($item.id) $($item.version)."
+              throw "NuGet cached content hash does not match packages.lock.json for $($item.id) $($item.version)."
             }
 
             $rows += [pscustomobject]@{
@@ -165,7 +184,8 @@ jobs:
               source = $uri
               bytes = (Get-Item -LiteralPath $archive).Length
               nupkgSha256 = $sha256
-              nupkgSha512Base64 = $sha512Base64
+              rawNupkgSha512Base64 = $rawSha512Base64
+              nugetCacheContentHash = $nugetContentHash
               lockContentHash = $item.contentHash
               lockHashMatch = $lockHashMatch
             }
@@ -181,11 +201,11 @@ jobs:
           foreach ($kind in @('original','copy')) {
             $path = Join-Path $env:GITHUB_WORKSPACE "report-${{ matrix.os }}-$kind.json"
             if (-not (Test-Path $path)) {
-              $lines += "- $kind: **NO REPORT**"
+              $lines += "- ${kind}: **NO REPORT**"
               continue
             }
             $r = Get-Content $path -Raw | ConvertFrom-Json
-            $lines += "- $kind: **$($r.overall)**; provider $($r.candidateVersion); PowerShell $($r.powerShell)"
+            $lines += "- ${kind}: **$($r.overall)**; provider $($r.candidateVersion); PowerShell $($r.powerShell)"
             foreach ($c in $r.checks) {
               $lines += "  - $($c.id): $($c.status)"
             }
