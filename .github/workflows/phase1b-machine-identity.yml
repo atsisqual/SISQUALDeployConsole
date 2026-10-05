@@ -1,0 +1,165 @@
+name: phase1b-machine-identity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  machine-a:
+    name: Machine A - create and reopen CNG identity
+    runs-on: windows-2022
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download verified portable PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip' -OutFile $zip
+          $expected = '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "PowerShell SHA-256 mismatch: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\pwsh" -Force
+
+      - name: Materialize portable folder A
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'portable-a'
+          New-Item -ItemType Directory -Path "$root\spike" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$root\modules\Sisqual.Credentials" -Force | Out-Null
+          Copy-Item '.\spikes\phase1B\machine-identity\Invoke-MachineIdentityCngSpike.ps1' "$root\spike\Invoke-MachineIdentityCngSpike.ps1"
+          Copy-Item '.\modules\Sisqual.Credentials\*' "$root\modules\Sisqual.Credentials" -Recurse
+
+      - name: Create non-exportable machine identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          $root = Join-Path $env:RUNNER_TEMP 'portable-a'
+          $keyName = 'SISQUALDeployConsole-Spike-${{ github.run_id }}'
+          & $pwsh -NoLogo -NoProfile -NonInteractive -File "$root\spike\Invoke-MachineIdentityCngSpike.ps1" `
+            -Action SourceCreate `
+            -KeyName $keyName `
+            -CredentialModulePath "$root\modules\Sisqual.Credentials\Sisqual.Credentials.psd1" `
+            -IdentityPath "$env:GITHUB_WORKSPACE\machine-identity-source.json" `
+            -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-create.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Replace portable folder and reopen same identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:RUNNER_TEMP 'portable-a'
+          $replacement = Join-Path $env:RUNNER_TEMP 'portable-replaced'
+          Copy-Item $source $replacement -Recurse
+          Remove-Item $source -Recurse -Force
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          $keyName = 'SISQUALDeployConsole-Spike-${{ github.run_id }}'
+          & $pwsh -NoLogo -NoProfile -NonInteractive -File "$replacement\spike\Invoke-MachineIdentityCngSpike.ps1" `
+            -Action SourceReopen `
+            -KeyName $keyName `
+            -CredentialModulePath "$replacement\modules\Sisqual.Credentials\Sisqual.Credentials.psd1" `
+            -IdentityPath "$env:GITHUB_WORKSPACE\machine-identity-source.json" `
+            -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-reopen.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload copied portable folder and source evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-machine-identity-machine-a
+          path: |
+            ${{ runner.temp }}/portable-replaced
+            machine-identity-source.json
+            report-machine-a-create.json
+            report-machine-a-reopen.json
+          if-no-files-found: error
+
+      - name: Clean source test key
+        if: always()
+        shell: powershell
+        run: |
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1B\machine-identity\Invoke-MachineIdentityCngSpike.ps1'
+          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psd1'
+          if ((Test-Path $pwsh) -and (Test-Path $script)) {
+            & $pwsh -NoLogo -NoProfile -NonInteractive -File $script `
+              -Action Delete `
+              -KeyName 'SISQUALDeployConsole-Spike-${{ github.run_id }}' `
+              -CredentialModulePath $module `
+              -ReportPath "$env:GITHUB_WORKSPACE\report-machine-a-cleanup.json"
+          }
+
+  machine-b:
+    name: Machine B - copied folder has no source private key
+    needs: machine-a
+    runs-on: windows-2025
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Machine A artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: phase1b-machine-identity-machine-a
+          path: ${{ runner.temp }}/from-machine-a
+
+      - name: Download verified portable PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip' -OutFile $zip
+          $expected = '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "PowerShell SHA-256 mismatch: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\pwsh" -Force
+
+      - name: Run copied folder on Machine B
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $artifact = Join-Path $env:RUNNER_TEMP 'from-machine-a'
+          $script = Get-ChildItem $artifact -Recurse -Filter 'Invoke-MachineIdentityCngSpike.ps1' -File | Select-Object -First 1 -ExpandProperty FullName
+          $module = Get-ChildItem $artifact -Recurse -Filter 'Sisqual.Credentials.psd1' -File | Select-Object -First 1 -ExpandProperty FullName
+          $identity = Get-ChildItem $artifact -Recurse -Filter 'machine-identity-source.json' -File | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $script -or -not $module -or -not $identity) { throw 'Machine A artifact is incomplete.' }
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          & $pwsh -NoLogo -NoProfile -NonInteractive -File $script `
+            -Action Destination `
+            -KeyName 'SISQUALDeployConsole-Spike-${{ github.run_id }}' `
+            -CredentialModulePath $module `
+            -IdentityPath $identity `
+            -ReportPath "$env:GITHUB_WORKSPACE\report-machine-b.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Machine B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-machine-identity-machine-b
+          path: report-machine-b.json
+          if-no-files-found: warn
+
+      - name: Clean destination test key
+        if: always()
+        shell: powershell
+        run: |
+          $pwsh = Join-Path $env:RUNNER_TEMP 'pwsh\pwsh.exe'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1B\machine-identity\Invoke-MachineIdentityCngSpike.ps1'
+          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\Sisqual.Credentials\Sisqual.Credentials.psd1'
+          if ((Test-Path $pwsh) -and (Test-Path $script)) {
+            & $pwsh -NoLogo -NoProfile -NonInteractive -File $script `
+              -Action Delete `
+              -KeyName 'SISQUALDeployConsole-Spike-${{ github.run_id }}' `
+              -CredentialModulePath $module `
+              -ReportPath "$env:GITHUB_WORKSPACE\report-machine-b-cleanup.json"
+          }
