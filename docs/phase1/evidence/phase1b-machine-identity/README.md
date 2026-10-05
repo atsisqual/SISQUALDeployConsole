@@ -76,6 +76,23 @@ Full accepted record and versioned reports:
 
 `docs/phase1/evidence/phase1b-machine-identity-37377769448/`
 
+## PR integration CI
+
+[CONFIRMED] The latest documented PR head `8bfdb80fe93406b432ad3164bdcdf5a2708d3eee` passed the repository CI workflow:
+
+- workflow `CI`, workflow ID `375308650`;
+- run ID `37378707372`;
+- run number `63`;
+- conclusion `success`;
+- job `static-windows`, job ID `111994681597`, conclusion `success`;
+- `Collect changed files`: success;
+- `Parse all PowerShell with the PowerShell 7 parser`: success;
+- `Verify ASCII and LF on changed text files`: success;
+- `Simple secret scan on changed text files`: success;
+- no CI artifact was produced or required.
+
+Later documentation-only commits do not change the accepted CNG spike code/workflow semantics; the reviewer must still use the final PR head checks before integration.
+
 ## Accepted technical conclusion
 
 [CONFIRMED] The CNG candidate is technically viable on the tested GitHub-hosted Windows Server 2022 and Windows Server 2025 images at the exact accepted commit.
