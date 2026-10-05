@@ -273,6 +273,8 @@ try {
         'a path with a colon'    = 'a:b.txt'
     }
     foreach ($name in $badFiles.Keys) {
+        # On NTFS a file named a:b.txt is not a name with a colon: it is the stream b.txt of the file a.
+        if ($name -eq 'a path with a colon' -and $IsWindows) { Write-Host 'INFO  a colon cannot be part of a Windows file name, that check is skipped'; continue }
         $d = Join-Path $work ('bad-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
         New-TestPackage -Dir $d
         $cv = New-ConversionManifest -Dir $d -Path (Join-Path $d '..' ('c-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.json'))
