@@ -289,7 +289,7 @@ A scan of the carried tables found literal secret values in a global rule table,
 - `cfg.SettingDefinition` has no row with `IsSecret = 1`; `cfg.SettingValue` has no rows.
 - [PROPOSED] Rule for the conversion tool: in any row with `IsSensitive = 1` whose template has no placeholder, the literal part is replaced by a reference token (syntax [PENDING], for example `{{secret:RULE:<RuleCode>}}`), and the literal goes to the vault as a credential of kind `RULE_SECRET`, so the engines get it from the credential package like any other credential. The kind must be added to `contracts/credential-package.md` (open question Q6).
 - [PROPOSED] Safety net: before writing a catalog the tool scans every text column of every carried table for secret patterns (`password=`, `pwd=`, `secret=`, `token=`, long random strings in sensitive rows) against an explicit allowlist, and refuses to write the file on any other hit. The same scan is part of `Test-CatalogConversion.ps1` (section 5).
-- [CONFIRMED] These literals are also present in plain text in `ManagementSync.sql` in the reference repository. They have therefore been exposed to everyone with access to that repository and its history. [PROPOSED] rotate the 16 values after the cutover; the plan and the test reports never print them.
+- [CONFIRMED] These literals are also present in plain text in `ManagementSync.sql` in the reference repository. They have therefore been exposed to everyone with access to that repository and its history. [DECIDED 2026-10-05, owner: "Nao"] The 16 values are NOT rotated after the cutover; the owner accepts the risk that they stay readable in the history of the reference repository. The plan and the test reports never print them.
 
 ### 3.4 Executable text inside carried tables
 
@@ -322,7 +322,7 @@ A scan of the carried tables found literal secret values in a global rule table,
 
 ### 4.4 Phase (ii): per machine, after its public key exists
 
-[PROPOSED] When a machine has run the portable once and its machine identity text (public key and fingerprint, `contracts/credential-package.md` 3a) has been carried to the credential tool, the tool selects from the vault the entries of the instances in that machine's catalog plus the `RULE_SECRET` entries its engines need, encrypts them for that machine key, signs the package with the tool key and issues it with `sequence` greater than the previous one. Whether the result is a text package imported by the operator or a `credentials.db` file is the open question Q3 of the credential contract and is not decided here. The same issuer key signs the package manifest (ADR-0007 item 3).
+[PROPOSED] When a machine has run the portable once and its machine identity text (public key and fingerprint, `contracts/credential-package.md` 3a) has been carried to the credential tool, the tool selects from the vault the entries of the instances in that machine's catalog plus the `RULE_SECRET` entries its engines need, encrypts them for that machine key, signs the package with the tool key and issues it with `sequence` greater than the previous one. [DECIDED 2026-10-05, Q3 A] The result is the signed text package: the operator pastes it into the application, which validates it and keeps it as received in a file outside the portable folder (no database). The same issuer key signs the package manifest (ADR-0007 item 3).
 
 ## 5. Tools
 
@@ -405,7 +405,7 @@ Only on the real servers [V]:
 
 | Id | Risk | Mitigation proposed |
 |---|---|---|
-| C-01 | 16 literal secrets in `cfg.ConfigRule`, plain in the reference repository | redaction to references, vault import, scan in tool and CI, rotate after cutover |
+| C-01 | 16 literal secrets in `cfg.ConfigRule`, plain in the reference repository | redaction to references, vault import, scan in tool and CI; rotation after cutover declined by the owner (risk accepted) |
 | C-02 | The credentials exist only as certificate-bound ciphertext in the live database; if it is retired before the import they are lost | import before decommission, counts and fingerprints, two tested backups (4.2) |
 | C-03 | The vault is lost or stolen | passphrase, restrictive permissions, backups, never in Git or shared folders |
 | C-04 | A stale catalog is used without anyone noticing (the old and new systems coexist until each server is switched) | catalog source and build time shown in the UI, re-run the conversion before each cutover and agree a change freeze [PENDING] |
@@ -434,11 +434,11 @@ Only on the real servers [V]:
 7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.
 8. [DECIDED 2026-10-05] Tool runtime: PowerShell 7 with `Microsoft.Data.SqlClient` shipped with the tools; everything, including CI parsing of the tools, in the latest PowerShell (7). Still to do: pin the exact package version and SHA-256 and check the licence (step B2).
 9. Vault format, protection (passphrase and Windows identity) and where the two backups are kept.
-10. The credential contract questions Q1 to Q8, especially Q3 (text package or `credentials.db`) and Q6 (kinds, including `RULE_SECRET`).
+10. The credential contract questions Q1 to Q8, all answered on 2026-10-05 (section 12), including Q3 (text package pasted into the application) and Q6 (kinds, including `RULE_SECRET`).
 11. Whether the seal tool and the credential tool are the same program.
 12. [DECIDED by evidence, PR #18] CI gets a SQL Server from the runner image (LocalDB). Still to approve: the integration test that uses it.
 13. Machines without a local database (not decided).
-14. Whether the 16 exposed values are rotated after the cutover, and the change freeze and refresh cadence for catalogs while the old system is still in production.
+14. [DECIDED 2026-10-05: not rotated, risk accepted] Still open: the change freeze and refresh cadence for catalogs while the old system is still in production.
 
 Not decided and not assumed anywhere in this plan: the long-term authority of the catalog (deferred by the owner), the SQLite managed provider (Phase 1B), and the crypto algorithms (Phase 1B).
 
@@ -478,4 +478,4 @@ Left for the owner: approve the canonical form and the algorithm (with the crede
 ## 12. Owner answers on the credential contract (2026-10-05)
 
 [DECIDED] Vault (section 4.3, Q9): one encrypted file outside Git protected by the owner's passphrase (PBKDF2-HMAC-SHA256), two encrypted backups in two places, restore tested, no Windows-account binding. Credential kinds (Q6): `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN` and `RULE_SECRET` (the 16 literal rule secrets). One package per machine (Q8), valid at most one year with a 15-minute clock tolerance (Q7). Issuer key pinned on the machine after an out-of-band fingerprint check (Q1); ECDSA P-256 with SHA-256 for signatures and ECDH P-256 with AES-256-GCM for entries (Q2); installed-package sequence as replay reference (Q4); manual reissue and re-pinning on key loss or rotation (Q5); manifest and seal-log names as proposed (Q10). Details and the two readings to confirm are in `contracts/credential-package.md` section 8.
-[PENDING] Q3 (how the package reaches the machine) and whether the 16 exposed secrets are rotated after the cutover.
+[DECIDED, Q3 A] The operator pastes the text package into the application, which validates it and stores it as received in a file outside the portable folder. [DECIDED, owner: "Nao"] The 16 exposed secrets are not rotated after the cutover. Nothing is pending in the credential contract questions.
