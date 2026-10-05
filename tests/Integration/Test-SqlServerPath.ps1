@@ -38,8 +38,12 @@ $convertTool = Join-Path $repo 'tools' 'Convert-ManagementDb.ps1'
 $schemaFile = Join-Path $repo 'tests' 'Fixtures' 'carried-schema.json'
 # Dot-sourcing binds the tool's parameters into this scope, so keep our own values and restore them.
 $savedSqlite3Path = $Sqlite3Path
+$savedSqlClientPath = $SqlClientPath
+$savedSqlInstance = $SqlInstance
 . $convertTool -SyncFile 'unused' -OutputFolder 'unused' -Sqlite3Path 'unused'   # for $script:CarriedTables and helpers
 $Sqlite3Path = $savedSqlite3Path
+$SqlClientPath = $savedSqlClientPath
+$SqlInstance = $savedSqlInstance
 $classes = $script:CarriedTables
 if (-not (Test-Path -LiteralPath $Sqlite3Path -PathType Leaf)) { Write-Host 'sqlite3 not found.'; exit 2 }
 if (-not $OfflineOnly -and [string]::IsNullOrWhiteSpace($SqlClientPath)) { Write-Host '-SqlClientPath is required unless -OfflineOnly.'; exit 2 }
