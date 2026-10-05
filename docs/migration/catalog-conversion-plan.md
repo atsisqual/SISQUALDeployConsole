@@ -428,7 +428,7 @@ Only on the real servers [V]:
 1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
 2. [DECIDED 2026-10-05] Binary content: BLOB in every catalog (global assets duplicated; per-instance logos in their machine catalog).
 3. [DECIDED 2026-10-05] No template server for policy rows and no built-in defaults: engines stop when the policy row is missing (2.6). Open consequence for the owner: how policy rows for the pilot and for PRESALES and TENDERS are authored (manual edit and seal, ADR-0007 item 7).
-4. Whether a catalog needs a directory of instances of other machines (cross-machine operations), and what a machine's Pulse needs of other hubs.
+4. Instance directory: decided for links pages on 2026-10-05 (see `docs/roadmap.md` section 5); still open for cross-machine operations (database copy, environment clone, folder copy) and for what a machine's Pulse needs of other hubs.
 5. [DECIDED 2026-10-05] No case folding anywhere: stored text is unchanged and code columns compare exactly (binary). The databases use `Latin1_General_CI_AS`. Still to do [V]: read the live collation of `_sisqualMANAGEMENT` and compare.
 6. Whether the four pure-read views are recreated.
 7. Where the exported engines live (outside Git proposed) and the exception to ASCII and LF.

@@ -6,6 +6,7 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 ## 1. What a catalog is
 
 - [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each instance appears in exactly one catalog.
+- [PLANNED, 2026-10-05] Exception for links pages: a catalog that hosts a general links page also carries a read-only directory of the instances of other machines (public columns only), because the general page lists every enabled instance of the same country across all machines (`cfg.GetLinksPageItemPlan`). The directory is a separate table; the rule above is about the full instance rows.
 - [CONFIRMED] Replaces the central database `_sisqualMANAGEMENT`, which ceases to exist. No runtime sync, no connection to any server to obtain configuration.
 - [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts (engines become files). Secret-bearing surfaces never enter a catalog (R-026).
 - [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4, so no managed SQLite provider is needed to build it (the provider is decided in Phase 1B and only has to open files read-only).
