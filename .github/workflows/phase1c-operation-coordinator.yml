@@ -1,0 +1,82 @@
+name: phase1c-operation-coordinator
+
+on:
+  push:
+    branches: ['spike/phase1c-operation-coordinator']
+    paths:
+      - 'spikes/phase1C/operation-coordinator/**'
+      - '.github/workflows/phase1c-operation-coordinator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1c-operation-coordinator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coordinator:
+    name: Operation coordinator on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify pinned portable PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
+          $uri = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip'
+          $expected = '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860'
+          Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToUpperInvariant()
+          if ($actual -ne $expected) { throw "SHA-256 mismatch for portable PowerShell: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP 'pwsh'
+          Expand-Archive $zip -DestinationPath $dest -Force
+          "PORTABLE_PWSH=$(Join-Path $dest 'pwsh.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run Phase 1C operation coordinator spike
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'spikes\phase1C\operation-coordinator\Test-OperationCoordinator.ps1'
+          $report = Join-Path $env:GITHUB_WORKSPACE 'report-${{ matrix.os }}.json'
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -NonInteractive -File $script -ReportPath $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1c-operation-coordinator-${{ matrix.os }}
+          path: report-${{ matrix.os }}.json
+          if-no-files-found: error
+
+      - name: Summarize checks
+        if: always()
+        shell: powershell
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'report-${{ matrix.os }}.json'
+          if (-not (Test-Path $path)) { Write-Host 'No report was produced.'; exit 1 }
+          $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $lines = @(
+            '### Phase 1C operation coordinator - ${{ matrix.os }}',
+            '',
+            ('Pass: **{0}** / Fail: **{1}**' -f $report.PassCount, $report.FailCount),
+            '',
+            '| Check | Status | Message |',
+            '|---|---|---|'
+          )
+          foreach ($check in $report.Checks) {
+            $lines += ('| {0} | {1} | {2} |' -f $check.Id, $check.Status, ([string]$check.Message -replace '\|', '/'))
+          }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($report.Fatal -or $report.FailCount -gt 0) { exit 1 }
