@@ -109,7 +109,7 @@ function Get-CarriedColumns {
         $columns.Add($column)
     }
     if ($Table -ceq 'cfg.DatabaseObjectSettingRule') { $columns.Add((Get-StructuredDatabaseFilterColumnInfo)) }
-    return , $columns.ToArray()
+    return $columns.ToArray()
 }
 
 function Get-ExcludedColumnList {
