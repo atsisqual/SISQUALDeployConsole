@@ -47,6 +47,33 @@ function ConvertTo-SqliteLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+function Get-FileTrust {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $file = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    return [pscustomobject]@{
+        Sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+        Size = [long]$file.Length
+    }
+}
+
+function Get-VerifiedPackageFiles {
+    param(
+        [Parameter(Mandatory)][string]$PackageRoot,
+        [Parameter(Mandatory)][string]$Root
+    )
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction Stop)) {
+        $entries.Add([pscustomobject]@{
+            path = [IO.Path]::GetRelativePath($PackageRoot, $file.FullName).Replace('\', '/')
+            sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+            size = [long]$file.Length
+        })
+    }
+    return @($entries)
+}
+
 function New-CatalogFixture {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -95,6 +122,7 @@ try {
     $catalogRoot = Join-Path $packageRoot 'catalog'
     New-Item -ItemType Directory -Path $packageRoot, $catalogRoot -Force | Out-Null
     Copy-Item -LiteralPath $ProviderRoot -Destination $providerCopy -Recurse -Force
+    $verifiedProviderFiles = Get-VerifiedPackageFiles -PackageRoot $packageRoot -Root $providerCopy
 
     $defaults = Get-SisqualRuntimeSqliteDefaults
     Test-Check 'provider version pin is 10.0.12' ($defaults.ProviderVersion -ceq '10.0.12')
@@ -102,18 +130,19 @@ try {
     Test-Check 'factory defaults are read-only private-cache' ($defaults.ConnectionMode -ceq 'ReadOnly' -and $defaults.CacheMode -ceq 'Private' -and -not $defaults.Pooling)
 
     Test-Throws 'relative PackageRoot is rejected before normalization' {
-        Initialize-SisqualRuntimeSqliteProvider -PackageRoot '.' -ProviderRoot 'runtime\sqlite-provider' | Out-Null
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot '.' -ProviderRoot 'runtime\sqlite-provider' -VerifiedFiles $verifiedProviderFiles | Out-Null
     }
     Test-Throws 'provider path outside package is rejected' {
-        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot -VerifiedFiles $verifiedProviderFiles | Out-Null
     }
     $caseVariantProvider = $providerCopy.Replace('\package\', '\PACKAGE\')
     Test-Throws 'package containment rejects case-distinct boundary spelling' {
-        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $caseVariantProvider | Out-Null
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $caseVariantProvider -VerifiedFiles $verifiedProviderFiles | Out-Null
     }
 
-    $provider = Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot 'runtime\sqlite-provider'
+    $provider = Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot 'runtime\sqlite-provider' -VerifiedFiles $verifiedProviderFiles
     Test-Check 'copied provider payload initializes from package tree' ($provider.ProviderVersion -ceq '10.0.12' -and $provider.ProviderRoot -ceq [IO.Path]::GetFullPath($providerCopy))
+    Test-Check 'provider files are rebound to verified manifest bytes' ($provider.VerifiedFiles.Count -ge 5)
 
     $providerRenameBlocked = $false
     try {
@@ -139,13 +168,23 @@ try {
 
     $validPath = Join-Path $catalogRoot 'catalog-DEMO.db'
     New-CatalogFixture -Path $validPath -ServerCode 'DEMO'
+    $validTrust = Get-FileTrust -Path $validPath
     $hashBefore = (Get-FileHash -LiteralPath $validPath -Algorithm SHA256).Hash
 
-    $session = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'test-run'
+    Test-Throws 'catalog SHA-256 mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 ('0' * 64) -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+    Test-Throws 'catalog size mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize ($validTrust.Size + 1) -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+
+    $session = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'test-run'
     $openSessions.Add($session)
     Test-Check 'valid catalog opens with query_only enabled' ($session.QueryOnly -and $session.CatalogPath -ceq [IO.Path]::GetFullPath($validPath))
     Test-Check 'native SQLite version is exact' ($session.NativeSqliteVersion -ceq '3.53.3')
     Test-Check 'catalog metadata is exact and case-sensitive' ($session.Metadata.ServerCode -ceq 'DEMO' -and $session.Metadata.SourceKind -ceq 'conversion-tool' -and $session.Metadata.SchemaVersion -eq 1)
+    Test-Check 'catalog session records guarded trust evidence' ($session.VerifiedSha256 -ceq $validTrust.Sha256 -and $session.VerifiedSize -eq $validTrust.Size)
+    Test-Check 'catalog session does not expose raw SQLite connection' ($null -eq $session.PSObject.Properties['Connection'])
 
     $catalogRenameBlocked = $false
     try {
@@ -169,30 +208,6 @@ try {
     }
     Test-Check 'catalog file guard denies in-place write opens while session is active' $catalogWriteBlocked
 
-    $command = $session.Connection.CreateCommand()
-    try {
-        $command.CommandText = 'SELECT value FROM sample WHERE code = $code;'
-        $parameter = $command.CreateParameter()
-        $parameter.ParameterName = '$code'
-        $parameter.Value = 'B'
-        [void]$command.Parameters.Add($parameter)
-        $parameterizedValue = [string]$command.ExecuteScalar()
-    }
-    finally {
-        $command.Dispose()
-    }
-    Test-Check 'parameterized catalog reads work' ($parameterizedValue -ceq 'beta')
-
-    $writeRejected = $false
-    $command = $session.Connection.CreateCommand()
-    try {
-        $command.CommandText = 'CREATE TABLE forbidden_write(id INTEGER);'
-        try { [void]$command.ExecuteNonQuery() } catch { $writeRejected = $true }
-    }
-    finally {
-        $command.Dispose()
-    }
-    Test-Check 'write through runtime catalog session is rejected' $writeRejected
     Close-SisqualRuntimeCatalog -Session $session
     $openSessions.Remove($session) | Out-Null
 
@@ -203,54 +218,58 @@ try {
 
     $missingPath = Join-Path $catalogRoot 'catalog-MISSING.db'
     Test-Throws 'missing catalog is rejected without creation' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MISSING.db' -ExpectedServerCode 'MISSING' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MISSING.db' -ExpectedSha256 ('0' * 64) -ExpectedSize 0 -ExpectedServerCode 'MISSING' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
     Test-Check 'missing catalog was not created' (-not (Test-Path -LiteralPath $missingPath))
 
     Test-Throws 'catalog path outside package is rejected' {
-        Open-SisqualRuntimeCatalog -CatalogPath (Join-Path $outsideRoot 'catalog-OUT.db') -ExpectedServerCode 'OUT' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath (Join-Path $outsideRoot 'catalog-OUT.db') -ExpectedSha256 ('0' * 64) -ExpectedSize 0 -ExpectedServerCode 'OUT' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
 
     $otherPath = Join-Path $catalogRoot 'catalog-OTHER.db'
     Copy-Item -LiteralPath $validPath -Destination $otherPath
+    $otherTrust = Get-FileTrust -Path $otherPath
     Test-Throws 'metadata ServerCode mismatch fails closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-OTHER.db' -ExpectedServerCode 'OTHER' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-OTHER.db' -ExpectedSha256 $otherTrust.Sha256 -ExpectedSize $otherTrust.Size -ExpectedServerCode 'OTHER' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
     Test-Throws 'metadata schema version mismatch fails closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 2 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 2 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
     Test-Throws 'metadata source kind mismatch fails closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'build' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'build' | Out-Null
     }
     Test-Throws 'metadata source reference mismatch fails closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'different' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'different' | Out-Null
     }
 
     $badTimePath = Join-Path $catalogRoot 'catalog-BADTIME.db'
     New-CatalogFixture -Path $badTimePath -ServerCode 'BADTIME' -BuiltAtUtc '2026-10-06 01:00:00'
+    $badTimeTrust = Get-FileTrust -Path $badTimePath
     Test-Throws 'malformed built_at_utc fails closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-BADTIME.db' -ExpectedServerCode 'BADTIME' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-BADTIME.db' -ExpectedSha256 $badTimeTrust.Sha256 -ExpectedSize $badTimeTrust.Size -ExpectedServerCode 'BADTIME' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
 
     $multiPath = Join-Path $catalogRoot 'catalog-MULTI.db'
     New-CatalogFixture -Path $multiPath -ServerCode 'MULTI' -TwoMetaRows
+    $multiTrust = Get-FileTrust -Path $multiPath
     Test-Throws 'multiple catalog_meta rows fail closed' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MULTI.db' -ExpectedServerCode 'MULTI' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MULTI.db' -ExpectedSha256 $multiTrust.Sha256 -ExpectedSize $multiTrust.Size -ExpectedServerCode 'MULTI' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
 
     $junctionCatalogRoot = Join-Path $packageRoot 'catalog-link'
     $outsideCatalogPath = Join-Path $outsideRoot 'catalog-JUNCTION.db'
     New-CatalogFixture -Path $outsideCatalogPath -ServerCode 'JUNCTION'
+    $outsideCatalogTrust = Get-FileTrust -Path $outsideCatalogPath
     New-Item -ItemType Junction -Path $junctionCatalogRoot -Target $outsideRoot -Force | Out-Null
     Test-Throws 'catalog path through junction is rejected' {
-        Open-SisqualRuntimeCatalog -CatalogPath 'catalog-link\catalog-JUNCTION.db' -ExpectedServerCode 'JUNCTION' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog-link\catalog-JUNCTION.db' -ExpectedSha256 $outsideCatalogTrust.Sha256 -ExpectedSize $outsideCatalogTrust.Size -ExpectedServerCode 'JUNCTION' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
     }
     Remove-Item -LiteralPath $junctionCatalogRoot -Force
 
     $parallelPass = $true
     try {
         for ($i = 0; $i -lt 20; $i++) {
-            $parallel = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool'
+            $parallel = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedSha256 $validTrust.Sha256 -ExpectedSize $validTrust.Size -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool'
             $openSessions.Add($parallel)
         }
         $parallelPass = ($openSessions.Count -eq 20)
