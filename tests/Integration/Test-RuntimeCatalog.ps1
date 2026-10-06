@@ -107,6 +107,10 @@ try {
     Test-Throws 'provider path outside package is rejected' {
         Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
     }
+    $caseVariantProvider = Join-Path (Join-Path $tempRoot 'PACKAGE') 'runtime\sqlite-provider'
+    Test-Throws 'package containment rejects case-distinct boundary spelling' {
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $caseVariantProvider | Out-Null
+    }
 
     $provider = Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot 'runtime\sqlite-provider'
     Test-Check 'copied provider payload initializes from package tree' ($provider.ProviderVersion -ceq '10.0.12' -and $provider.ProviderRoot -ceq [IO.Path]::GetFullPath($providerCopy))
@@ -119,6 +123,19 @@ try {
         $providerRenameBlocked = $true
     }
     Test-Check 'provider path guard blocks directory replacement after initialization' $providerRenameBlocked
+
+    $providerWriteBlocked = $false
+    $providerWriteStream = $null
+    try {
+        $providerWriteStream = [IO.File]::Open($provider.AssemblyPath, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+    }
+    catch {
+        $providerWriteBlocked = $true
+    }
+    finally {
+        if ($null -ne $providerWriteStream) { $providerWriteStream.Dispose() }
+    }
+    Test-Check 'provider file guard denies in-place write opens' $providerWriteBlocked
 
     $validPath = Join-Path $catalogRoot 'catalog-DEMO.db'
     New-CatalogFixture -Path $validPath -ServerCode 'DEMO'
@@ -138,6 +155,19 @@ try {
         $catalogRenameBlocked = $true
     }
     Test-Check 'catalog path guard blocks directory replacement while session is open' $catalogRenameBlocked
+
+    $catalogWriteBlocked = $false
+    $catalogWriteStream = $null
+    try {
+        $catalogWriteStream = [IO.File]::Open($validPath, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+    }
+    catch {
+        $catalogWriteBlocked = $true
+    }
+    finally {
+        if ($null -ne $catalogWriteStream) { $catalogWriteStream.Dispose() }
+    }
+    Test-Check 'catalog file guard denies in-place write opens while session is active' $catalogWriteBlocked
 
     $command = $session.Connection.CreateCommand()
     try {
