@@ -4,93 +4,49 @@
 **Workflow ID:** `375792558`
 **Run ID:** `37372704803`
 **Run number:** `2`
-**Attempt:** `1`
 **Event:** `push`
 **Branch:** `spike/phase1b-sqlite-managed-provider`
 **Commit:** `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3`
 **PR:** #36
-**Created UTC:** `2026-10-05T20:55:17Z`
-**Completed UTC:** `2026-10-05T21:10:20Z`
-**Status:** [CONFIRMED] infrastructure cancellation. This attempt is not technical compatibility evidence.
+**Status:** [CONFIRMED] historical evidence. Attempt 1 was infrastructure-only; attempt 2 executed and exposed harness/evidence defects. Neither attempt is accepted provider evidence.
 
-## Why this is the corrected-workflow run
+## Attempt 1 - no runner
 
-[CONFIRMED] The earlier run `37370494285` used the first version of the workflow. Both of its attempts were cancelled without a runner and zero steps executed. A later review also found that its NuGet evidence step could emit a null SHA-256 when the global package cache did not retain a `.nupkg` archive.
+| Job | Job ID | Runner state | Started UTC | Completed UTC | Result |
+|---|---:|---|---|---|---|
+| windows-2022 | `111973546139` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
+| windows-2025 | `111973546324` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
 
-[CONFIRMED] Commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3` corrected the evidence path. The workflow now:
+[CONFIRMED] No artifacts were produced. The run-level failure was not a provider result.
 
-1. reads every exact resolved package ID and version from `packages.lock.json`;
-2. downloads each resolved `.nupkg` explicitly from the NuGet flat-container source;
-3. records the archive SHA-256 and SHA-512;
-4. compares the downloaded archive SHA-512 with the lock-file `contentHash`;
-5. fails if an archive, SHA-256, lock hash or hash match is missing.
+## Attempt 2 - first executed Windows attempt
 
-This run remains the first run with the corrected workflow, but attempt 1 cannot establish compatibility because neither job received a runner.
+[CONFIRMED] The same run ID was rerun after Windows runners became available.
 
-## Execution ledger
+| Job | Job ID | Runner | Runner ID | Started UTC | Completed UTC | Result |
+|---|---:|---|---:|---|---|---|
+| windows-2022 | `112035154375` | `GitHub Actions 1000000644` | `1000000644` | 2026-10-05T23:50:59Z | 2026-10-05T23:54:59Z | failure |
+| windows-2025 | `112035154659` | `GitHub Actions 1000000643` | `1000000643` | 2026-10-05T23:51:01Z | 2026-10-05T23:54:39Z | failure |
 
-| Attempt | Job | Job ID | Runner state | Started UTC | Completed UTC | Result |
-|---|---|---:|---|---|---|---|
-| 1 | windows-2022 | `111973546139` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
-| 1 | windows-2025 | `111973546324` | no runner assigned; `runner_id=0`; zero steps | 2026-10-05T20:55:18Z | 2026-10-05T21:10:19Z | cancelled |
+Artifacts:
 
-[CONFIRMED] GitHub records the run as `status=completed`, `conclusion=failure`. That run-level failure is the aggregate result of the cancelled jobs; no provider step executed, so this is not a technical provider failure.
+| OS | Artifact ID | Size | Digest |
+|---|---:|---:|---|
+| windows-2022 | `11381246946` | 2257 bytes | `sha256:afaab5d7c7e1838ec4576e2c6c45ea590e76c96a540748a4199ae1e450562b9d` |
+| windows-2025 | `11380983142` | 2254 bytes | `sha256:7b8b5216a10dc7851d5b7675b4779d4d0ffb65838bc41e7186b6399851c34e6c` |
 
-[CONFIRMED] No workflow artifacts were produced by this attempt.
+[CONFIRMED] Both jobs successfully restored/materialized the provider and verified the pinned portable PowerShell/SQLite CLI before entering the probe.
 
-## Required artifacts for future validation
+[CONFIRMED] The probe reached working provider behavior but failed in its own post-check because `Set-StrictMode` made an empty sidecar result unsafe when accessed as a scalar property. This was corrected in commit `6fa275a180d48271cdc2e98dff86f638e805bded`.
 
-A successful executed attempt must upload:
+[CONFIRMED] The dependency-evidence step also used an invalid assumption: the raw downloaded `.nupkg` SHA-512 was treated as equivalent to NuGet's lock-file `contentHash`. That is not the correct verification model. The final workflow instead uses NuGet `--locked-mode` against an isolated empty cache and records raw archive hashes separately.
 
-- `report-<os>-original.json`
-- `report-<os>-copy.json`
-- `packages.lock-<os>.json`
-- `nuget-graph-<os>.json`
+[CONFIRMED] The summary step also contained a PowerShell interpolation bug around a variable followed by `:`; later workflow revisions corrected it.
 
-Expected GitHub Actions artifacts:
+## Supersession
 
-- `phase1b-sqlite-provider-windows-2022`
-- `phase1b-sqlite-provider-windows-2025`
+This run remains important negative evidence, but it is superseded for acceptance by run `37392036026` / attempt `1`, which completed all provider and dependency-evidence steps successfully on both Windows images.
 
-The final evidence record must also preserve each GitHub artifact ID, not only its display name.
+The accepted evidence is under:
 
-## Acceptance rule
-
-The provider can be recorded as [CONFIRMED] technically viable only when all of these are true:
-
-1. both Windows jobs actually execute and complete successfully;
-2. both original-folder probes report `overall = PASS`;
-3. both copied-folder probes report `overall = PASS`;
-4. `HOST_POWERSHELL`, `PROVIDER_PAYLOAD`, `PROVIDER_LOAD`, `FIXTURE_CREATED`, `READ_ONLY_READS`, `WRITE_REJECTED`, `MISSING_FILE_REJECTED`, `MULTIPLE_READ_CONNECTIONS` and `NO_CATALOG_MUTATION` all PASS;
-5. the native SQLite version returned by `sqlite_version()` is recorded;
-6. the exact resolved NuGet graph is present;
-7. every resolved package has a non-empty SHA-256;
-8. every downloaded package SHA-512 matches its `packages.lock.json` content hash;
-9. the evidence files and their GitHub artifact IDs are copied into this directory before integration.
-
-A failure must stay visible as evidence. It must not be relabelled PASS because the candidate is preferred.
-
-## Re-run and supersession rule
-
-[PROPOSED] Every re-run is recorded explicitly by `run ID + run_attempt + job IDs`. If code or workflow changes, the new push receives a new run ID and the previous run becomes superseded evidence rather than being overwritten.
-
-[PROPOSED] A re-run caused only by runner infrastructure keeps the same run ID and increments `run_attempt`; both attempts remain in the ledger.
-
-[PROPOSED] A candidate is accepted only from one explicitly named run/attempt combination whose exact commit SHA is recorded here.
-
-## Handoff
-
-[CONFIRMED] Per owner direction on 2026-10-05, no additional runner retry is being spent on this spike now. Three recorded attempts across runs `37370494285` and `37372704803` all ended without a Windows runner and with zero executed steps.
-
-[PENDING] Another AI/reviewer may re-run the corrected workflow later. The next accepted attempt must receive actual GitHub-hosted runners and execute the probe before any compatibility conclusion can be made.
-
-This handoff is caused by runner infrastructure and is not a rejection of `Microsoft.Data.Sqlite`.
-
-## Decision boundary
-
-Even if a later attempt passes all gates:
-
-- [CONFIRMED] may be used only for technical viability on the tested runner images;
-- [PROPOSED] remains the status of adopting `Microsoft.Data.Sqlite` 10.0.12;
-- [PENDING] owner/reviewer approval is still required for the new runtime dependency;
-- [V] one converted SISQUAL catalog should be opened read-only on a target/sandbox Windows machine before production acceptance.
+`docs/phase1/evidence/phase1b-sqlite-provider-37392036026/`
