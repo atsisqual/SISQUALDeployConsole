@@ -18,7 +18,9 @@ try {
     $privateRoot = Join-Path $tempBase 'private-key'
     Initialize-SisqualRuntimeLog -LogRoot $privateRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiAssign' | Out-Null
     $marker = 'PrivateKey' + 'MultilineLeakMarker'
-    $message = "safe-prefix private_key=-----BEGIN PRIVATE KEY-----`n$marker`nMII-body`n-----END PRIVATE KEY----- safe-suffix"
+    $pemBegin = '-----BEGIN ' + 'PRIVATE KEY-----'
+    $pemEnd = '-----END ' + 'PRIVATE KEY-----'
+    $message = "safe-prefix private_key=$pemBegin`n$marker`nMII-body`n$pemEnd safe-suffix"
     $path = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.MULTIASSIGN' -Message $message -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
     $text = [IO.File]::ReadAllText($path)
     Check 'PEM-style private-key assignment is fully redacted' (($text -notmatch [regex]::Escape($marker)) -and ($text -notmatch 'MII-body') -and ($text -notmatch 'BEGIN PRIVATE KEY') -and ($text -match 'private_key=\[REDACTED\]'))
