@@ -99,10 +99,11 @@ namespace Sisqual.Runtime
         private static SafeFileHandle OpenAndValidate(string path, bool directory, string label)
         {
             uint flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL);
+            uint shareMode = directory ? FILE_SHARE_READ | FILE_SHARE_WRITE : FILE_SHARE_READ;
             var handle = CreateFileW(
                 path,
                 FILE_READ_ATTRIBUTES,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                shareMode,
                 IntPtr.Zero,
                 OPEN_EXISTING,
                 flags,
@@ -132,9 +133,9 @@ namespace Sisqual.Runtime
 
         private static bool IsWithin(string root, string target)
         {
-            if (string.Equals(root, target, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(root, target, StringComparison.Ordinal)) return true;
             string prefix = root + Path.DirectorySeparatorChar;
-            return target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            return target.StartsWith(prefix, StringComparison.Ordinal);
         }
 
         public static CatalogPathGuard GuardPackageMember(string packageRoot, string targetPath, bool targetIsDirectory)
@@ -152,10 +153,10 @@ namespace Sisqual.Runtime
                 string currentPath = NormalizePath(current.FullName);
                 if (!IsWithin(root, currentPath)) break;
                 directories.Push(currentPath);
-                if (string.Equals(currentPath, root, StringComparison.OrdinalIgnoreCase)) break;
+                if (string.Equals(currentPath, root, StringComparison.Ordinal)) break;
                 current = current.Parent;
             }
-            if (directories.Count == 0 || !string.Equals(directories.Peek(), root, StringComparison.OrdinalIgnoreCase))
+            if (directories.Count == 0 || !string.Equals(directories.Peek(), root, StringComparison.Ordinal))
                 throw new IOException("Could not establish a guarded path from PackageRoot to target.");
 
             var handles = new List<SafeFileHandle>();
@@ -271,9 +272,12 @@ function Resolve-SisqualCatalogPackageMember {
         throw "$Label must be a local path."
     }
 
+    # The configured PackageRoot spelling is the exact security boundary. This deliberately
+    # rejects differently-cased aliases so per-directory NTFS case sensitivity cannot turn a
+    # sibling tree into an apparently contained provider/catalog path.
     $separator = [System.IO.Path]::DirectorySeparatorChar
     $prefix = $root.TrimEnd($separator, [System.IO.Path]::AltDirectorySeparatorChar) + $separator
-    if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+    if (-not $candidate.StartsWith($prefix, [StringComparison]::Ordinal)) {
         throw "$Label is outside PackageRoot: $candidate"
     }
 
@@ -354,8 +358,8 @@ function Initialize-SisqualRuntimeSqliteProvider {
     $resolvedPackageRoot = Assert-SisqualCatalogLocalFixedRoot -PackageRoot $PackageRoot
 
     if ($null -ne $script:ProviderState) {
-        if (-not $script:ProviderState.PackageRoot.Equals($resolvedPackageRoot, [StringComparison]::OrdinalIgnoreCase) -or
-            -not $script:ProviderState.ProviderRoot.Equals($resolvedProviderRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $script:ProviderState.PackageRoot.Equals($resolvedPackageRoot, [StringComparison]::Ordinal) -or
+            -not $script:ProviderState.ProviderRoot.Equals($resolvedProviderRoot, [StringComparison]::Ordinal)) {
             throw 'SQLite provider is already initialized from a different package path in this process.'
         }
         return $script:ProviderState
