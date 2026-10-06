@@ -329,13 +329,31 @@ function Protect-SisqualRuntimeLogText {
 
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
 
-    # A log field can contain arbitrary text plus a serialized JSON fragment. Once a quoted
-    # sensitive JSON key is detected, redact the remainder of the field rather than trying to
-    # parse attacker-controlled scalar/composite/multiline JSON with regular expressions.
-    $serializedSensitivePattern = '(?is)"(' + $sensitiveNamePattern + ')"\s*:'
-    $serializedMatch = [regex]::Match($text, $serializedSensitivePattern)
-    if ($serializedMatch.Success) {
-        $text = $text.Substring(0, $serializedMatch.Index) + $serializedMatch.Groups[1].Value + '=[REDACTED]'
+    # Decode JSON property-name escapes before deciding whether the field is sensitive. Once a
+    # sensitive serialized key is found, conservatively redact the remainder of the field so
+    # scalar, escaped, composite and multiline values cannot leak through regex edge cases.
+    $jsonPropertyPattern = '"(?<key>(?:\\.|[^"\\])*)"\s*:'
+    foreach ($jsonProperty in @([regex]::Matches($text, $jsonPropertyPattern))) {
+        $jsonDocument = $null
+        $decodedKey = $null
+        try {
+            $encodedKey = '"' + $jsonProperty.Groups['key'].Value + '"'
+            $jsonDocument = [System.Text.Json.JsonDocument]::Parse([string]$encodedKey)
+            $decodedKey = [string]$jsonDocument.RootElement.GetString()
+        }
+        catch {
+            $decodedKey = $null
+        }
+        finally {
+            if ($null -ne $jsonDocument) {
+                $jsonDocument.Dispose()
+            }
+        }
+
+        if (-not [string]::IsNullOrEmpty($decodedKey) -and (Test-SisqualSensitiveLogField -Name $decodedKey)) {
+            $text = $text.Substring(0, $jsonProperty.Index) + $decodedKey + '=[REDACTED]'
+            break
+        }
     }
 
     $doubleQuotedValue = '"(?:\\.|[^"\\])*"'
@@ -414,10 +432,13 @@ function Resolve-SisqualRuntimeLogRoot {
         throw 'UNC and device paths are not approved for runtime logs.'
     }
 
+    # Treat the configured ApprovedRoot spelling as an exact security boundary. This is
+    # deliberately stricter than ordinary case-insensitive NTFS so a per-directory
+    # case-sensitive tree cannot reinterpret a differently-cased sibling as a descendant.
     $separator = [System.IO.Path]::DirectorySeparatorChar
     $approvedPrefix = $fullApprovedRoot.TrimEnd($separator, [System.IO.Path]::AltDirectorySeparatorChar) + $separator
-    $isApprovedRoot = $fullRoot.Equals($fullApprovedRoot, [StringComparison]::OrdinalIgnoreCase)
-    $isApprovedChild = $fullRoot.StartsWith($approvedPrefix, [StringComparison]::OrdinalIgnoreCase)
+    $isApprovedRoot = $fullRoot.Equals($fullApprovedRoot, [StringComparison]::Ordinal)
+    $isApprovedChild = $fullRoot.StartsWith($approvedPrefix, [StringComparison]::Ordinal)
     if (-not $isApprovedRoot -and -not $isApprovedChild) {
         throw "LogRoot is outside the approved local log root: $fullApprovedRoot"
     }
