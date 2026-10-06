@@ -1,54 +1,102 @@
 # Phase 3 - Runtime logging hardening
 
 **Date:** 2026-10-06
-**Status:** [PROPOSED] follow-up to the merged runtime logging foundation, pending CI evidence and review.
+**Status:** [CONFIRMED] technical hardening validated on Windows Server 2022/2025; final repository-wide tests and fresh Codex review remain [PENDING].
 
 ## Reason for this follow-up
 
-PR #49 was merged before its final Codex review findings were addressed. The review identified six effective issues in the merged logger:
+PR #49 was merged before its final Codex review findings were addressed. This follow-up keeps the accepted logging contract but closes the security/correctness gaps identified during successive reviews.
 
-1. a complete `Authorization: Basic <credential>` value was not fully consumed by redaction;
-2. quoted sensitive keys in serialized text such as JSON could bypass assignment redaction;
-3. a configurable log path was canonicalized but not constrained to an approved local root;
-4. retention ran only during initialization, so a long-running process could exceed the configured window after daily rollover;
-5. retention date parsing used UTC assumptions in a way that could shift the parsed calendar day on hosts west of UTC;
-6. the dedicated logging workflow did not run on future pull requests or `main` changes.
+The effective findings covered:
 
-These are fixes to an accepted contract and security rules; they do not change the operational scope.
+1. complete Basic Authorization values and folded header continuations;
+2. quoted, escaped, composite and multiline sensitive JSON values;
+3. configurable log roots outside an approved local root;
+4. reparse/junction traversal at initialization and after initialization;
+5. final daily log-file symlinks and stale retention symlinks;
+6. hard-linked daily/retention files;
+7. check/use races around log-file append and retention deletion;
+8. directory-creation races while building a missing log-root tree;
+9. retention rollover/date behavior, including hosts west of UTC and future event timestamps;
+10. dedicated workflow coverage for future matching PR/main changes and PowerShell 7 use.
 
-## Changes
+These are hardening changes to accepted requirements; they do not add product scope.
 
-[PROPOSED] `runtime/Sisqual.Runtime.Logging.psm1` now:
+## Current implementation
 
-- redacts complete Authorization/Cookie header-shaped values through the end of the logical source line;
-- redacts both Bearer and Basic scheme credentials;
-- accepts quoted sensitive assignment keys so common serialized JSON forms are redacted;
-- constrains `LogRoot` to an explicitly approved absolute local root and rejects UNC/device roots;
-- defaults the approved root to `C:\SISQUALWFM\WFM.Logs` while keeping the ADR-0007 log folder default below it;
-- compares retention filenames as `DateOnly`, removing local timezone conversion from the decision;
-- reruns retention automatically when a write crosses into a later UTC day;
-- serializes retention and append operations with the existing in-process monitor.
+[CONFIRMED] `runtime/Sisqual.Runtime.Logging.psm1` now:
+
+- keeps the ADR-0007 default `C:\SISQUALWFM\WFM.Logs\SISQUALDeployManagement` below the approved default root `C:\SISQUALWFM\WFM.Logs`;
+- rejects log roots outside the approved absolute local tree and rejects UNC/device roots;
+- rejects reparse points/junctions in approved/log-root components;
+- creates missing log-root components root-to-leaf while already validated ancestor directory handles remain open without delete sharing;
+- opens final append/delete targets with Win32 handles and `FILE_FLAG_OPEN_REPARSE_POINT`;
+- validates the handle-resolved final path rather than trusting only pathname checks;
+- refuses daily/retention files whose opened handle reports `NumberOfLinks != 1`, rejecting NTFS hard-link aliases;
+- performs the short append/delete operation without file sharing so the validated target cannot acquire/reuse an alternate link during that operation;
+- redacts Basic/Bearer credentials, Authorization/Cookie headers and sensitive assignment fields;
+- conservatively redacts the remainder of a field after a sensitive serialized JSON key, covering scalar, escaped, composite and multiline values;
+- normalizes embedded CR/LF so one event remains one physical log record;
+- writes UTF-8 without BOM;
+- compares retention filenames as `DateOnly`;
+- bases automatic retention on wall-clock UTC, never on a caller-supplied event timestamp;
+- reruns retention on a later wall-clock UTC day under the existing in-process monitor;
+- only removes files that match the logger-owned prefix/date naming rule.
 
 The primary security rule is unchanged: callers must never intentionally pass decrypted secrets to the logger. Redaction remains defence in depth.
 
-## Validation
+## Accepted functional evidence
 
-`tests/Unit/Test-RuntimeLogging.ps1` adds checks for:
+Exact tested functional commit: `5124d632f4c3beb7c861fceefc04d07aaa288a2d`.
 
-- an out-of-root local path being rejected;
-- a UNC root being rejected;
-- complete Basic Authorization header redaction;
-- quoted JSON sensitive-key redaction;
-- no supplied marker surviving the log write;
-- automatic retention on UTC daily rollover.
+Dedicated workflow: `phase3-runtime-logging`
 
-`.github/workflows/phase3-runtime-logging.yml` is changed so the tests run for matching pull requests and matching changes on `main`, not only on the original feature branch.
+- workflow id: `375929890`;
+- run: `37428570341`;
+- run number: `17`;
+- conclusion: SUCCESS.
 
-The workflow also reruns the same unit suite after moving the disposable Windows runner to `SA Eastern Standard Time` (UTC-3), specifically to validate that date-based retention is independent of the host local timezone.
+Windows Server 2022:
+
+- job `112153789674`;
+- normal suite: 47/47 PASS;
+- UTC-3 rerun (`SA Eastern Standard Time`): 47/47 PASS.
+
+Windows Server 2025:
+
+- job `112153789424`;
+- normal suite: PASS;
+- UTC-3 rerun: PASS.
+
+The 47 checks include the hard-link append/retention cases and guarded nested-directory creation added for the last two Codex findings.
+
+[CONFIRMED] CI on the same functional commit:
+
+- run `37428570416`;
+- CI #166;
+- job `112153789118`;
+- PowerShell 7 parser PASS;
+- ASCII/LF PASS;
+- secret scan PASS.
+
+[PENDING] repository-wide `tools-tests` run `37428570421` is still completing.
+
+[PENDING] fresh Codex security review of the final corrected head. Earlier findings remain preserved as history but are superseded by the current implementation where their lines are outdated.
+
+## Historical evidence that must remain preserved
+
+[CONFIRMED] Earlier green runs are not promoted over this final functional commit because later security review added stronger requirements.
+
+[CONFIRMED] Run `37428133265` (#16) failed before the security cases because the first guarded-directory implementation attempted `CreateDirectoryW` on the existing drive root (`C:\`). The strategy was retained; the implementation was corrected to create only missing components and immediately open/validate every component while ancestor guards remain held.
+
+## Workflow
+
+`.github/workflows/phase3-runtime-logging.yml` runs for matching pull requests and matching changes on `main`.
+
+The same suite is rerun after moving the disposable Windows runner to `SA Eastern Standard Time` (UTC-3), with the wrapper and test process both using PowerShell 7.
 
 ## Boundaries
 
-This PR does not change the Phase 3 bootstrap, manifest verification, SQLite provider, credential package, Pode adapter or any engine.
+This PR does not change the Phase 3 bootstrap, manifest verification, SQLite provider/catalog factory, credential package, Pode adapter or any engine.
 
-[PENDING] Windows 2022/2025 workflow evidence on the corrected implementation.
-[PENDING] Codex review of the corrected implementation.
+No merge is requested by this document.
