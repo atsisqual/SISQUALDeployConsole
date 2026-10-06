@@ -114,7 +114,7 @@
     "baseCatalogSha256 must equal the catalog bytes at validation time and again immediately before replacement. A stale proposal fails closed.",
     "catalogServerCode must equal catalog_meta.server_code exactly.",
     "The key object must name exactly the live SQLite primary-key columns, using exact column spelling.",
-    "INSERT requires the key to be absent and merges key plus values; duplicate column names and conflicting key/value pairs are refused.",
+    "INSERT requires the target primary-key row to be absent and merges key plus values; duplicate column names and conflicting key/value pairs are refused.",
     "UPDATE and DELETE require expected values; the generated predicate includes both the primary key and expected values and exactly one row must match.",
     "Primary-key columns cannot be changed by UPDATE.",
     "catalog_meta, SQLite internal tables, cfg_LinksPageDirectory and any table or column forbidden by the package seal safety rules cannot be changed.",
