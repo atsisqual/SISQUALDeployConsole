@@ -116,6 +116,14 @@ Assert-That 'same-country matching is cross-machine and excludes disabled target
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('links-directory-tests-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
+    $newMachineOut = Join-Path $work 'new-machine'
+    $newMachine = Invoke-NewMachineConversion -Source $source -SourceInfo @{ kind = 'test' } -Folder $newMachineOut -Sqlite3 $sqlite3 -Code 'SRV_NEW' -Machine 'HOST-NEW' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'c1-c2-new-machine' 6>$null
+    $newMachineManifest = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($newMachine.Manifest)) | ConvertFrom-Json
+    $newMachineEntry = @($newMachineManifest.catalogs)[0]
+    $newMachineDirectoryCount = [int](Invoke-Sqlite3 -Exe $sqlite3 -Arguments @('-readonly', $newMachine.Catalog, 'SELECT count(*) FROM cfg_LinksPageDirectory;')).Trim()
+    Assert-That 'new-machine C2 directory is empty and recorded as zero' ($newMachineDirectoryCount -eq 0 -and [int]$newMachineEntry.linksPageDirectoryCount -eq 0)
+    Assert-That 'new-machine C2 does not report the expected empty directory as a missing policy' (@($newMachineEntry.findings | Where-Object { $_ -like 'cfg_LinksPageDirectory is empty*' }).Count -eq 0)
+
     $result = Invoke-CutConversion -Source $source -SourceInfo @{ kind = 'test' } -Folder $work -Sqlite3 $sqlite3 -Codes @('ALL') -SourceRef 'c1-c2-test' 6>$null
     Assert-That 'cut conversion builds all four catalogs' (@($result.Catalogs).Count -eq 4)
 
