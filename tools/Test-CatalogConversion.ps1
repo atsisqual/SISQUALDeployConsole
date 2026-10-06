@@ -53,21 +53,21 @@ $script:TestToolVersion = '0.2.0'
 function Get-C8QueryLines {
     param(
         [Parameter(Mandatory)][string]$Sqlite3,
-        [Parameter(Mandatory)][string]$Db,
+        [Parameter(Mandatory)][string]$DatabasePath,
         [Parameter(Mandatory)][string]$Sql
     )
-    $out = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $Db, $Sql)
+    $out = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $DatabasePath, $Sql)
     return @($out -split "`n" | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_.Length -gt 0 })
 }
 
 function Test-C8CatalogHasTables {
     param(
         [Parameter(Mandatory)][string]$Sqlite3,
-        [Parameter(Mandatory)][string]$Db
+        [Parameter(Mandatory)][string]$DatabasePath
     )
     $required = @('cfg_ConfigurationAdapterDefinition', 'ops_Action', 'ops_Engine')
     $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('cfg_ConfigurationAdapterDefinition','ops_Action','ops_Engine') ORDER BY name;"
-    $actual = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -Db $Db -Sql $sql)
+    $actual = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $DatabasePath -Sql $sql)
     return (@($required | Where-Object { $actual -notcontains $_ }).Count -eq 0)
 }
 
@@ -80,9 +80,9 @@ function Add-C8ActionCrossReferenceChecks {
 
     foreach ($entry in @($Entries)) {
         $code = [string]$entry.serverCode
-        $db = Join-Path $Folder ([string]$entry.file)
-        if (-not (Test-Path -LiteralPath $db -PathType Leaf)) { continue }
-        if (-not (Test-C8CatalogHasTables -Sqlite3 $Sqlite3 -Db $db)) { continue }
+        $databasePath = Join-Path $Folder ([string]$entry.file)
+        if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { continue }
+        if (-not (Test-C8CatalogHasTables -Sqlite3 $Sqlite3 -DatabasePath $databasePath)) { continue }
 
         $adapterSql = @"
 SELECT a.AdapterCode || '->' || a.ActionCode
@@ -94,7 +94,7 @@ WHERE a.ActionCode IS NOT NULL
   AND x.ActionCode IS NULL
 ORDER BY a.AdapterCode;
 "@
-        $adapterMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -Db $db -Sql $adapterSql)
+        $adapterMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $databasePath -Sql $adapterSql)
         $adapterDetail = ''
         if ($adapterMissing.Count -gt 0) {
             $adapterDetail = (($adapterMissing | Select-Object -First 5) -join ', ')
@@ -112,7 +112,7 @@ WHERE a.EngineCode IS NOT NULL
   AND e.EngineCode IS NULL
 ORDER BY a.ActionCode;
 "@
-        $engineMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -Db $db -Sql $engineSql)
+        $engineMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $databasePath -Sql $engineSql)
         $engineDetail = ''
         if ($engineMissing.Count -gt 0) {
             $engineDetail = (($engineMissing | Select-Object -First 5) -join ', ')
