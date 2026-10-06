@@ -21,14 +21,14 @@ function Protect-SisqualRuntimeLogText {
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|credential|private.?key|client.?secret|authorization|cookie|api.?key|connection.?string'
 
     # Free-form log text has no general grammar that can reliably delimit an unquoted multiline
-    # value. Fail closed for the two forms we can identify without ambiguity: PEM-style blocks
-    # and assignments whose value starts on the following physical line. This runs before the
-    # scalar assignment regex so block bodies cannot survive partial first-token replacement.
+    # value. Fail closed for PEM blocks and, more generally, any unquoted sensitive assignment
+    # that reaches a physical newline. The latter consumes the remainder of the field rather than
+    # guessing where a multi-line secret ends. This runs before scalar/JSON fallbacks.
     $pemAssignmentPattern = '(?is)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*(-----BEGIN [^\r\n]+-----.*?-----END [^\r\n]+-----)'
     $text = [regex]::Replace($text, $pemAssignmentPattern, '$1=[REDACTED]')
 
-    $newlineAssignmentPattern = '(?is)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?:\r\n|\r|\n).*'
-    $text = [regex]::Replace($text, $newlineAssignmentPattern, '$1=[REDACTED]')
+    $multilineAssignmentPattern = '(?is)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?!["''])[^\r\n]*(?:\r\n|\r|\n).*'
+    $text = [regex]::Replace($text, $multilineAssignmentPattern, '$1=[REDACTED]')
 
     # Decode JSON property-name escapes before deciding whether the field is sensitive. Once a
     # sensitive serialized key is found, conservatively redact the remainder of the field so
