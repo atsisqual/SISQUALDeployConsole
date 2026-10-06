@@ -9,6 +9,234 @@ $script:DefaultPrefix = 'SISQUALDeployConsole'
 $script:LogState = $null
 $script:WriteLock = [object]::new()
 
+if (-not ('Sisqual.Runtime.LogNative' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Sisqual.Runtime
+{
+    public sealed class LogDirectoryGuard : IDisposable
+    {
+        private readonly List<SafeFileHandle> _handles;
+        internal LogDirectoryGuard(List<SafeFileHandle> handles) { _handles = handles; }
+        public void Dispose()
+        {
+            for (int i = _handles.Count - 1; i >= 0; i--) _handles[i].Dispose();
+            _handles.Clear();
+        }
+    }
+
+    public static class LogNative
+    {
+        private const uint FILE_READ_ATTRIBUTES = 0x00000080;
+        private const uint FILE_APPEND_DATA = 0x00000004;
+        private const uint DELETE = 0x00010000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+        private const uint OPEN_ALWAYS = 4;
+        private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+        private const int FileDispositionInfo = 4;
+        private const int FileAttributeTagInfo = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ATTRIBUTE_TAG_INFO
+        {
+            public uint FileAttributes;
+            public uint ReparseTag;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_DISPOSITION_INFO
+        {
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool DeleteFile;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            SafeFileHandle hFile,
+            StringBuilder lpszFilePath,
+            uint cchFilePath,
+            uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(
+            SafeFileHandle hFile,
+            int FileInformationClass,
+            out FILE_ATTRIBUTE_TAG_INFO lpFileInformation,
+            uint dwBufferSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetFileInformationByHandle(
+            SafeFileHandle hFile,
+            int FileInformationClass,
+            ref FILE_DISPOSITION_INFO lpFileInformation,
+            uint dwBufferSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteFile(
+            SafeFileHandle hFile,
+            byte[] lpBuffer,
+            uint nNumberOfBytesToWrite,
+            out uint lpNumberOfBytesWritten,
+            IntPtr lpOverlapped);
+
+        private static string NormalizePath(string path)
+        {
+            string value = path;
+            if (value.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                value = @"\\" + value.Substring(8);
+            else if (value.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                value = value.Substring(4);
+            return Path.GetFullPath(value).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private static string GetFinalPath(SafeFileHandle handle)
+        {
+            var buffer = new StringBuilder(512);
+            uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+            if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (length >= buffer.Capacity)
+            {
+                buffer = new StringBuilder((int)length + 1);
+                length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+                if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return NormalizePath(buffer.ToString());
+        }
+
+        private static void ValidateHandle(SafeFileHandle handle, string expectedPath, string label)
+        {
+            FILE_ATTRIBUTE_TAG_INFO info;
+            if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out info, (uint)Marshal.SizeOf<FILE_ATTRIBUTE_TAG_INFO>()))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            if ((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                throw new IOException(label + " is a reparse point and is not approved: " + expectedPath);
+
+            string expected = NormalizePath(expectedPath);
+            string actual = GetFinalPath(handle);
+            if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                throw new IOException(label + " resolved outside its validated path. Expected " + expected + ", got " + actual + ".");
+        }
+
+        private static SafeFileHandle OpenDirectory(string path)
+        {
+            var handle = CreateFileW(
+                path,
+                FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero);
+            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot guard directory: " + path);
+            try
+            {
+                ValidateHandle(handle, path, "Log directory");
+                return handle;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        public static LogDirectoryGuard GuardDirectoryTree(string path)
+        {
+            string full = Path.GetFullPath(path);
+            var stack = new Stack<string>();
+            var current = new DirectoryInfo(full);
+            while (current != null)
+            {
+                stack.Push(current.FullName);
+                current = current.Parent;
+            }
+
+            var handles = new List<SafeFileHandle>();
+            try
+            {
+                while (stack.Count > 0)
+                {
+                    string directory = stack.Pop();
+                    if (!Directory.Exists(directory)) throw new DirectoryNotFoundException(directory);
+                    handles.Add(OpenDirectory(directory));
+                }
+                return new LogDirectoryGuard(handles);
+            }
+            catch
+            {
+                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
+                throw;
+            }
+        }
+
+        public static void AppendUtf8(string path, string text)
+        {
+            var handle = CreateFileW(
+                path,
+                FILE_APPEND_DATA | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero,
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero);
+            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open log file: " + path);
+            using (handle)
+            {
+                ValidateHandle(handle, path, "Log file");
+                byte[] bytes = new UTF8Encoding(false).GetBytes(text);
+                uint written;
+                if (!WriteFile(handle, bytes, (uint)bytes.Length, out written, IntPtr.Zero))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot append log file: " + path);
+                if (written != bytes.Length) throw new IOException("Incomplete log write: " + path);
+            }
+        }
+
+        public static void DeleteByHandle(string path)
+        {
+            var handle = CreateFileW(
+                path,
+                DELETE | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero);
+            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open log file for deletion: " + path);
+            using (handle)
+            {
+                ValidateHandle(handle, path, "Retention file");
+                var disposition = new FILE_DISPOSITION_INFO { DeleteFile = true };
+                if (!SetFileInformationByHandle(handle, FileDispositionInfo, ref disposition, (uint)Marshal.SizeOf<FILE_DISPOSITION_INFO>()))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot delete retained log file: " + path);
+            }
+        }
+    }
+}
+'@
+}
+
 function Protect-SisqualRuntimeLogText {
     param(
         [AllowNull()]
@@ -17,22 +245,21 @@ function Protect-SisqualRuntimeLogText {
 
     $text = if ($null -eq $Value) { '' } else { [string]$Value }
 
-    # Consume a header value plus legacy whitespace-prefixed continuation lines before newline normalization.
     $headerPattern = '(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*(?:(?:\r\n|\r|\n)[ \t]+[^\r\n]*)*'
     $text = [regex]::Replace($text, $headerPattern, '$1: [REDACTED]')
-
-    # Authentication schemes may also appear in assignment-shaped or free text.
     $text = [regex]::Replace($text, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 [REDACTED]')
 
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
 
-    # For serialized JSON, prefer conservative over-redaction: once a sensitive quoted key is seen,
-    # consume its value and the remainder of that physical line. This safely covers scalar, escaped,
-    # array and object values without attempting to parse arbitrary embedded JSON fragments.
-    $serializedSensitivePattern = '(?i)"(' + $sensitiveNamePattern + ')"\s*:\s*[^\r\n]*'
-    $text = [regex]::Replace($text, $serializedSensitivePattern, '$1=[REDACTED]')
+    # A log field can contain arbitrary text plus a serialized JSON fragment. Once a quoted
+    # sensitive JSON key is detected, redact the remainder of the field rather than trying to
+    # parse attacker-controlled scalar/composite/multiline JSON with regular expressions.
+    $serializedSensitivePattern = '(?is)"(' + $sensitiveNamePattern + ')"\s*:'
+    $serializedMatch = [regex]::Match($text, $serializedSensitivePattern)
+    if ($serializedMatch.Success) {
+        $text = $text.Substring(0, $serializedMatch.Index) + $serializedMatch.Groups[1].Value + '=[REDACTED]'
+    }
 
-    # Plain assignment-shaped text is handled separately.
     $doubleQuotedValue = '"(?:\\.|[^"\\])*"'
     $singleQuotedValue = '''(?:\\.|[^''\\])*'''
     $assignmentPattern = '(?i)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*(' + $doubleQuotedValue + '|' + $singleQuotedValue + '|[^\s,;}\]]+)'
@@ -139,28 +366,33 @@ function Invoke-SisqualRuntimeLogRetentionCore {
     $cutoffDate = $todayUtc.AddDays(-($script:LogState.RetentionDays - 1))
     $pattern = '^' + [regex]::Escape($script:LogState.Prefix) + '-(\d{4}-\d{2}-\d{2})\.log$'
     $removed = 0
+    $guard = [Sisqual.Runtime.LogNative]::GuardDirectoryTree($script:LogState.LogRoot)
+    try {
+        foreach ($file in @(Get-ChildItem -LiteralPath $script:LogState.LogRoot -File -Filter ($script:LogState.Prefix + '-*.log') -ErrorAction Stop)) {
+            if ($file.Name -notmatch $pattern) {
+                continue
+            }
 
-    foreach ($file in @(Get-ChildItem -LiteralPath $script:LogState.LogRoot -File -Filter ($script:LogState.Prefix + '-*.log') -ErrorAction Stop)) {
-        if ($file.Name -notmatch $pattern) {
-            continue
-        }
+            $fileDate = [DateOnly]::MinValue
+            $parsed = [DateOnly]::TryParseExact(
+                $Matches[1],
+                'yyyy-MM-dd',
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::None,
+                [ref]$fileDate
+            )
+            if (-not $parsed) {
+                continue
+            }
 
-        $fileDate = [DateOnly]::MinValue
-        $parsed = [DateOnly]::TryParseExact(
-            $Matches[1],
-            'yyyy-MM-dd',
-            [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::None,
-            [ref]$fileDate
-        )
-        if (-not $parsed) {
-            continue
+            if ($fileDate -lt $cutoffDate) {
+                [Sisqual.Runtime.LogNative]::DeleteByHandle($file.FullName)
+                $removed++
+            }
         }
-
-        if ($fileDate -lt $cutoffDate) {
-            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
-            $removed++
-        }
+    }
+    finally {
+        $guard.Dispose()
     }
 
     $script:LogState.LastRetentionUtcDate = $todayUtc
@@ -290,12 +522,17 @@ function Write-SisqualRuntimeLog {
     [System.Threading.Monitor]::Enter($script:WriteLock)
     try {
         Assert-SisqualRuntimeLogRootStillApproved
-        Assert-SisqualNoReparsePoint -Path $path -Label 'LogFile'
         if ($null -eq $script:LogState.LastRetentionUtcDate -or $retentionUtcDate -gt $script:LogState.LastRetentionUtcDate) {
             Invoke-SisqualRuntimeLogRetentionCore -ReferenceUtc $retentionNowUtc | Out-Null
         }
-        Assert-SisqualNoReparsePoint -Path $path -Label 'LogFile'
-        [System.IO.File]::AppendAllText($path, $line + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+
+        $guard = [Sisqual.Runtime.LogNative]::GuardDirectoryTree($script:LogState.LogRoot)
+        try {
+            [Sisqual.Runtime.LogNative]::AppendUtf8($path, $line + [Environment]::NewLine)
+        }
+        finally {
+            $guard.Dispose()
+        }
     }
     finally {
         [System.Threading.Monitor]::Exit($script:WriteLock)
