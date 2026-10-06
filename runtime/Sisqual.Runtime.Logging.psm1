@@ -16,19 +16,20 @@ function Protect-SisqualRuntimeLogText {
     )
 
     $text = if ($null -eq $Value) { '' } else { [string]$Value }
-    $text = $text -replace "`r`n|`r|`n", '\n'
 
-    # Header-shaped values are consumed through the end of the logical source line.
-    $headerPattern = '(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*.*?(?=\\n|$)'
+    # Header-shaped values are consumed before newline normalization so the complete credential is removed.
+    $headerPattern = '(?im)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*'
     $text = [regex]::Replace($text, $headerPattern, '$1: [REDACTED]')
 
-    # Authentication schemes may also appear in assignment-shaped text.
+    # Authentication schemes may also appear in assignment-shaped or free text.
     $text = [regex]::Replace($text, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 [REDACTED]')
 
     # Accept both plain keys and common serialized forms such as {"password":"value"}.
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
     $assignmentPattern = '(?i)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*("[^"]*"|''[^'']*''|[^\s,;}\]]+)'
     $text = [regex]::Replace($text, $assignmentPattern, '$1=[REDACTED]')
+
+    $text = $text -replace "`r`n|`r|`n", '\n'
     return $text
 }
 
