@@ -56,7 +56,10 @@ Phase 3A implements:
 - deletion only of files matching the SISQUAL daily-log naming convention;
 - exactly 30 daily files including the current UTC day when the default is used;
 - preservation of unrelated files in the log directory;
-- fixed bootstrap event IDs and fixed messages, rather than arbitrary payload logging.
+- fixed bootstrap event IDs and fixed messages, rather than arbitrary payload logging;
+- a narrow temporary Win32 append primitive for bootstrap events that guards the directory tree while opening the final file, uses `FILE_FLAG_OPEN_REPARSE_POINT`, denies file sharing during the append, validates the handle-resolved final path, rejects final-file reparse points and rejects files with more than one hard link before any event bytes are written.
+
+The bootstrap append primitive exists only to close the privileged final-file alias/race boundary in this narrow startup slice. It is not intended to replace the hardened runtime logger from PR #52; that logger remains the planned integration target.
 
 The first event vocabulary is intentionally narrow:
 
@@ -83,6 +86,10 @@ The first event vocabulary is intentionally narrow:
 
 It does not add a development flag and does not provide a route that skips manifest verification. Once B6.2 is integrated, exit 21 is replaced by real signature/hash verification before any further runtime component is loaded.
 
+`-LogRoot` is constrained to the approved fixed-local SISQUAL log tree before create/enumerate/delete/write operations. Existing reparse/junction components are rejected. For each bootstrap event append, the current directory chain and final file are rebound to Win32 handles before the write; a planted daily-log symlink/reparse point, a hard-link alias, or a parent-path replacement cannot be used to redirect privileged event bytes to another file.
+
+Terminal-event log failures do not replace the documented startup result: missing manifest remains exit 20 and verifier-not-integrated remains exit 21, with an additional stderr diagnostic when that final event cannot be recorded.
+
 `Start.cmd` performs no network access, package installation or fallback to a machine-installed PowerShell.
 
 ## Tests
@@ -93,15 +100,19 @@ The dedicated workflow `phase3-runtime-bootstrap` runs on `windows-2022` and `wi
 2. verifies SHA-256 `02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860` before use;
 3. materializes it under `runtime\pwsh\` in the runner workspace;
 4. tests the bootstrap helpers and retention policy;
-5. proves that `Start.cmd` returns 20 with no manifest;
-6. adds a disposable dummy manifest and proves that `Start.cmd` returns 21 rather than progressing without a verifier;
-7. uploads a JSON test report and secret-free bootstrap log as evidence.
+5. proves that an outside log root and a junction escape are rejected without filesystem side effects;
+6. proves that predictable final daily-log symlink and hard-link aliases are rejected without modifying their targets;
+7. proves that `Start.cmd` returns 20 with no manifest even if the terminal log event fails;
+8. adds a disposable dummy manifest and proves that `Start.cmd` returns 21 rather than progressing without a verifier, including when the terminal log event fails;
+9. uploads a JSON test report and secret-free bootstrap log as evidence.
+
+[PENDING] The final-file hardening above requires a clean Windows 2022/2025 execution before it becomes accepted evidence. Current GitHub Actions attempts have been terminating before runner allocation, so a red run with zero executed steps is infrastructure evidence only and must not be treated as a product-test failure.
 
 ## Not in this PR
 
 - manifest canonicalization/signature/hash verification - B6.2 / subsequent Phase 3 integration;
 - rollback counter - decision/integration work after the manifest contract is finalized;
-- managed SQLite provider and read-only catalog factory - PR #36 then Phase 3;
+- managed SQLite provider and read-only catalog factory - PR #54 then Phase 3 integration;
 - machine-key use or credential import;
 - Pode/local web adapter;
 - operation coordinator production port;
@@ -110,7 +121,8 @@ The dedicated workflow `phase3-runtime-bootstrap` runs on `windows-2022` and `wi
 ## Follow-up order
 
 1. integrate the approved B6.2 verifier into the startup gate;
-2. integrate the approved SQLite provider and open only the verified per-machine catalog read-only;
-3. wire machine identity and credential-package validation;
-4. promote the already validated Phase 1C web-security and operation-coordinator behavior into production runtime code;
-5. start engine wave 1.
+2. replace/integrate the narrow bootstrap log writer with the hardened runtime logger from PR #52;
+3. integrate the approved SQLite provider and open only the verified per-machine catalog read-only;
+4. wire machine identity and credential-package validation;
+5. promote the already validated Phase 1C web-security and operation-coordinator behavior into production runtime code;
+6. start engine wave 1.

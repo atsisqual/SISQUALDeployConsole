@@ -13,6 +13,8 @@ $fatal = $null
 $tempRoot = Join-Path $env:TEMP ('SISQUAL-Phase3A-' + [guid]::NewGuid().ToString('N'))
 $outsideRoot = $tempRoot + '-outside'
 $junctionTarget = $tempRoot + '-junction-target'
+$symlinkTarget = $tempRoot + '-symlink-target.log'
+$hardlinkTarget = $tempRoot + '-hardlink-target.log'
 
 function Add-Check([string]$Id, [bool]$Pass, [string]$Message) {
     [void]$checks.Add([pscustomobject][ordered]@{ Id = $Id; Status = $(if ($Pass) { 'PASS' } else { 'FAIL' }); Message = $Message })
@@ -63,6 +65,30 @@ try {
     $bytes = [IO.File]::ReadAllBytes($context.LogPath)
     Add-Check 'LOG_ASCII' (@($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) 'Bootstrap log output is ASCII.'
 
+    # Final-file attacks must fail before any bytes are written through an alias outside the
+    # approved tree. These checks exercise both reparse-point and hard-link aliases.
+    $symlinkRoot = Join-Path $tempRoot 'symlink-logs'
+    New-Item -ItemType Directory -Path $symlinkRoot -Force | Out-Null
+    $symlinkContext = Initialize-SisqualRuntimeLog -LogRoot $symlinkRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
+    Set-Content -LiteralPath $symlinkTarget -Value 'sentinel-symlink' -Encoding ascii
+    $symlinkHashBefore = (Get-FileHash -LiteralPath $symlinkTarget -Algorithm SHA256).Hash
+    New-Item -ItemType SymbolicLink -Path $symlinkContext.LogPath -Target $symlinkTarget -Force | Out-Null
+    $symlinkRejected = Throws { Write-SisqualBootstrapEvent -LogPath $symlinkContext.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now }
+    $symlinkHashAfter = (Get-FileHash -LiteralPath $symlinkTarget -Algorithm SHA256).Hash
+    Add-Check 'LOG_FILE_SYMLINK_REJECTED' ($symlinkRejected -and $symlinkHashAfter -ceq $symlinkHashBefore) 'A predictable daily-log file symlink is rejected without modifying its target.'
+    Remove-Item -LiteralPath $symlinkContext.LogPath -Force
+
+    $hardlinkRoot = Join-Path $tempRoot 'hardlink-logs'
+    New-Item -ItemType Directory -Path $hardlinkRoot -Force | Out-Null
+    $hardlinkContext = Initialize-SisqualRuntimeLog -LogRoot $hardlinkRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
+    Set-Content -LiteralPath $hardlinkTarget -Value 'sentinel-hardlink' -Encoding ascii
+    $hardlinkHashBefore = (Get-FileHash -LiteralPath $hardlinkTarget -Algorithm SHA256).Hash
+    New-Item -ItemType HardLink -Path $hardlinkContext.LogPath -Target $hardlinkTarget -Force | Out-Null
+    $hardlinkRejected = Throws { Write-SisqualBootstrapEvent -LogPath $hardlinkContext.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now }
+    $hardlinkHashAfter = (Get-FileHash -LiteralPath $hardlinkTarget -Algorithm SHA256).Hash
+    Add-Check 'LOG_FILE_HARDLINK_REJECTED' ($hardlinkRejected -and $hardlinkHashAfter -ceq $hardlinkHashBefore) 'A predictable daily-log hard link is rejected without modifying its other name.'
+    Remove-Item -LiteralPath $hardlinkContext.LogPath -Force
+
     # Exercise the real launcher with a disposable sibling RuntimeBootstrap implementation that
     # succeeds during initialization but throws only for terminal event writes. This proves the
     # product script preserves exit 20/21 without adding a test hook to production code.
@@ -96,7 +122,7 @@ finally {
     $report = [pscustomobject][ordered]@{ Schema='SISQUAL_PHASE3A_RUNTIME_BOOTSTRAP_V1'; PowerShell=$PSVersionTable.PSVersion.ToString(); PassCount=$passCount; FailCount=$failCount; Fatal=$fatal; Checks=@($checks) }
     if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $PSScriptRoot 'phase3a-runtime-bootstrap-report.json' }
     $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding ascii
-    foreach ($path in @($tempRoot, $outsideRoot, $junctionTarget)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } }
+    foreach ($path in @($tempRoot, $outsideRoot, $junctionTarget, $symlinkTarget, $hardlinkTarget)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } }
 }
 
 if ($null -ne $fatal -or @($checks | Where-Object Status -eq 'FAIL').Count -gt 0) { exit 1 }

@@ -1,5 +1,245 @@
 Set-StrictMode -Version Latest
 
+if (-not ('Sisqual.Runtime.BootstrapLogNative' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Sisqual.Runtime
+{
+    internal sealed class BootstrapLogDirectoryGuard : IDisposable
+    {
+        private readonly List<SafeFileHandle> _handles;
+        internal BootstrapLogDirectoryGuard(List<SafeFileHandle> handles) { _handles = handles; }
+        public void Dispose()
+        {
+            for (int i = _handles.Count - 1; i >= 0; i--) _handles[i].Dispose();
+            _handles.Clear();
+        }
+    }
+
+    public static class BootstrapLogNative
+    {
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint FILE_READ_ATTRIBUTES = 0x00000080;
+        private const uint FILE_APPEND_DATA = 0x00000004;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint OPEN_EXISTING = 3;
+        private const uint OPEN_ALWAYS = 4;
+        private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+        private const int FileAttributeTagInfo = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ATTRIBUTE_TAG_INFO
+        {
+            public uint FileAttributes;
+            public uint ReparseTag;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint LowDateTime;
+            public uint HighDateTime;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint FileAttributes;
+            public FILETIME CreationTime;
+            public FILETIME LastAccessTime;
+            public FILETIME LastWriteTime;
+            public uint VolumeSerialNumber;
+            public uint FileSizeHigh;
+            public uint FileSizeLow;
+            public uint NumberOfLinks;
+            public uint FileIndexHigh;
+            public uint FileIndexLow;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            SafeFileHandle hFile,
+            StringBuilder lpszFilePath,
+            uint cchFilePath,
+            uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(
+            SafeFileHandle hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandleEx(
+            SafeFileHandle hFile,
+            int FileInformationClass,
+            out FILE_ATTRIBUTE_TAG_INFO lpFileInformation,
+            uint dwBufferSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool WriteFile(
+            SafeFileHandle hFile,
+            byte[] lpBuffer,
+            uint nNumberOfBytesToWrite,
+            out uint lpNumberOfBytesWritten,
+            IntPtr lpOverlapped);
+
+        private static string NormalizePath(string path)
+        {
+            string value = path;
+            if (value.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                value = @"\\" + value.Substring(8);
+            else if (value.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                value = value.Substring(4);
+            return Path.GetFullPath(value).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private static string GetFinalPath(SafeFileHandle handle)
+        {
+            var buffer = new StringBuilder(512);
+            uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+            if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (length >= buffer.Capacity)
+            {
+                buffer = new StringBuilder((int)length + 1);
+                length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+                if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return NormalizePath(buffer.ToString());
+        }
+
+        private static void ValidateHandle(SafeFileHandle handle, string expectedPath, string label)
+        {
+            FILE_ATTRIBUTE_TAG_INFO info;
+            if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out info, (uint)Marshal.SizeOf<FILE_ATTRIBUTE_TAG_INFO>()))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            if ((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                throw new IOException(label + " is a reparse point and is not approved: " + expectedPath);
+
+            string expected = NormalizePath(expectedPath);
+            string actual = GetFinalPath(handle);
+            if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                throw new IOException(label + " resolved outside its validated path. Expected " + expected + ", got " + actual + ".");
+        }
+
+        private static void ValidateSingleLinkFile(SafeFileHandle handle, string expectedPath)
+        {
+            ValidateHandle(handle, expectedPath, "Bootstrap log file");
+            BY_HANDLE_FILE_INFORMATION info;
+            if (!GetFileInformationByHandle(handle, out info))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (info.NumberOfLinks != 1)
+                throw new IOException("Bootstrap log file must have exactly one hard link; found " + info.NumberOfLinks + ": " + expectedPath);
+        }
+
+        private static SafeFileHandle OpenDirectory(string path)
+        {
+            var handle = CreateFileW(
+                path,
+                GENERIC_READ | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero);
+            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot guard bootstrap log directory: " + path);
+            try
+            {
+                ValidateHandle(handle, path, "Bootstrap log directory");
+                return handle;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        private static BootstrapLogDirectoryGuard GuardDirectoryTree(string path)
+        {
+            string full = Path.GetFullPath(path);
+            var stack = new Stack<string>();
+            var current = new DirectoryInfo(full);
+            while (current != null)
+            {
+                stack.Push(current.FullName);
+                current = current.Parent;
+            }
+
+            var handles = new List<SafeFileHandle>();
+            try
+            {
+                while (stack.Count > 0)
+                {
+                    string directory = stack.Pop();
+                    if (!Directory.Exists(directory)) throw new DirectoryNotFoundException(directory);
+                    handles.Add(OpenDirectory(directory));
+                }
+                return new BootstrapLogDirectoryGuard(handles);
+            }
+            catch
+            {
+                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
+                throw;
+            }
+        }
+
+        public static void AppendAscii(string path, string text)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (string.IsNullOrEmpty(directory)) throw new IOException("Bootstrap log path has no parent directory: " + fullPath);
+
+            using (var directoryGuard = GuardDirectoryTree(directory))
+            {
+                var handle = CreateFileW(
+                    fullPath,
+                    FILE_APPEND_DATA | FILE_READ_ATTRIBUTES,
+                    0,
+                    IntPtr.Zero,
+                    OPEN_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                    IntPtr.Zero);
+                if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open bootstrap log file: " + fullPath);
+                using (handle)
+                {
+                    ValidateSingleLinkFile(handle, fullPath);
+                    byte[] bytes = Encoding.ASCII.GetBytes(text + Environment.NewLine);
+                    uint written;
+                    if (!WriteFile(handle, bytes, (uint)bytes.Length, out written, IntPtr.Zero))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot append bootstrap log file: " + fullPath);
+                    if (written != bytes.Length) throw new IOException("Incomplete bootstrap log write: " + fullPath);
+                    ValidateSingleLinkFile(handle, fullPath);
+                }
+            }
+        }
+    }
+}
+'@
+}
+
 function Get-SisqualRuntimeDefaults {
     [CmdletBinding()]
     param()
@@ -173,5 +413,5 @@ function Write-SisqualBootstrapEvent {
         BOOTSTRAP_FATAL = 'Runtime bootstrap failed before application startup.'
     }
     $line = '{0} [{1}] {2} pid={3} {4}' -f $NowUtc.ToString('o'), $Level, $EventId, $PID, $messages[$EventId]
-    Add-Content -LiteralPath $LogPath -Value $line -Encoding ascii -ErrorAction Stop
+    [Sisqual.Runtime.BootstrapLogNative]::AppendAscii([IO.Path]::GetFullPath($LogPath), $line)
 }
