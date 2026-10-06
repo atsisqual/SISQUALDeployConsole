@@ -248,11 +248,14 @@ namespace Sisqual.Runtime
                 while (stack.Count > 0)
                 {
                     string directory = stack.Pop();
-                    if (!CreateDirectoryW(directory, IntPtr.Zero))
+                    if (!Directory.Exists(directory))
                     {
-                        int error = Marshal.GetLastWin32Error();
-                        if (error != ERROR_ALREADY_EXISTS)
-                            throw new Win32Exception(error, "Cannot create guarded log directory: " + directory);
+                        if (!CreateDirectoryW(directory, IntPtr.Zero))
+                        {
+                            int error = Marshal.GetLastWin32Error();
+                            if (error != ERROR_ALREADY_EXISTS)
+                                throw new Win32Exception(error, "Cannot create guarded log directory: " + directory);
+                        }
                     }
                     handles.Add(OpenDirectory(directory));
                 }
