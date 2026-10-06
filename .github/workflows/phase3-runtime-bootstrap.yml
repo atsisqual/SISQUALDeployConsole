@@ -17,6 +17,9 @@ on:
       - tests/Integration/Test-RuntimeBootstrap.ps1
       - .github/workflows/phase3-runtime-bootstrap.yml
 
+permissions:
+  contents: read
+
 jobs:
   bootstrap:
     strategy:
@@ -39,18 +42,12 @@ jobs:
           $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
           Invoke-WebRequest -Uri $uri -OutFile $zip
           $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToUpperInvariant()
-          if ($actual -cne $expected) {
-              throw "PowerShell SHA-256 mismatch. Expected $expected, actual $actual."
-          }
+          if ($actual -cne $expected) { throw "PowerShell SHA-256 mismatch. Expected $expected, actual $actual." }
           $destination = Join-Path $PWD 'runtime\pwsh'
-          if (Test-Path -LiteralPath $destination) {
-              Remove-Item -LiteralPath $destination -Recurse -Force
-          }
+          if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
           Expand-Archive -LiteralPath $zip -DestinationPath $destination -Force
           $version = & (Join-Path $destination 'pwsh.exe') -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
-          if ([string]$version -cne '7.6.6') {
-              throw "Unexpected portable PowerShell version: $version"
-          }
+          if ([string]$version -cne '7.6.6') { throw "Unexpected portable PowerShell version: $version" }
 
       - name: Run runtime bootstrap tests
         shell: powershell
@@ -59,47 +56,38 @@ jobs:
           $pwsh = Join-Path $PWD 'runtime\pwsh\pwsh.exe'
           $report = Join-Path $env:RUNNER_TEMP ('phase3a-runtime-bootstrap-{0}.json' -f '${{ matrix.os }}')
           & $pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '.\tests\Integration\Test-RuntimeBootstrap.ps1' -OutputPath $report
-          if ($LASTEXITCODE -ne 0) {
-              throw "Runtime bootstrap tests failed with exit code $LASTEXITCODE."
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Runtime bootstrap tests failed with exit code $LASTEXITCODE." }
           $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-          if ($payload.PowerShell -cne '7.6.6' -or $payload.FailCount -ne 0 -or $null -ne $payload.Fatal) {
-              throw 'Runtime bootstrap report did not meet the acceptance gate.'
-          }
+          if ($payload.PowerShell -cne '7.6.6' -or $payload.FailCount -ne 0 -or $null -ne $payload.Fatal) { throw 'Runtime bootstrap report did not meet the acceptance gate.' }
 
       - name: Prove Start.cmd fails closed before integrity integration
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $logRoot = Join-Path $env:RUNNER_TEMP 'phase3a-launcher-logs'
-          & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
-          $missingManifestExit = $LASTEXITCODE
-          if ($missingManifestExit -ne 20) {
-              throw "Expected exit 20 for a missing manifest, got $missingManifestExit."
-          }
-
-          $manifestPath = Join-Path $PWD 'package-manifest.json'
-          '{}' | Set-Content -LiteralPath $manifestPath -Encoding ascii
+          $logRoot = Join-Path 'C:\SISQUALWFM\WFM.Logs' ('phase3a-launcher-' + [guid]::NewGuid().ToString('N'))
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'phase3a-launcher-logs'
           try {
               & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
-              $noVerifierExit = $LASTEXITCODE
-              if ($noVerifierExit -ne 21) {
-                  throw "Expected exit 21 while the integrity verifier is not integrated, got $noVerifierExit."
+              if ($LASTEXITCODE -ne 20) { throw "Expected exit 20 for a missing manifest, got $LASTEXITCODE." }
+              $manifestPath = Join-Path $PWD 'package-manifest.json'
+              '{}' | Set-Content -LiteralPath $manifestPath -Encoding ascii
+              try {
+                  & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
+                  if ($LASTEXITCODE -ne 21) { throw "Expected exit 21 while the integrity verifier is not integrated, got $LASTEXITCODE." }
               }
+              finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
+
+              $logFiles = @(Get-ChildItem -LiteralPath $logRoot -File -Filter 'SISQUALDeployConsole-*.log')
+              if ($logFiles.Count -ne 1) { throw "Expected one daily bootstrap log, found $($logFiles.Count)." }
+              $text = Get-Content -LiteralPath $logFiles[0].FullName -Raw
+              foreach ($eventId in @('BOOTSTRAP_STARTED','HOST_VALID','MANIFEST_MISSING','INTEGRITY_VERIFIER_UNAVAILABLE')) {
+                  if ($text -notmatch [regex]::Escape($eventId)) { throw "Missing expected bootstrap event $eventId." }
+              }
+              New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+              Copy-Item -LiteralPath $logFiles[0].FullName -Destination $evidenceRoot -Force
           }
           finally {
-              Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
-          }
-
-          $logFiles = @(Get-ChildItem -LiteralPath $logRoot -File -Filter 'SISQUALDeployConsole-*.log')
-          if ($logFiles.Count -ne 1) {
-              throw "Expected one daily bootstrap log, found $($logFiles.Count)."
-          }
-          $text = Get-Content -LiteralPath $logFiles[0].FullName -Raw
-          foreach ($eventId in @('BOOTSTRAP_STARTED','HOST_VALID','MANIFEST_MISSING','INTEGRITY_VERIFIER_UNAVAILABLE')) {
-              if ($text -notmatch [regex]::Escape($eventId)) {
-                  throw "Missing expected bootstrap event $eventId."
-              }
+              if (Test-Path -LiteralPath $logRoot) { Remove-Item -LiteralPath $logRoot -Recurse -Force -ErrorAction SilentlyContinue }
           }
 
       - name: Upload evidence

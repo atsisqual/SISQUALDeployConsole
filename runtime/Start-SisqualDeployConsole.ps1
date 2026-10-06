@@ -24,12 +24,10 @@ if (-not $hostResult.Success) {
     exit 10
 }
 
-if ([string]::IsNullOrWhiteSpace($LogRoot)) {
-    $LogRoot = $defaults.DefaultLogRoot
-}
+if ([string]::IsNullOrWhiteSpace($LogRoot)) { $LogRoot = $defaults.DefaultLogRoot }
 
 try {
-    $logContext = Initialize-SisqualRuntimeLog -LogRoot $LogRoot -RetentionDays $RetentionDays
+    $logContext = Initialize-SisqualRuntimeLog -LogRoot $LogRoot -ApprovedRoot $defaults.ApprovedLogRoot -RetentionDays $RetentionDays
     Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'BOOTSTRAP_STARTED'
     Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'HOST_VALID'
 }
@@ -40,7 +38,12 @@ catch {
 
 $manifestPath = Join-Path $packageRoot $defaults.ManifestFileName
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-    Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'MANIFEST_MISSING' -Level 'ERROR'
+    try {
+        Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'MANIFEST_MISSING' -Level 'ERROR'
+    }
+    catch {
+        [Console]::Error.WriteLine(('SISQUALDeployConsole could not write terminal log event MANIFEST_MISSING: {0}' -f $_.Exception.Message))
+    }
     [Console]::Error.WriteLine('SISQUALDeployConsole package manifest is missing. Startup is blocked.')
     exit 20
 }
@@ -48,6 +51,11 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 # Phase 3A deliberately stops here. The B6.2 signer/verifier work owns the
 # signature/trust implementation. Until that verifier is integrated, no module,
 # catalog, credential package, HTTP adapter or engine may be loaded.
-Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'INTEGRITY_VERIFIER_UNAVAILABLE' -Level 'ERROR'
+try {
+    Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'INTEGRITY_VERIFIER_UNAVAILABLE' -Level 'ERROR'
+}
+catch {
+    [Console]::Error.WriteLine(('SISQUALDeployConsole could not write terminal log event INTEGRITY_VERIFIER_UNAVAILABLE: {0}' -f $_.Exception.Message))
+}
 [Console]::Error.WriteLine('SISQUALDeployConsole package integrity verifier is not integrated yet. Startup is blocked.')
 exit 21
