@@ -13,7 +13,7 @@ It adds:
 - `runtime/Start-SisqualDeployConsole.ps1`;
 - `runtime/RuntimeBootstrap.ps1`;
 - Windows 2022/2025 integration tests using the exact portable PowerShell 7.6.6 ZIP and published SHA-256;
-- daily plain-text bootstrap logging and deterministic retention.
+- daily plain-text bootstrap logging with the ADR-0007 retention setting carried forward for the hardened logger integration.
 
 ## Startup boundary
 
@@ -23,10 +23,11 @@ It adds:
 
 1. `Start.cmd` launches only `runtime\pwsh\pwsh.exe`; there is no system-PowerShell fallback.
 2. The entry point requires PowerShell 7.6.6 Core x64.
-3. The bootstrap log is initialized under the ADR-0007 log policy.
-4. `package-manifest.json` must exist.
-5. Startup stops fail-closed until the B6.2 package-signature/integrity verifier is integrated.
-6. No catalog, credential package, Pode adapter, product module or engine is loaded before that gate.
+3. The bootstrap log root is policy-validated and created through guarded Win32 directory handles.
+4. Bootstrap events are appended through a handle-bound final-file primitive.
+5. `package-manifest.json` must exist.
+6. Startup stops fail-closed until the B6.2 package-signature/integrity verifier is integrated.
+7. No catalog, credential package, Pode adapter, product module or engine is loaded before that gate.
 
 This deliberately means that the Phase 3A launcher is not yet a usable console. A manifest-present run exits with code 21 until the integrity-verifier PR is integrated.
 
@@ -49,17 +50,19 @@ runtime/
 
 [CONFIRMED] ADR-0007 requires plain-text logs, default root `C:\SISQUALWFM\WFM.Logs\SISQUALDeployManagement\`, one file per day, retained for 30 days by default, with no secrets or tokens.
 
-Phase 3A implements:
+Phase 3A implements the bootstrap-safe subset:
 
 - `SISQUALDeployConsole-YYYY-MM-DD.log`, using the UTC day;
 - configurable `-LogRoot` and `-RetentionDays` parameters;
-- deletion only of files matching the SISQUAL daily-log naming convention;
-- exactly 30 daily files including the current UTC day when the default is used;
-- preservation of unrelated files in the log directory;
+- `RetentionDays=30` retained as the policy/configuration value;
+- no destructive retention enumeration/deletion before the package-integrity gate;
 - fixed bootstrap event IDs and fixed messages, rather than arbitrary payload logging;
-- a narrow temporary Win32 append primitive for bootstrap events that guards the directory tree while opening the final file, uses `FILE_FLAG_OPEN_REPARSE_POINT`, denies file sharing during the append, validates the handle-resolved final path, rejects final-file reparse points and rejects files with more than one hard link before any event bytes are written.
+- guarded creation of missing log-root components: already-open ancestors remain held without write/delete sharing while each child is created and immediately rebound to a non-reparse handle;
+- a narrow temporary Win32 append primitive that guards the directory tree while opening the final file, uses `FILE_FLAG_OPEN_REPARSE_POINT`, denies file sharing during the append, validates the handle-resolved final path, rejects final-file reparse points and rejects files with more than one hard link before event bytes are written.
 
-The bootstrap append primitive exists only to close the privileged final-file alias/race boundary in this narrow startup slice. It is not intended to replace the hardened runtime logger from PR #52; that logger remains the planned integration target.
+Destructive 30-day cleanup is intentionally deferred until the hardened runtime logger from PR #52 is integrated after the package-integrity gate. This avoids any pre-integrity `Get-ChildItem` / `Remove-Item` path traversal surface merely to enforce retention. The bootstrap exposes `RetentionDeferred=true` and an empty `RemovedExpiredLogs` result so callers/tests cannot mistake deferred cleanup for executed retention.
+
+The bootstrap native primitive exists only to close the privileged path/create/append boundary in this narrow startup slice. It is not intended to replace the hardened runtime logger from PR #52.
 
 The first event vocabulary is intentionally narrow:
 
@@ -86,7 +89,9 @@ The first event vocabulary is intentionally narrow:
 
 It does not add a development flag and does not provide a route that skips manifest verification. Once B6.2 is integrated, exit 21 is replaced by real signature/hash verification before any further runtime component is loaded.
 
-`-LogRoot` is constrained to the approved fixed-local SISQUAL log tree before create/enumerate/delete/write operations. Existing reparse/junction components are rejected. For each bootstrap event append, the current directory chain and final file are rebound to Win32 handles before the write; a planted daily-log symlink/reparse point, a hard-link alias, or a parent-path replacement cannot be used to redirect privileged event bytes to another file.
+`-LogRoot` is constrained to the approved fixed-local SISQUAL log tree before filesystem mutation. UNC/device/non-fixed/outside paths and existing reparse/junction components are rejected. Missing directory components are created root-to-leaf while validated ancestor handles remain open with only read sharing; each created/existing component is opened with `FILE_FLAG_OPEN_REPARSE_POINT` and validated before the walk proceeds deeper.
+
+Pre-integrity bootstrap initialization does not enumerate or delete historical log files. For each bootstrap event append, the current directory chain and final file are rebound to Win32 handles before the write; a planted daily-log symlink/reparse point, a hard-link alias, or a parent-path replacement cannot be used to redirect privileged event bytes to another file.
 
 Terminal-event log failures do not replace the documented startup result: missing manifest remains exit 20 and verifier-not-integrated remains exit 21, with an additional stderr diagnostic when that final event cannot be recorded.
 
@@ -99,18 +104,21 @@ The dedicated workflow `phase3-runtime-bootstrap` runs on `windows-2022` and `wi
 1. downloads the exact PowerShell 7.6.6 win-x64 ZIP used by Phase 1A;
 2. verifies SHA-256 `02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860` before use;
 3. materializes it under `runtime\pwsh\` in the runner workspace;
-4. tests the bootstrap helpers and retention policy;
+4. tests host/default policy helpers;
 5. proves that an outside log root and a junction escape are rejected without filesystem side effects;
-6. proves that predictable final daily-log symlink and hard-link aliases are rejected without modifying their targets;
-7. proves that `Start.cmd` returns 20 with no manifest even if the terminal log event fails;
-8. adds a disposable dummy manifest and proves that `Start.cmd` returns 21 rather than progressing without a verifier, including when the terminal log event fails;
-9. uploads a JSON test report and secret-free bootstrap log as evidence.
+6. proves nested missing log-root components are created through the guarded native walk;
+7. proves pre-integrity initialization performs no destructive retention and leaves matching/unrelated historical files untouched;
+8. proves predictable final daily-log symlink and hard-link aliases are rejected without modifying their targets;
+9. proves that `Start.cmd` returns 20 with no manifest even if the terminal log event fails;
+10. adds a disposable dummy manifest and proves that `Start.cmd` returns 21 rather than progressing without a verifier, including when the terminal log event fails;
+11. uploads a JSON test report and secret-free bootstrap log as evidence.
 
-[PENDING] The final-file hardening above requires a clean Windows 2022/2025 execution before it becomes accepted evidence. Current GitHub Actions attempts have been terminating before runner allocation, so a red run with zero executed steps is infrastructure evidence only and must not be treated as a product-test failure.
+[PENDING] The guarded-creation/retention-deferral and final-file hardening require a clean Windows 2022/2025 execution before they become accepted evidence. Current GitHub Actions attempts have been terminating before runner allocation, so a red run with zero executed steps is infrastructure evidence only and must not be treated as a product-test failure.
 
 ## Not in this PR
 
 - manifest canonicalization/signature/hash verification - B6.2 / subsequent Phase 3 integration;
+- destructive log retention - deferred to hardened runtime logger integration after the integrity gate;
 - rollback counter - decision/integration work after the manifest contract is finalized;
 - managed SQLite provider and read-only catalog factory - PR #54 then Phase 3 integration;
 - machine-key use or credential import;
@@ -121,7 +129,7 @@ The dedicated workflow `phase3-runtime-bootstrap` runs on `windows-2022` and `wi
 ## Follow-up order
 
 1. integrate the approved B6.2 verifier into the startup gate;
-2. replace/integrate the narrow bootstrap log writer with the hardened runtime logger from PR #52;
+2. replace/integrate the narrow bootstrap log writer with the hardened runtime logger from PR #52, including ADR-0007 destructive retention;
 3. integrate the approved SQLite provider and open only the verified per-machine catalog read-only;
 4. wire machine identity and credential-package validation;
 5. promote the already validated Phase 1C web-security and operation-coordinator behavior into production runtime code;

@@ -36,6 +36,7 @@ namespace Sisqual.Runtime
         private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
         private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
         private const int FileAttributeTagInfo = 9;
+        private const int ERROR_ALREADY_EXISTS = 183;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct FILE_ATTRIBUTE_TAG_INFO
@@ -75,6 +76,10 @@ namespace Sisqual.Runtime
             uint dwCreationDisposition,
             uint dwFlagsAndAttributes,
             IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateDirectoryW(string lpPathName, IntPtr lpSecurityAttributes);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetFinalPathNameByHandleW(
@@ -177,7 +182,7 @@ namespace Sisqual.Runtime
             }
         }
 
-        private static BootstrapLogDirectoryGuard GuardDirectoryTree(string path)
+        private static Stack<string> BuildDirectoryStack(string path)
         {
             string full = Path.GetFullPath(path);
             var stack = new Stack<string>();
@@ -187,7 +192,12 @@ namespace Sisqual.Runtime
                 stack.Push(current.FullName);
                 current = current.Parent;
             }
+            return stack;
+        }
 
+        private static BootstrapLogDirectoryGuard GuardDirectoryTree(string path)
+        {
+            var stack = BuildDirectoryStack(path);
             var handles = new List<SafeFileHandle>();
             try
             {
@@ -195,6 +205,35 @@ namespace Sisqual.Runtime
                 {
                     string directory = stack.Pop();
                     if (!Directory.Exists(directory)) throw new DirectoryNotFoundException(directory);
+                    handles.Add(OpenDirectory(directory));
+                }
+                return new BootstrapLogDirectoryGuard(handles);
+            }
+            catch
+            {
+                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
+                throw;
+            }
+        }
+
+        public static IDisposable EnsureDirectoryTree(string path)
+        {
+            var stack = BuildDirectoryStack(path);
+            var handles = new List<SafeFileHandle>();
+            try
+            {
+                while (stack.Count > 0)
+                {
+                    string directory = stack.Pop();
+                    if (!Directory.Exists(directory))
+                    {
+                        if (!CreateDirectoryW(directory, IntPtr.Zero))
+                        {
+                            int error = Marshal.GetLastWin32Error();
+                            if (error != ERROR_ALREADY_EXISTS)
+                                throw new Win32Exception(error, "Cannot create guarded bootstrap log directory: " + directory);
+                        }
+                    }
                     handles.Add(OpenDirectory(directory));
                 }
                 return new BootstrapLogDirectoryGuard(handles);
@@ -353,21 +392,10 @@ function Remove-SisqualExpiredLogs {
         [string]$Prefix = 'SISQUALDeployConsole'
     )
 
-    if (-not (Test-Path -LiteralPath $LogRoot -PathType Container)) { return @() }
-    $cutoffDate = $NowUtc.Date.AddDays(-($RetentionDays - 1))
-    $pattern = '^{0}-(\d{{4}}-\d{{2}}-\d{{2}})\.log$' -f [regex]::Escape($Prefix)
-    $removed = [Collections.Generic.List[string]]::new()
-    foreach ($file in @(Get-ChildItem -LiteralPath $LogRoot -File -ErrorAction Stop)) {
-        $match = [regex]::Match($file.Name, $pattern, [Text.RegularExpressions.RegexOptions]::CultureInvariant)
-        if (-not $match.Success) { continue }
-        $fileDate = [datetime]::MinValue
-        $parsed = [datetime]::TryParseExact($match.Groups[1].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$fileDate)
-        if ($parsed -and $fileDate.Date -lt $cutoffDate) {
-            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
-            [void]$removed.Add($file.Name)
-        }
-    }
-    return @($removed)
+    # Destructive retention is deliberately deferred until the hardened runtime logger is wired
+    # after the package-integrity gate. The pre-integrity bootstrap must not enumerate/delete log
+    # files through pathname-based APIs merely to enforce retention.
+    return @()
 }
 
 function Initialize-SisqualRuntimeLog {
@@ -379,12 +407,20 @@ function Initialize-SisqualRuntimeLog {
         [datetime]$NowUtc = [datetime]::UtcNow
     )
 
-    # Security validation is deliberately completed before any create/enumerate/delete/write.
+    # Resolve the policy boundary first, then create/validate every missing directory component
+    # while already-open ancestors remain guarded without write/delete sharing. No destructive
+    # retention is performed before package integrity has been established.
     $resolved = Resolve-SisqualBootstrapLogRoot -LogRoot $LogRoot -ApprovedRoot $ApprovedRoot
-    New-Item -ItemType Directory -Path $resolved.LogRoot -Force -ErrorAction Stop | Out-Null
-    Assert-SisqualBootstrapPathNoReparse -Path $resolved.ApprovedRoot -Label 'ApprovedRoot'
-    Assert-SisqualBootstrapPathNoReparse -Path $resolved.LogRoot -Label 'LogRoot'
-    $removed = @(Remove-SisqualExpiredLogs -LogRoot $resolved.LogRoot -RetentionDays $RetentionDays -NowUtc $NowUtc)
+    $creationGuard = $null
+    try {
+        $creationGuard = [Sisqual.Runtime.BootstrapLogNative]::EnsureDirectoryTree($resolved.LogRoot)
+    }
+    finally {
+        if ($null -ne $creationGuard) {
+            $creationGuard.Dispose()
+        }
+    }
+
     $logPath = Get-SisqualDailyLogPath -LogRoot $resolved.LogRoot -NowUtc $NowUtc
 
     [pscustomobject][ordered]@{
@@ -392,7 +428,8 @@ function Initialize-SisqualRuntimeLog {
         LogRoot = $resolved.LogRoot
         LogPath = $logPath
         RetentionDays = $RetentionDays
-        RemovedExpiredLogs = $removed
+        RemovedExpiredLogs = @()
+        RetentionDeferred = $true
     }
 }
 

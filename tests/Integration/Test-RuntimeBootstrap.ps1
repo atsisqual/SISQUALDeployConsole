@@ -27,7 +27,7 @@ try {
     Add-Check 'DEFAULT_HOST_VERSION' ($defaults.ExpectedPowerShellVersion -ceq '7.6.6') 'Expected portable PowerShell version is pinned.'
     Add-Check 'DEFAULT_APPROVED_LOG_ROOT' ($defaults.ApprovedLogRoot -ceq 'C:\SISQUALWFM\WFM.Logs') 'Approved local log root is fixed.'
     Add-Check 'DEFAULT_LOG_ROOT' ($defaults.DefaultLogRoot -ceq 'C:\SISQUALWFM\WFM.Logs\SISQUALDeployManagement') 'Default log root matches ADR-0007.'
-    Add-Check 'DEFAULT_RETENTION' ($defaults.RetentionDays -eq 30) 'Default retention is 30 days.'
+    Add-Check 'DEFAULT_RETENTION' ($defaults.RetentionDays -eq 30) 'Default retention setting remains 30 days for the hardened logger integration.'
 
     $hostResult = Test-SisqualRuntimeHost -ExpectedVersion '7.6.6'
     Add-Check 'HOST_ACCEPTS_PINNED_RUNTIME' $hostResult.Success 'The exact portable PowerShell host is accepted.'
@@ -44,6 +44,10 @@ try {
     Add-Check 'LOG_ROOT_JUNCTION_REJECTED' ($junctionRejected -and -not (Test-Path -LiteralPath (Join-Path $junctionTarget 'escaped-child'))) 'A junction escape is rejected before creating the child.'
     Remove-Item -LiteralPath $junction -Force
 
+    $nestedRoot = Join-Path $tempRoot 'guarded-create\level1\level2'
+    $nestedContext = Initialize-SisqualRuntimeLog -LogRoot $nestedRoot -ApprovedRoot $tempRoot -RetentionDays 30
+    Add-Check 'GUARDED_NESTED_LOG_ROOT_CREATED' ((Test-Path -LiteralPath $nestedRoot -PathType Container) -and $nestedContext.RetentionDeferred) 'Missing log-root components are created through the guarded native directory walk.'
+
     $logRoot = Join-Path $tempRoot 'logs'
     New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log') -Value 'old' -Encoding ascii
@@ -52,9 +56,10 @@ try {
     $now = [datetime]::SpecifyKind([datetime]'2026-10-06T12:00:00', [DateTimeKind]::Utc)
     $context = Initialize-SisqualRuntimeLog -LogRoot $logRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
     Add-Check 'LOG_DIRECTORY_READY' (Test-Path -LiteralPath $context.LogRoot -PathType Container) 'Log directory is created or reused.'
-    Add-Check 'RETENTION_REMOVES_OLD_MATCHING_LOG' (-not (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log'))) 'Expired matching log is removed.'
-    Add-Check 'RETENTION_PRESERVES_UNRELATED_FILE' (Test-Path -LiteralPath (Join-Path $logRoot 'other-2000-01-01.log') -PathType Leaf) 'Unrelated files are not deleted.'
-    Add-Check 'RETENTION_KEEPS_DAY_30' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2026-09-07.log') -PathType Leaf) 'The 30th retained daily log is preserved.'
+    Add-Check 'PREINTEGRITY_RETENTION_DEFERRED' ($context.RetentionDeferred -and @($context.RemovedExpiredLogs).Count -eq 0) 'Pre-integrity bootstrap performs no destructive retention.'
+    Add-Check 'PREINTEGRITY_OLD_MATCHING_LOG_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log') -PathType Leaf) 'An expired matching log is not deleted before the integrity gate.'
+    Add-Check 'PREINTEGRITY_UNRELATED_FILE_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'other-2000-01-01.log') -PathType Leaf) 'Unrelated files remain untouched.'
+    Add-Check 'PREINTEGRITY_DAY_30_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2026-09-07.log') -PathType Leaf) 'The retention-boundary file remains untouched by bootstrap.'
     # The runtime canonicalizes the root path; this gate intentionally asserts only the UTC daily filename contract.
     Add-Check 'DAILY_LOG_NAME' ([IO.Path]::GetFileName($context.LogPath) -ceq 'SISQUALDeployConsole-2026-10-06.log') 'Daily log uses an invariant UTC date name.'
     Write-SisqualBootstrapEvent -LogPath $context.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now
