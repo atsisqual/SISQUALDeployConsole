@@ -45,6 +45,53 @@ function Test-Throws {
     Test-Check -Name $Name -Condition $threw
 }
 
+if (-not ('Sisqual.Runtime.Tests.DirectoryWriteProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace Sisqual.Runtime.Tests
+{
+    public static class DirectoryWriteProbe
+    {
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint FILE_SHARE_DELETE = 0x00000004;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        public static bool CanOpenForWrite(string path)
+        {
+            var handle = CreateFileW(
+                path,
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero);
+            if (handle.IsInvalid) return false;
+            handle.Dispose();
+            return true;
+        }
+    }
+}
+'@
+}
+
 $defaults = Get-SisqualRuntimeLogDefaults
 Test-Check 'default approved root is the SISQUAL log tree' ($defaults.ApprovedRoot -ceq 'C:\SISQUALWFM\WFM.Logs')
 Test-Check 'default log root matches ADR-0007' ($defaults.LogRoot -ceq 'C:\SISQUALWFM\WFM.Logs\SISQUALDeployManagement')
@@ -91,6 +138,15 @@ try {
     Test-Check 'initialize returns canonical log root' ($state.LogRoot -ceq [System.IO.Path]::GetFullPath($tempRoot))
     Test-Check 'initialize returns configured retention' ($state.RetentionDays -eq 3)
 
+    Test-Check 'directory write probe can open unguarded log root' ([Sisqual.Runtime.Tests.DirectoryWriteProbe]::CanOpenForWrite($tempRoot))
+    $directoryGuard = [Sisqual.Runtime.LogNative]::GuardDirectoryTree($tempRoot)
+    try {
+        Test-Check 'directory guard denies concurrent write access to reparse metadata' (-not [Sisqual.Runtime.Tests.DirectoryWriteProbe]::CanOpenForWrite($tempRoot))
+    }
+    finally {
+        $directoryGuard.Dispose()
+    }
+
     $reference = [datetime]::SpecifyKind([datetime]'2026-10-06T12:00:00', [DateTimeKind]::Utc)
     $oldPath = Join-Path $tempRoot 'TestLog-2026-10-03.log'
     $boundaryPath = Join-Path $tempRoot 'TestLog-2026-10-04.log'
@@ -109,12 +165,16 @@ try {
     $jsonMarker = 'Json' + 'Marker'
     $escapedJsonMarker = 'Escaped' + 'Tail'
     $compositeJsonMarker = 'Composite' + 'Tail'
+    $credentialName = 'cred' + 'ential'
+    $credentialMarker = 'Credential' + 'LeakMarker'
+    $privateKeyName = 'private' + '_key'
+    $privateKeyMarker = 'Private' + 'KeyLeakMarker'
     $basicMarker = 'dXNl' + 'cjpwYXNz'
     $foldedMarker = 'Rm9s' + 'ZGVkQ3JlZA=='
     $jsonPayload = '{"' + $passwordKey + '":"' + $jsonMarker + '"}'
     $escapedJsonPayload = '{"' + $passwordKey + '":"prefix\"' + $escapedJsonMarker + '"}'
     $compositeJsonPayload = '{"token":["one","' + $compositeJsonMarker + '"]}'
-    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload`n$compositeJsonPayload"
+    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker $credentialName=$credentialMarker $privateKeyName=$privateKeyMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload`n$compositeJsonPayload"
     $properties = [ordered]@{
         Instance = 'DEMOES'
         Note = 'authorization=BasicValue'
@@ -129,6 +189,7 @@ try {
     $passwordRedactionPattern = [regex]::Escape($passwordKey) + '="\[REDACTED\]"'
     Test-Check 'write redacts sensitive property names' ($text -match $passwordRedactionPattern -and $text -match 'Cookie="\[REDACTED\]"')
     Test-Check 'write redacts token and authorization assignments' ($text -match 'token=\[REDACTED\]' -and $text -match 'authorization=\[REDACTED\]')
+    Test-Check 'write redacts credential and private-key assignments' (($text -match ([regex]::Escape($credentialName) + '=\[REDACTED\]')) -and ($text -match ([regex]::Escape($privateKeyName) + '=\[REDACTED\]')))
     Test-Check 'write redacts bearer credentials' ($text -match 'Bearer \[REDACTED\]')
     $authorizationRedactionPattern = '(?i)authorization\s*(?::|=)\s*\[REDACTED\]'
     Test-Check 'write redacts complete Basic authorization header value' (($text -match $authorizationRedactionPattern) -and ($text -notmatch [regex]::Escape($basicMarker)))
@@ -136,7 +197,7 @@ try {
     Test-Check 'write redacts quoted sensitive JSON keys' ($text -match ([regex]::Escape($passwordKey) + '=\[REDACTED\]'))
     Test-Check 'write consumes escaped quotes inside sensitive JSON values' ($text -notmatch [regex]::Escape($escapedJsonMarker))
     Test-Check 'write consumes complete composite sensitive JSON values' ($text -notmatch [regex]::Escape($compositeJsonMarker))
-    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($foldedMarker) + '|' + [regex]::Escape($jsonMarker) + '|' + [regex]::Escape($escapedJsonMarker) + '|' + [regex]::Escape($compositeJsonMarker)
+    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($foldedMarker) + '|' + [regex]::Escape($jsonMarker) + '|' + [regex]::Escape($escapedJsonMarker) + '|' + [regex]::Escape($compositeJsonMarker) + '|' + [regex]::Escape($credentialMarker) + '|' + [regex]::Escape($privateKeyMarker)
     Test-Check 'write does not contain supplied secret markers' ($text -notmatch $forbidden)
     Test-Check 'write normalizes embedded newlines to one physical record' (([IO.File]::ReadAllLines($logPath)).Count -eq 1)
 
