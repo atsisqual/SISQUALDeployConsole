@@ -32,9 +32,11 @@ function Protect-SisqualRuntimeLogText {
     # closed by treating the remainder of the input as continuation data.
     $multilineCandidatePattern = '(?im)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?!["''])(?<line>[^\r\n]*)(?<newline>\r\n|\r|\n)'
     $sameLineBoundaryPattern = '(?i)\b(Bearer|Basic)\s+|\b(authorization|proxy-authorization|cookie|set-cookie)\s*:|(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]'
+    $multilineCandidateRegex = [regex]::new($multilineCandidatePattern)
+    $sameLineBoundaryRegex = [regex]::new($sameLineBoundaryPattern)
     $scanIndex = 0
     while ($scanIndex -lt $text.Length) {
-        $candidate = [regex]::Match($text, $multilineCandidatePattern, $scanIndex)
+        $candidate = $multilineCandidateRegex.Match($text, $scanIndex)
         if (-not $candidate.Success) {
             break
         }
@@ -46,7 +48,7 @@ function Protect-SisqualRuntimeLogText {
             continue
         }
 
-        $boundary = [regex]::Match($sameLineValue, $sameLineBoundaryPattern)
+        $boundary = $sameLineBoundaryRegex.Match($sameLineValue)
         if ($boundary.Success) {
             $boundaryIndex = $candidate.Groups['line'].Index + $boundary.Index
             $replacement = $candidate.Groups[1].Value + '=[REDACTED] '
