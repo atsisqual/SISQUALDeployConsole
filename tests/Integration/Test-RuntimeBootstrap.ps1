@@ -1,0 +1,134 @@
+[CmdletBinding()]
+param([string]$OutputPath = '')
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+$library = Join-Path $repoRoot 'runtime\RuntimeBootstrap.ps1'
+. $library
+
+$checks = [Collections.Generic.List[object]]::new()
+$fatal = $null
+$tempRoot = Join-Path $env:TEMP ('SISQUAL-Phase3A-' + [guid]::NewGuid().ToString('N'))
+$outsideRoot = $tempRoot + '-outside'
+$junctionTarget = $tempRoot + '-junction-target'
+$symlinkTarget = $tempRoot + '-symlink-target.log'
+$hardlinkTarget = $tempRoot + '-hardlink-target.log'
+
+function Add-Check([string]$Id, [bool]$Pass, [string]$Message) {
+    [void]$checks.Add([pscustomobject][ordered]@{ Id = $Id; Status = $(if ($Pass) { 'PASS' } else { 'FAIL' }); Message = $Message })
+}
+function Throws([scriptblock]$Action) { try { & $Action; return $false } catch { return $true } }
+
+try {
+    New-Item -ItemType Directory -Path $tempRoot, $junctionTarget -Force | Out-Null
+    $defaults = Get-SisqualRuntimeDefaults
+    Add-Check 'DEFAULT_HOST_VERSION' ($defaults.ExpectedPowerShellVersion -ceq '7.6.6') 'Expected portable PowerShell version is pinned.'
+    Add-Check 'DEFAULT_APPROVED_LOG_ROOT' ($defaults.ApprovedLogRoot -ceq 'C:\SISQUALWFM\WFM.Logs') 'Approved local log root is fixed.'
+    Add-Check 'DEFAULT_LOG_ROOT' ($defaults.DefaultLogRoot -ceq 'C:\SISQUALWFM\WFM.Logs\SISQUALDeployManagement') 'Default log root matches ADR-0007.'
+    Add-Check 'DEFAULT_RETENTION' ($defaults.RetentionDays -eq 30) 'Default retention setting remains 30 days for the hardened logger integration.'
+
+    $hostResult = Test-SisqualRuntimeHost -ExpectedVersion '7.6.6'
+    Add-Check 'HOST_ACCEPTS_PINNED_RUNTIME' $hostResult.Success 'The exact portable PowerShell host is accepted.'
+    $wrongHostResult = Test-SisqualRuntimeHost -ExpectedVersion '0.0.0'
+    Add-Check 'HOST_REJECTS_WRONG_VERSION' (-not $wrongHostResult.Success) 'A non-pinned PowerShell version is rejected.'
+
+    $outsideRejected = Throws { Initialize-SisqualRuntimeLog -LogRoot $outsideRoot -ApprovedRoot $tempRoot -RetentionDays 30 | Out-Null }
+    Add-Check 'LOG_ROOT_OUTSIDE_APPROVED_REJECTED' ($outsideRejected -and -not (Test-Path -LiteralPath $outsideRoot)) 'An outside log root is rejected before any filesystem side effect.'
+
+    $junction = Join-Path $tempRoot 'junction'
+    New-Item -ItemType Junction -Path $junction -Target $junctionTarget -Force | Out-Null
+    $junctionChild = Join-Path $junction 'escaped-child'
+    $junctionRejected = Throws { Initialize-SisqualRuntimeLog -LogRoot $junctionChild -ApprovedRoot $tempRoot -RetentionDays 30 | Out-Null }
+    Add-Check 'LOG_ROOT_JUNCTION_REJECTED' ($junctionRejected -and -not (Test-Path -LiteralPath (Join-Path $junctionTarget 'escaped-child'))) 'A junction escape is rejected before creating the child.'
+    Remove-Item -LiteralPath $junction -Force
+
+    $nestedRoot = Join-Path $tempRoot 'guarded-create\level1\level2'
+    $nestedContext = Initialize-SisqualRuntimeLog -LogRoot $nestedRoot -ApprovedRoot $tempRoot -RetentionDays 30
+    Add-Check 'GUARDED_NESTED_LOG_ROOT_CREATED' ((Test-Path -LiteralPath $nestedRoot -PathType Container) -and $nestedContext.RetentionDeferred) 'Missing log-root components are created through the guarded native directory walk.'
+
+    $logRoot = Join-Path $tempRoot 'logs'
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log') -Value 'old' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $logRoot 'other-2000-01-01.log') -Value 'preserve' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2026-09-07.log') -Value 'keep-boundary' -Encoding ascii
+    $now = [datetime]::SpecifyKind([datetime]'2026-10-06T12:00:00', [DateTimeKind]::Utc)
+    $context = Initialize-SisqualRuntimeLog -LogRoot $logRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
+    Add-Check 'LOG_DIRECTORY_READY' (Test-Path -LiteralPath $context.LogRoot -PathType Container) 'Log directory is created or reused.'
+    Add-Check 'PREINTEGRITY_RETENTION_DEFERRED' ($context.RetentionDeferred -and @($context.RemovedExpiredLogs).Count -eq 0) 'Pre-integrity bootstrap performs no destructive retention.'
+    Add-Check 'PREINTEGRITY_OLD_MATCHING_LOG_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log') -PathType Leaf) 'An expired matching log is not deleted before the integrity gate.'
+    Add-Check 'PREINTEGRITY_UNRELATED_FILE_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'other-2000-01-01.log') -PathType Leaf) 'Unrelated files remain untouched.'
+    Add-Check 'PREINTEGRITY_DAY_30_PRESERVED' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2026-09-07.log') -PathType Leaf) 'The retention-boundary file remains untouched by bootstrap.'
+    # The runtime canonicalizes the root path; this gate intentionally asserts only the UTC daily filename contract.
+    Add-Check 'DAILY_LOG_NAME' ([IO.Path]::GetFileName($context.LogPath) -ceq 'SISQUALDeployConsole-2026-10-06.log') 'Daily log uses an invariant UTC date name.'
+    Write-SisqualBootstrapEvent -LogPath $context.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now
+    Write-SisqualBootstrapEvent -LogPath $context.LogPath -EventId 'HOST_VALID' -NowUtc $now.AddSeconds(1)
+    $lines = @(Get-Content -LiteralPath $context.LogPath)
+    Add-Check 'LOG_APPEND' ($lines.Count -eq 2) 'Bootstrap events append to the same daily file.'
+    Add-Check 'LOG_EVENT_CODES' (($lines[0] -match 'BOOTSTRAP_STARTED') -and ($lines[1] -match 'HOST_VALID')) 'Log lines carry fixed event codes.'
+    $bytes = [IO.File]::ReadAllBytes($context.LogPath)
+    Add-Check 'LOG_ASCII' (@($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) 'Bootstrap log output is ASCII.'
+
+    # Final-file attacks must fail before any bytes are written through an alias outside the
+    # approved tree. These checks exercise both reparse-point and hard-link aliases.
+    $symlinkRoot = Join-Path $tempRoot 'symlink-logs'
+    New-Item -ItemType Directory -Path $symlinkRoot -Force | Out-Null
+    $symlinkContext = Initialize-SisqualRuntimeLog -LogRoot $symlinkRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
+    Set-Content -LiteralPath $symlinkTarget -Value 'sentinel-symlink' -Encoding ascii
+    $symlinkHashBefore = (Get-FileHash -LiteralPath $symlinkTarget -Algorithm SHA256).Hash
+    New-Item -ItemType SymbolicLink -Path $symlinkContext.LogPath -Target $symlinkTarget -Force | Out-Null
+    $symlinkRejected = Throws { Write-SisqualBootstrapEvent -LogPath $symlinkContext.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now }
+    $symlinkHashAfter = (Get-FileHash -LiteralPath $symlinkTarget -Algorithm SHA256).Hash
+    Add-Check 'LOG_FILE_SYMLINK_REJECTED' ($symlinkRejected -and $symlinkHashAfter -ceq $symlinkHashBefore) 'A predictable daily-log file symlink is rejected without modifying its target.'
+    Remove-Item -LiteralPath $symlinkContext.LogPath -Force
+
+    $hardlinkRoot = Join-Path $tempRoot 'hardlink-logs'
+    New-Item -ItemType Directory -Path $hardlinkRoot -Force | Out-Null
+    $hardlinkContext = Initialize-SisqualRuntimeLog -LogRoot $hardlinkRoot -ApprovedRoot $tempRoot -RetentionDays 30 -NowUtc $now
+    Set-Content -LiteralPath $hardlinkTarget -Value 'sentinel-hardlink' -Encoding ascii
+    $hardlinkHashBefore = (Get-FileHash -LiteralPath $hardlinkTarget -Algorithm SHA256).Hash
+    New-Item -ItemType HardLink -Path $hardlinkContext.LogPath -Target $hardlinkTarget -Force | Out-Null
+    $hardlinkRejected = Throws { Write-SisqualBootstrapEvent -LogPath $hardlinkContext.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now }
+    $hardlinkHashAfter = (Get-FileHash -LiteralPath $hardlinkTarget -Algorithm SHA256).Hash
+    Add-Check 'LOG_FILE_HARDLINK_REJECTED' ($hardlinkRejected -and $hardlinkHashAfter -ceq $hardlinkHashBefore) 'A predictable daily-log hard link is rejected without modifying its other name.'
+    Remove-Item -LiteralPath $hardlinkContext.LogPath -Force
+
+    # Exercise the real launcher with a disposable sibling RuntimeBootstrap implementation that
+    # succeeds during initialization but throws only for terminal event writes. This proves the
+    # product script preserves exit 20/21 without adding a test hook to production code.
+    $launcherPackage = Join-Path $tempRoot 'launcher-package'
+    $launcherRuntime = Join-Path $launcherPackage 'runtime'
+    New-Item -ItemType Directory -Path $launcherRuntime -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'runtime\Start-SisqualDeployConsole.ps1') -Destination (Join-Path $launcherRuntime 'Start-SisqualDeployConsole.ps1')
+    $stub = @'
+function Get-SisqualRuntimeDefaults { [pscustomobject]@{ ExpectedPowerShellVersion='7.6.6'; ApprovedLogRoot='C:\'; DefaultLogRoot='C:\'; ManifestFileName='package-manifest.json' } }
+function Test-SisqualRuntimeHost { param($ExpectedVersion) [pscustomobject]@{ Success=$true; ExpectedVersion=$ExpectedVersion; ActualVersion='7.6.6'; PSEdition='Core'; Is64BitProcess=$true } }
+function Initialize-SisqualRuntimeLog { param($LogRoot,$ApprovedRoot,$RetentionDays) [pscustomobject]@{ LogPath='discard.log' } }
+function Write-SisqualBootstrapEvent { param($LogPath,$EventId,$Level='INFO') if ($EventId -in @('MANIFEST_MISSING','INTEGRITY_VERIFIER_UNAVAILABLE')) { throw ('forced terminal log failure: ' + $EventId) } }
+'@
+    Set-Content -LiteralPath (Join-Path $launcherRuntime 'RuntimeBootstrap.ps1') -Value $stub -Encoding ascii
+    $launcher = Join-Path $launcherRuntime 'Start-SisqualDeployConsole.ps1'
+    $pwsh = Join-Path $PSHOME 'pwsh.exe'
+    $childOutput = & $pwsh -NoLogo -NoProfile -NonInteractive -File $launcher -LogRoot 'C:\' 2>&1
+    $missingExit = $LASTEXITCODE
+    Add-Check 'TERMINAL_LOG_FAILURE_PRESERVES_EXIT_20' ($missingExit -eq 20) 'Missing-manifest exit 20 survives terminal log append failure.'
+    '{}' | Set-Content -LiteralPath (Join-Path $launcherPackage 'package-manifest.json') -Encoding ascii
+    $childOutput = & $pwsh -NoLogo -NoProfile -NonInteractive -File $launcher -LogRoot 'C:\' 2>&1
+    $verifierExit = $LASTEXITCODE
+    Add-Check 'TERMINAL_LOG_FAILURE_PRESERVES_EXIT_21' ($verifierExit -eq 21) 'Verifier-unavailable exit 21 survives terminal log append failure.'
+}
+catch {
+    $fatal = $_.Exception.GetType().FullName + ': ' + $_.Exception.Message
+}
+finally {
+    $passCount = @($checks | Where-Object Status -eq 'PASS').Count
+    $failCount = @($checks | Where-Object Status -eq 'FAIL').Count
+    $report = [pscustomobject][ordered]@{ Schema='SISQUAL_PHASE3A_RUNTIME_BOOTSTRAP_V1'; PowerShell=$PSVersionTable.PSVersion.ToString(); PassCount=$passCount; FailCount=$failCount; Fatal=$fatal; Checks=@($checks) }
+    if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $PSScriptRoot 'phase3a-runtime-bootstrap-report.json' }
+    $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding ascii
+    foreach ($path in @($tempRoot, $outsideRoot, $junctionTarget, $symlinkTarget, $hardlinkTarget)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } }
+}
+
+if ($null -ne $fatal -or @($checks | Where-Object Status -eq 'FAIL').Count -gt 0) { exit 1 }
+exit 0
