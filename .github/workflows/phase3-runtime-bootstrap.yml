@@ -56,7 +56,12 @@ jobs:
           $pwsh = Join-Path $PWD 'runtime\pwsh\pwsh.exe'
           $report = Join-Path $env:RUNNER_TEMP ('phase3a-runtime-bootstrap-{0}.json' -f '${{ matrix.os }}')
           & $pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '.\tests\Integration\Test-RuntimeBootstrap.ps1' -OutputPath $report
-          if ($LASTEXITCODE -ne 0) { throw "Runtime bootstrap tests failed with exit code $LASTEXITCODE." }
+          $testExit = $LASTEXITCODE
+          if (Test-Path -LiteralPath $report -PathType Leaf) {
+              Write-Host '--- runtime bootstrap report ---'
+              Get-Content -LiteralPath $report -Raw | Write-Host
+          }
+          if ($testExit -ne 0) { throw "Runtime bootstrap tests failed with exit code $testExit." }
           $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
           if ($payload.PowerShell -cne '7.6.6' -or $payload.FailCount -ne 0 -or $null -ne $payload.Fatal) { throw 'Runtime bootstrap report did not meet the acceptance gate.' }
 
@@ -91,10 +96,11 @@ jobs:
           }
 
       - name: Upload evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase3-runtime-bootstrap-${{ matrix.os }}
           path: |
             ${{ runner.temp }}/phase3a-runtime-bootstrap-${{ matrix.os }}.json
             ${{ runner.temp }}/phase3a-launcher-logs/*.log
-          if-no-files-found: error
+          if-no-files-found: warn
