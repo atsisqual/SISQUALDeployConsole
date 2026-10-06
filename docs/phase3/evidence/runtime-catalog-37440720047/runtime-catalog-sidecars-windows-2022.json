@@ -1,0 +1,31 @@
+{
+  "powershell": "7.6.6",
+  "passed": 6,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "unverified WAL/SHM sidecars fail closed before catalog use",
+      "status": "PASS"
+    },
+    {
+      "name": "rejected sidecars and verified main bytes remain unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "sealed catalog opens through immutable guarded view",
+      "status": "PASS"
+    },
+    {
+      "name": "immutable catalog open creates no SQLite sidecars",
+      "status": "PASS"
+    },
+    {
+      "name": "late sidecar attempt cannot alter guarded main bytes",
+      "status": "PASS"
+    },
+    {
+      "name": "late sidecars are blocked by the guard or isolated by immutable view",
+      "status": "PASS"
+    }
+  ]
+}
