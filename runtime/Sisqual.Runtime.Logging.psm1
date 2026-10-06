@@ -21,15 +21,31 @@ function Protect-SisqualRuntimeLogText {
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|credential|private.?key|client.?secret|authorization|cookie|api.?key|connection.?string'
 
     # Free-form log text has no general grammar that can reliably delimit an unquoted multiline
-    # value. Fail closed for PEM blocks and for an unquoted scalar token that ends exactly at a
-    # physical newline; in that case the remainder of the field is treated as continuation data.
-    # Requiring the newline immediately after the scalar token avoids swallowing unrelated safe
-    # tokens that happen to appear later on the same physical line.
+    # value. Fail closed for complete PEM blocks first.
     $pemAssignmentPattern = '(?is)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*(-----BEGIN [^\r\n]+-----.*?-----END [^\r\n]+-----)'
     $text = [regex]::Replace($text, $pemAssignmentPattern, '$1=[REDACTED]')
 
-    $multilineAssignmentPattern = '(?is)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?!["''])[^\s,;}\]]*[ \t]*(?:\r\n|\r|\n).*'
-    $text = [regex]::Replace($text, $multilineAssignmentPattern, '$1=[REDACTED]')
+    # For any other unquoted sensitive assignment that reaches a physical newline, inspect the
+    # remainder of that same physical line. If it contains another recognizable field/header,
+    # leave those independent fields for their own redaction. Otherwise the boundary is
+    # ambiguous, so fail closed by treating the remainder of the input as continuation data.
+    # This covers values such as "credential=first part\r\nsecond-secret" without swallowing a
+    # message like "token=abc Bearer ... credential=... Authorization: ...\n{json}".
+    $multilineCandidatePattern = '(?im)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?!["''])(?<line>[^\r\n]*)(?<newline>\r\n|\r|\n)'
+    $sameLineBoundaryPattern = '(?i)\b(Bearer|Basic)\s+|\b(authorization|proxy-authorization|cookie|set-cookie)\s*:|(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]'
+    foreach ($candidate in @([regex]::Matches($text, $multilineCandidatePattern))) {
+        $sameLineValue = [string]$candidate.Groups['line'].Value
+        $trimmedValue = $sameLineValue.Trim()
+        if ($trimmedValue.StartsWith('[REDACTED]', [StringComparison]::Ordinal)) {
+            continue
+        }
+        if ([regex]::IsMatch($sameLineValue, $sameLineBoundaryPattern)) {
+            continue
+        }
+
+        $text = $text.Substring(0, $candidate.Index) + $candidate.Groups[1].Value + '=[REDACTED]'
+        break
+    }
 
     # Decode JSON property-name escapes before deciding whether the field is sensitive. Once a
     # sensitive serialized key is found, conservatively redact the remainder of the field so
