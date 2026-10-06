@@ -23,69 +23,76 @@ function Get-Object {
     param([AllowNull()][string]$Filter, [string]$Code = 'TEST')
     return ((ConvertTo-StructuredDatabaseFilterJson -FilterClause $Filter -RuleCode $Code) | ConvertFrom-Json -AsHashtable)
 }
+function Assert-TextTerm {
+    param($Term, [string]$Column, [string]$Value, [string]$Name)
+    Assert-That $Name ($Term.column -ceq $Column -and $Term.operator -ceq 'EQ' -and $Term.value.kind -ceq 'LITERAL' -and $Term.value.type -ceq 'TEXT' -and $Term.value.value -ceq $Value)
+}
 
 Assert-That 'C7 tool version is active' ($script:ToolVersion -ceq '0.4.0' -and $script:SchemaVersion -eq 2 -and $script:CutRuleVersion -eq 2)
-$all = Get-Object $null
-Assert-That 'no filter becomes explicit ALL' ($all.kind -ceq 'ALL' -and $all.Count -eq 1)
-$blank = Get-Object '   '
+
+# Snapshot reconciliation: seven cfg.DatabaseObjectSettingRule rows exist in the approved baseline.
+# Three sisqualVIEW rules are intentionally unfiltered.
+foreach ($code in @(
+    'SISQUAL_VIEW_DATASOURCE_CONNECTION',
+    'SISQUAL_VIEW_REPORT_DEFAULT_CONNECTION',
+    'SISQUAL_VIEW_REPORT_DEFAULT_WFM_DATABASE'
+)) {
+    $all = Get-Object $null $code
+    Assert-That ("snapshot {0}: no filter becomes explicit ALL" -f $code) ($all.kind -ceq 'ALL' -and $all.Count -eq 1)
+}
+$blank = Get-Object '   ' 'BLANK'
 Assert-That 'blank filter becomes explicit ALL' ($blank.kind -ceq 'ALL')
 
-# Shape 1: one equality.
-$s1 = Get-Object "id='AD704BE6-AE67-43E3-BDB2-A89AEEEA2900'"
-Assert-That 'shape 1: one equality' ($s1.kind -ceq 'AND' -and $s1.terms.Count -eq 1 -and $s1.terms[0].column -ceq 'id' -and $s1.terms[0].operator -ceq 'EQ')
-Assert-That 'shape 1: literal value preserved' ($s1.terms[0].value.kind -ceq 'LITERAL' -and $s1.terms[0].value.type -ceq 'TEXT' -and $s1.terms[0].value.value -ceq 'AD704BE6-AE67-43E3-BDB2-A89AEEEA2900')
+# The four populated FilterClause values from the approved snapshot.
+$login = Get-Object "Aplicacao='SisqualPonto' AND Seccao='Parametros' AND Chave='LanguageLogin'" 'SISQUALPONTO_LANGUAGE_LOGIN'
+Assert-That 'snapshot login filter has exactly three AND terms' ($login.kind -ceq 'AND' -and $login.terms.Count -eq 3)
+Assert-TextTerm $login.terms[0] 'Aplicacao' 'SisqualPonto' 'snapshot login Aplicacao'
+Assert-TextTerm $login.terms[1] 'Seccao' 'Parametros' 'snapshot login Seccao'
+Assert-TextTerm $login.terms[2] 'Chave' 'LanguageLogin' 'snapshot login Chave'
 
-# Shape 2: two equalities.
-$s2 = Get-Object "[APPLICATION]=N'SISQUAL' AND [KEY]='LanguageLogin'"
-Assert-That 'shape 2: two equality terms' ($s2.terms.Count -eq 2 -and $s2.terms[0].column -ceq 'APPLICATION' -and $s2.terms[1].column -ceq 'KEY')
+$translation = Get-Object "Aplicacao='SisqualPonto' AND Seccao='Parametros' AND Chave='LanguageTranslation'" 'SISQUALPONTO_LANGUAGE_TRANSLATION'
+Assert-That 'snapshot translation filter has exactly three AND terms' ($translation.kind -ceq 'AND' -and $translation.terms.Count -eq 3)
+Assert-TextTerm $translation.terms[0] 'Aplicacao' 'SisqualPonto' 'snapshot translation Aplicacao'
+Assert-TextTerm $translation.terms[1] 'Seccao' 'Parametros' 'snapshot translation Seccao'
+Assert-TextTerm $translation.terms[2] 'Chave' 'LanguageTranslation' 'snapshot translation Chave'
 
-# Shape 3: three equalities, including an escaped quote.
-$s3 = Get-Object "Aplicacao='SisqualPonto' AND Seccao='Param''etros' AND Chave='LanguageLogin'"
-Assert-That 'shape 3: three equality terms' ($s3.terms.Count -eq 3)
-Assert-That 'shape 3: doubled quote decoded once' ($s3.terms[1].value.value -ceq "Param'etros")
+$paperless = Get-Object "Aplicacao='sisqualPAPERLESS' AND Seccao='Geral' AND Chave='LanguageID'" 'PAPERLESS_LANGUAGE_ID'
+Assert-That 'snapshot paperless filter has exactly three AND terms' ($paperless.kind -ceq 'AND' -and $paperless.terms.Count -eq 3)
+Assert-TextTerm $paperless.terms[0] 'Aplicacao' 'sisqualPAPERLESS' 'snapshot paperless Aplicacao'
+Assert-TextTerm $paperless.terms[1] 'Seccao' 'Geral' 'snapshot paperless Seccao'
+Assert-TextTerm $paperless.terms[2] 'Chave' 'LanguageID' 'snapshot paperless Chave'
 
-# Shape 4: four equalities and a numeric literal.
-$s4 = Get-Object "A='one' AND B=N'two' AND C=3 AND D=-4.50"
-Assert-That 'shape 4: four equality terms' ($s4.terms.Count -eq 4)
-Assert-That 'shape 4: numeric literal is invariant text' ($s4.terms[2].value.type -ceq 'NUMBER' -and $s4.terms[2].value.value -ceq '3' -and $s4.terms[3].value.value -ceq '-4.50')
+$dashboards = Get-Object "id='AD704BE6-AE67-43E3-BDB2-A89AEEEA2900'" 'DASHBOARDS_DATA_CONNECTION'
+Assert-That 'snapshot dashboards filter has exactly one term' ($dashboards.kind -ceq 'AND' -and $dashboards.terms.Count -eq 1)
+Assert-TextTerm $dashboards.terms[0] 'id' 'AD704BE6-AE67-43E3-BDB2-A89AEEEA2900' 'snapshot dashboards id'
 
-# Shape 5: lookup by one column.
-$s5 = Get-Object "REALM_ID=(SELECT ID FROM REALM WHERE NAME='master')"
-$lookup5 = $s5.terms[0].value
-Assert-That 'shape 5: lookup encoded structurally' ($lookup5.kind -ceq 'LOOKUP' -and $null -eq $lookup5.schema -and $lookup5.table -ceq 'REALM' -and $lookup5.selectColumn -ceq 'ID')
-Assert-That 'shape 5: lookup predicate is structured' ($lookup5.predicate.kind -ceq 'AND' -and $lookup5.predicate.terms.Count -eq 1 -and $lookup5.predicate.terms[0].column -ceq 'NAME')
+# Syntax details retained because they are safe variants of the approved equality-only grammar.
+$bracketed = Get-Object "[Aplicacao]=N'SisqualPonto' AND [Chave]='LanguageLogin'"
+Assert-That 'bracketed identifiers and N-prefixed strings are accepted' ($bracketed.terms.Count -eq 2 -and $bracketed.terms[0].column -ceq 'Aplicacao' -and $bracketed.terms[0].value.value -ceq 'SisqualPonto')
+$escaped = Get-Object "A='it''s exact'"
+Assert-That 'doubled single quote decodes once' ($escaped.terms[0].value.value -ceq "it's exact")
+$numeric = Get-Object 'A=3 AND B=-4.50'
+Assert-That 'numeric literals stay invariant text' ($numeric.terms[0].value.type -ceq 'NUMBER' -and $numeric.terms[0].value.value -ceq '3' -and $numeric.terms[1].value.value -ceq '-4.50')
 
-# Shape 6: lookup with schema and two lookup conditions.
-$s6 = Get-Object "CLIENT_ID=(SELECT [ID] FROM [dbo].[CLIENT] WHERE CLIENT_ID='spa' AND REALM_ID='r1') AND NAME='x'"
-$lookup6 = $s6.terms[0].value
-Assert-That 'shape 6: schema-qualified lookup' ($lookup6.schema -ceq 'dbo' -and $lookup6.table -ceq 'CLIENT' -and $lookup6.predicate.terms.Count -eq 2)
-Assert-That 'shape 6: outer AND survives lookup' ($s6.terms.Count -eq 2 -and $s6.terms[1].column -ceq 'NAME')
-
-# Shape 7: nested lookup, still only equality/AND.
-$s7 = Get-Object "CLIENT_ID=(SELECT ID FROM CLIENT WHERE CLIENT_ID='spa' AND REALM_ID=(SELECT ID FROM REALM WHERE NAME='master'))"
-$lookup7 = $s7.terms[0].value
-Assert-That 'shape 7: nested lookup encoded' ($lookup7.predicate.terms[1].value.kind -ceq 'LOOKUP' -and $lookup7.predicate.terms[1].value.table -ceq 'REALM')
-
-$top = Get-Object "CLIENT_ID=(SELECT TOP (1) ID FROM CLIENT WHERE CLIENT_ID='spa')"
-Assert-That 'TOP (1) lookup is accepted without changing semantics' ($top.terms[0].value.kind -ceq 'LOOKUP' -and $top.terms[0].value.table -ceq 'CLIENT')
-
+# Fail closed outside the approved equality + AND grammar.
 Assert-Throws 'OR is rejected' { Get-Object "A='x' OR B='y'" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'LIKE is rejected' { Get-Object "A LIKE 'x%'" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'not-equal is rejected' { Get-Object "A<>'x'" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'function expression is rejected' { Get-Object "LOWER(A)='x'" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'IN is rejected' { Get-Object "A IN ('x','y')" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'SELECT lookup is rejected' { Get-Object "A=(SELECT ID FROM T WHERE B='x')" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'parenthesized expression is rejected' { Get-Object "(A='x')" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'statement terminator is rejected' { Get-Object "A='x'; SELECT 1" | Out-Null } '*outside the supported predicate grammar*'
 Assert-Throws 'line comment is rejected' { Get-Object "A='x' --comment" | Out-Null } '*outside the supported predicate grammar*'
 Assert-Throws 'block comment is rejected' { Get-Object "A='x' /*comment*/" | Out-Null } '*outside the supported predicate grammar*'
-Assert-Throws 'lookup without WHERE is rejected' { Get-Object "A=(SELECT ID FROM T)" | Out-Null } '*cannot be converted safely*'
 Assert-Throws 'trailing tokens are rejected' { Get-Object "A='x' SELECT 1" | Out-Null } '*cannot be converted safely*'
 
-$row = [ordered]@{ ObjectSettingRuleID = 7; SettingCode = 'RULE_X'; FilterClause = "A='x' AND B=2"; ExpectedTemplate = '{HOST_NAME}' }
+$row = [ordered]@{ ObjectSettingRuleID = 7; SettingCode = 'SISQUALPONTO_LANGUAGE_LOGIN'; FilterClause = "Aplicacao='SisqualPonto' AND Seccao='Parametros' AND Chave='LanguageLogin'"; ExpectedTemplate = '{HOST_NAME}' }
 $converted = Convert-DatabaseObjectSettingRuleForCatalog -Row $row
 Assert-That 'catalog row drops raw FilterClause' (-not $converted.Contains('FilterClause'))
 Assert-That 'catalog row adds FilterPredicateJson' ($converted.Contains('FilterPredicateJson') -and ([string]$converted['FilterPredicateJson']).StartsWith('{"kind":"AND"'))
 $roundTrip = ([string]$converted['FilterPredicateJson']) | ConvertFrom-Json -AsHashtable
-Assert-That 'catalog row JSON round-trips as structured terms' ($roundTrip.terms.Count -eq 2 -and $roundTrip.terms[1].value.type -ceq 'NUMBER')
+Assert-That 'catalog row JSON round-trips the real snapshot predicate' ($roundTrip.terms.Count -eq 3 -and $roundTrip.terms[2].value.value -ceq 'LanguageLogin')
 
 $schema = [pscustomobject]@{
     Table = 'cfg.DatabaseObjectSettingRule'
@@ -101,10 +108,10 @@ Assert-That 'catalog schema excludes raw FilterClause' ($columns.Name -notcontai
 Assert-That 'catalog schema contains required FilterPredicateJson' ($columns.Name -contains 'FilterPredicateJson' -and -not ($columns | Where-Object Name -eq 'FilterPredicateJson').Nullable)
 
 $rows = @{ 'cfg.DatabaseObjectSettingRule' = [System.Collections.Generic.List[object]]::new() }
-$rows['cfg.DatabaseObjectSettingRule'].Add([ordered]@{ ObjectSettingRuleID = 8; SettingCode = 'RULE_Y'; FilterClause = "C='z'" })
+$rows['cfg.DatabaseObjectSettingRule'].Add([ordered]@{ ObjectSettingRuleID = 8; SettingCode = 'DASHBOARDS_DATA_CONNECTION'; FilterClause = "id='AD704BE6-AE67-43E3-BDB2-A89AEEEA2900'" })
 [void](Convert-C7DatabaseObjectRules -Rows $rows)
-Assert-That 'source adapter transformation removes executable SQL before catalog build' (-not $rows['cfg.DatabaseObjectSettingRule'][0].Contains('FilterClause'))
-Assert-That 'source adapter transformation creates structured JSON' ($rows['cfg.DatabaseObjectSettingRule'][0].Contains('FilterPredicateJson'))
+Assert-That 'source adapter removes executable FilterClause before catalog build' (-not $rows['cfg.DatabaseObjectSettingRule'][0].Contains('FilterClause'))
+Assert-That 'source adapter creates structured JSON' ($rows['cfg.DatabaseObjectSettingRule'][0].Contains('FilterPredicateJson'))
 
 $excluded = @(Get-ExcludedColumnList)
 Assert-That 'manifest exclusion list records raw filter removal' ($excluded -contains 'cfg.DatabaseObjectSettingRule.FilterClause')
