@@ -99,7 +99,7 @@ try {
     $defaults = Get-SisqualRuntimeSqliteDefaults
     Test-Check 'provider version pin is 10.0.12' ($defaults.ProviderVersion -ceq '10.0.12')
     Test-Check 'native runtime SQLite pin is 3.53.3' ($defaults.NativeSqliteVersion -ceq '3.53.3')
-    Test-Check 'factory defaults are read-only private-cache' ($defaults.ConnectionMode -ceq 'ReadOnly' -and $defaults.CacheMode -ceq 'Private')
+    Test-Check 'factory defaults are read-only private-cache' ($defaults.ConnectionMode -ceq 'ReadOnly' -and $defaults.CacheMode -ceq 'Private' -and -not $defaults.Pooling)
 
     Test-Throws 'provider path outside package is rejected' {
         Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
@@ -225,8 +225,24 @@ finally {
         try { Close-SisqualRuntimeCatalog -Session $session } catch {}
     }
     Remove-Module Sisqual.Runtime.Catalog -ErrorAction SilentlyContinue
-    foreach ($path in @($tempRoot, $outsideRoot)) {
-        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+
+    if (Test-Path -LiteralPath $outsideRoot) {
+        Remove-Item -LiteralPath $outsideRoot -Recurse -Force -ErrorAction Stop
+    }
+
+    if (Test-Path -LiteralPath $tempRoot) {
+        try {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            # The native e_sqlite3.dll is intentionally loaded for the process lifetime and Windows
+            # keeps that DLL locked until pwsh exits. GitHub runner temp cleanup removes the disposable
+            # package after this process ends; do not turn a fully passing product test into a failure.
+            if ([string]$_.Exception.Message -notmatch 'e_sqlite3\.dll') {
+                throw
+            }
+            Write-Host 'INFO  disposable provider payload remains locked until the test process exits'
+        }
     }
 }
 
