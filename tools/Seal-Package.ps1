@@ -72,7 +72,7 @@ $ErrorActionPreference = 'Stop'
 $script:ToolVersion = '0.1.0'
 $script:ManifestName = 'package-manifest.json'
 $script:ContractVersion = '0.1-proposed'
-$script:SupportedSchemaVersions = @(1)
+$script:SupportedSchemaVersions = @(1, 2)
 $script:RelativePathPattern = '^(?!/)(?![A-Za-z]:)(?!.*(^|/)\.{1,2}(/|$))(?!.*//)[A-Za-z0-9._ \-/]+$'
 
 # Files that must never be listed in a package (credentials and logs live outside it).
@@ -296,6 +296,19 @@ function Test-CatalogFile {
             if ($c.Length -eq 0) { continue }
             $colName = $c.Substring($c.IndexOf('.') + 1)
             if ($script:ForbiddenColumns -contains $colName) { $problems.Add(('Column {0} must not be in a catalog.' -f $c)) }
+        }
+
+        # Schema v2 is supported only in its C7 shape. This keeps the version gate fail-closed:
+        # changing PRAGMA user_version alone does not turn a v1 catalog into a valid v2 catalog.
+        if ([int]$uv -eq 2) {
+            if ($tables -notcontains 'cfg_DatabaseObjectSettingRule') {
+                $problems.Add('user_version 2 is not a supported schema version instance: cfg_DatabaseObjectSettingRule is missing.')
+            }
+            else {
+                $c7Columns = @((Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $Db, "SELECT name FROM pragma_table_info('cfg_DatabaseObjectSettingRule') ORDER BY cid;")) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
+                if ($c7Columns -notcontains 'FilterPredicateJson') { $problems.Add('schema version 2 requires cfg_DatabaseObjectSettingRule.FilterPredicateJson.') }
+                if ($c7Columns -contains 'FilterClause') { $problems.Add('schema version 2 must not contain cfg_DatabaseObjectSettingRule.FilterClause.') }
+            }
         }
 
         if ($tables -notcontains 'catalog_meta') { $problems.Add('The catalog has no catalog_meta table.') }
