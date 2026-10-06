@@ -37,7 +37,7 @@ About 60 to 90 PRs in total, half of them engines. These are estimates, not comm
 - **7.** The new-server wizard generates scripts and checklists; it never writes to a database.
 - **8.** Includes the ADR-0006 conditions 2 to 4, backup and restore verification, a threat-model review, a signed package, handover documents, and the cutover: the first deployment is on a server without the current system; existing servers are switched when the owner decides.
 
-## 4. Engine waves (all 19 engines are in V1)
+## 4. Engine waves (all 19 engines are covered: 17 are ported as engines, 2 are absorbed)
 
 The order of the seven engines that were outside the earlier plan was chosen by the reviewer on the owner's delegation (2026-10-05): safest first, destructive last. Each engine needs preview, apply, idempotency, a structured result, a backup and restore strategy, a secret-safety test and a Windows CI run before review.
 
@@ -48,18 +48,19 @@ The order of the seven engines that were outside the earlier plan was chosen by 
 5. `WEB_ACCESS`, `LINKS_PAGES`, `DATABASE_CONTENT_SYNC`
 6. `FULL_DEPLOYMENT` as orchestration of the validated engines (13 steps, 12 enabled)
 7. Read-only diagnostics: `ENVIRONMENT_STATE_PROBE`, `STORAGE_SIZE_SCAN`, `MODEL_REVIEW`
-8. `LINKS_VISIBILITY`, and `V8_KEYCLOAK_CONFIG` (disabled in `FULL_DEPLOYMENT`)
+8. `LINKS_VISIBILITY` (a read-only matrix first; a change is an owner edit of the catalog followed by a seal)
 9. `DATABASE_COPY` (destructive; only after the backup and restore strategy is proven)
 
-[PROPOSED] `DATABASE_SETTINGS` is the old engine that its action no longer uses (the action points to `DATABASE_CONTENT_SYNC`); its behaviour is covered by wave 5, so it is not ported separately. Not testable on a runner: TSplus and Web Access, a real Keycloak topology, real SQL data.
+[DECIDED 2026-10-06, owner Q3] `DATABASE_SETTINGS` and `V8_KEYCLOAK_CONFIG` are not ported as autonomous engines: their behaviour is absorbed by `DATABASE_CONTENT_SYNC` (14 of 14 rules present, same template and flags) and by the `CONFIG_REPAIR` rule `KEYCLOAK_DB_URL`. There is no functional loss; the evidence is in their specifications. Not testable on a runner: TSplus and Web Access, a real Keycloak topology, real SQL data.
 
 ## 5. Open items
 
 - [DECIDED 2026-10-05] Links pages stay as today: the general page on the main instance, an individual page in each IIS site under `links`. From the source, the general page lists every enabled instance of the same country across all machines, so a catalog that hosts a general page carries a read-only instance directory. [PENDING] Exact columns and which catalogs carry it; [PROPOSED] only catalogs of machines with an instance whose `LinksIncludeAllInstances` is 1, public columns only (codes, names, host name), in a table separate from the instance rows. Tool change needed before wave 5.
 - [PENDING] Pulse: whether a machine's Pulse needs the hub or the instances of other machines (conversion plan section 2). Decide before wave 1 (`PULSE_STATUS`).
 - [DECIDED 2026-10-05] The 25 `Microsoft.Data.SqlClient` files go inside the portable and are covered by the manifest.
-- [PENDING] SQLite managed provider: chosen in Phase 1B (the owner agreed), read-only open only.
-- [PENDING] Whether `DATABASE_SETTINGS` needs a separate port (proposed: no).
+- [PENDING adoption] `Microsoft.Data.Sqlite` 10.0.12 is technically demonstrated (PR #36, run 37392036026, 9 of 9 gates on windows-2022 and windows-2025, original and copied folder, locked restore). Adding it as a runtime dependency still needs the integration decision. Owner preference: accept both versions by function and register them in the manifest, the provider and runtime at SQLite 3.53.3 and the CLI and tooling at 3.53.4.
+- [CLOSED 2026-10-06] `DATABASE_SETTINGS` has no separate port (see section 4).
+- [DECIDED 2026-10-06] Installers come from an operator-provided folder with fixed versions, and every artifact is verified by SHA-256 before use. Keycloak requires exactly JDK 23, pinned and verified by SHA-256: no LTS substitution, no dynamic selection, no "latest".
 - [CLOSED 2026-10-05] Machines without a local database: obsolete under ADR-0007.
 
 ## 6. Validations that need a real server [V]
@@ -73,3 +74,7 @@ One branch and one PR per piece of work; stacked PRs name their order of integra
 ## 8. Definition of done
 
 Copy a folder to a SISQUAL Windows Server that never had the Deploy Console, run `Start.cmd`, install nothing; the console identifies the machine, verifies its package and catalog, shows exactly what it will change, executes only after confirmation, keeps local text logs, never reveals credentials, and leaves nothing behind when the process ends.
+
+## 9. Follow-up changes decided on 2026-10-06
+
+No decision is needed to start them; each is a small PR: the manifest counter against rollback (a contract change, K3); the structured database filters in the conversion tool and the catalog contract (C7); the action-code cross-reference check in `Test-CatalogConversion` (C8); the instance directory in the conversion tool (C1, C2); the catalog-change function in the tools after option A for link visibility (C9); the removal of the `V8_KEYCLOAK_CONFIG` action, its engine row and step 63 and of the legacy `DATABASE_SETTINGS` engine row and `cfg.DatabaseSettingRule` from the catalog.

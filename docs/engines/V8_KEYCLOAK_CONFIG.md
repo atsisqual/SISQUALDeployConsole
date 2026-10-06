@@ -1,6 +1,7 @@
 # Engine port specification: V8_KEYCLOAK_CONFIG
 
 **Status:** [PROPOSED] specification for review (task 3, wave 8). No product code.
+**Owner decision (2026-10-06, Q3):** this engine is **not ported as an autonomous engine**. Its behaviour, pointing each instance's Keycloak at the SQL Server of the machine by rewriting `db-url` in `conf\keycloak.conf`, is absorbed by the `CONFIG_REPAIR` rule `KEYCLOAK_DB_URL` (specification `docs/engines/CONFIG_REPAIR.md`). **There is no functional loss.** Verified by the reviewer in the reference snapshot on 2026-10-06: the rule is enabled, belongs to the application `KEYCLOAK`, targets `conf\keycloak.conf`, selects the line `db-url=jdbc:sqlserver://...` and writes the database address from the instance's SQL instance name; the only step of this engine in `FULL_DEPLOYMENT` (63) is disabled. [CONFIRMED] The template of the rule carries `trustServerCertificate=true`; this decision does not change that value, and hardening it is a separate item.
 **Date:** 2026-10-05
 **Sources (read only):** `ops.Engine` row `V8_KEYCLOAK_CONFIG` of `database/sync/ManagementSync.sql` of `atsisqual/SISQUALManagementConsole` (file `V8_KEYCLOAK_CONFIG.ps1`, version `v3`, Windows PowerShell 5.1, requires administrator, stored `ScriptSha256` `BC604D4B...`; reference head `9756ba956842884fabcf25b82c4fbf1d11cf56bd`); the action `V8_KEYCLOAK_CONFIG` (step 63 of `FULL_DEPLOYMENT`, disabled) and the `CONFIG_REPAIR` rules of the Keycloak configuration file; the specification of `CONFIG_REPAIR` (wave 2, PR #32). Script text is not copied and no secret value appears here.
 Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs a decision; [V] needs a real server.
@@ -51,6 +52,6 @@ None in this engine. The same configuration file holds secrets (the administrato
 
 ## 11. Open questions
 
-1. [PENDING] Confirm the retirement (recommended), and the catalog change that removes the action, the engine and step 63.
+1. [DECIDED 2026-10-06, owner Q3] The retirement is confirmed. The catalog change that removes the action, the engine row and step 63 is a separate change (roadmap follow-ups).
 2. [PENDING] The case this engine seems to serve, repointing the database after an environment is moved to another machine. Confirm that `CONFIG_REPAIR` run on the new machine is the intended way (recommended).
 3. [PENDING] Whether the host name rule and the port rules are all expected to stay in sync with the instance data (they are, by the same engine).
