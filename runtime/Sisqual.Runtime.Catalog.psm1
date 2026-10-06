@@ -134,6 +134,7 @@ function Get-SisqualRuntimeSqliteDefaults {
         NativeSqliteVersion = $script:ExpectedNativeSqliteVersion
         ConnectionMode = 'ReadOnly'
         CacheMode = 'Private'
+        Pooling = $false
     }
 }
 
@@ -229,6 +230,7 @@ function Open-SisqualRuntimeCatalog {
     $builder.DataSource = $fullPath
     $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
     $builder.Cache = [Microsoft.Data.Sqlite.SqliteCacheMode]::Private
+    $builder.Pooling = $false
     $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new($builder.ConnectionString)
 
     try {
