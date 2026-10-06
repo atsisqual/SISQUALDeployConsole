@@ -48,7 +48,7 @@ $corePath = Join-Path $PSScriptRoot 'Test-CatalogConversion.Core.ps1'
 . $corePath -SyncFile 'unused' -CatalogFolder 'unused' -Sqlite3Path 'unused'
 
 $script:C8LegacyInvokeCatalogConversionTest = ${function:Invoke-CatalogConversionTest}
-$script:TestToolVersion = '0.2.0'
+$script:TestToolVersion = '0.2.1'
 
 function Get-C8QueryLines {
     param(
@@ -58,6 +58,21 @@ function Get-C8QueryLines {
     )
     $out = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $DatabasePath, $Sql)
     return @($out -split "`n" | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_.Length -gt 0 })
+}
+
+function Get-C8NonBlankSqlPredicate {
+    param([Parameter(Mandatory)][string]$ColumnExpression)
+
+    # SQLite trim(X) removes ASCII space only. Optional catalog references use the
+    # Unicode White_Space set instead, matching the documented "whitespace-only"
+    # contract and PowerShell/.NET IsNullOrWhiteSpace semantics for these code fields.
+    $whiteSpaceChars = @(
+        9, 10, 11, 12, 13, 32, 133, 160, 5760,
+        8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+        8232, 8233, 8239, 8287, 12288
+    )
+    $trimSet = (($whiteSpaceChars | ForEach-Object { 'char({0})' -f $_ }) -join ' || ')
+    return ('length(trim({0}, {1})) > 0' -f $ColumnExpression, $trimSet)
 }
 
 function Test-C8CatalogHasTables {
@@ -78,6 +93,9 @@ function Add-C8ActionCrossReferenceChecks {
         [Parameter(Mandatory)]$Entries
     )
 
+    $adapterNonBlank = Get-C8NonBlankSqlPredicate -ColumnExpression 'a.ActionCode'
+    $engineNonBlank = Get-C8NonBlankSqlPredicate -ColumnExpression 'a.EngineCode'
+
     foreach ($entry in @($Entries)) {
         $code = [string]$entry.serverCode
         $databasePath = Join-Path $Folder ([string]$entry.file)
@@ -90,7 +108,7 @@ FROM cfg_ConfigurationAdapterDefinition AS a
 LEFT JOIN ops_Action AS x
   ON x.ActionCode COLLATE BINARY = a.ActionCode COLLATE BINARY
 WHERE a.ActionCode IS NOT NULL
-  AND length(trim(a.ActionCode)) > 0
+  AND $adapterNonBlank
   AND x.ActionCode IS NULL
 ORDER BY a.AdapterCode;
 "@
@@ -108,7 +126,7 @@ FROM ops_Action AS a
 LEFT JOIN ops_Engine AS e
   ON e.EngineCode COLLATE BINARY = a.EngineCode COLLATE BINARY
 WHERE a.EngineCode IS NOT NULL
-  AND length(trim(a.EngineCode)) > 0
+  AND $engineNonBlank
   AND e.EngineCode IS NULL
 ORDER BY a.ActionCode;
 "@
