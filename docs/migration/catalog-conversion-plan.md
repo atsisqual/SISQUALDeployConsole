@@ -348,7 +348,7 @@ All output is ASCII with LF except where a tool copies bytes it must not change 
 
 ### 5.2 `tools/Test-CatalogConversion.ps1`
 
-Checks the result against the source without printing values. It exits non-zero on the first failed group and writes a report with counts and hashes only [PROPOSED]:
+Checks the result against the source without printing values. The current verifier has nine groups: manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash and `action-xref`. It exits non-zero when any check fails and writes a report with counts, hashes and identifiers only [CONFIRMED through C8]:
 
 - counts source versus destination per table and per machine (carried rows equal source rows after the cut, minus the reported orphans);
 - primary-key sets (hash of the sorted keys) per table, and null counts per column;
@@ -357,7 +357,8 @@ Checks the result against the source without printing values. It exits non-zero 
 - exclusions: no `sec_*` table, no excluded column, no `ScriptText`, no rowversion column;
 - secret safety: the scan of 3.3 on every text column, and a marker test (known marker values planted in the fixture must not appear anywhere in the output);
 - SQLite checks: `integrity_check`, `foreign_key_check`, `STRICT` tables, opens read-only (`mode=ro`) and a write attempt fails;
-- the manifest hashes recomputed and compared.
+- the manifest hashes recomputed and compared;
+- `action-xref` (C8 / R-043): every non-empty `cfg_ConfigurationAdapterDefinition.ActionCode` resolves exactly/BINARY to `ops_Action.ActionCode`, and every non-empty `ops_Action.EngineCode` resolves exactly/BINARY to `ops_Engine.EngineCode`. NULL, empty and Unicode-whitespace-only optional references are allowed. Failures report identifiers only and never configuration values or secrets.
 
 ### 5.3 Seal tool
 
@@ -455,7 +456,9 @@ Findings in the real data:
 
 ## 10. Result of step B4 (value-level verification, PR #21)
 
-[CONFIRMED] `tools/Test-CatalogConversion.ps1` verifies the catalogs against the source in eight groups (manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash). It is read-only, prints counts, table names and primary keys but never a cell value, and exits 1 when any check fails. On the real snapshot the six cut catalogs pass 88 checks in 57 s (about 19,000 cells compared per catalog) and the new-machine catalog passes 23. Four deliberate damages to a copy of the real catalogs (a name in upper case, CRLF turned into LF in two templates, one row deleted, a Keycloak password put back in a rule) produced 11 failing checks, each naming table and key and no value. 19 unit checks include 16 kinds of damage that must each be reported in the right group. CI run 37326816893: unit tests pass and the LocalDB integration test passes with 41 checks, running this tool on the file-built and on the SQL Server-built catalogs.
+[CONFIRMED] B4 established eight verifier groups (manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash). C8 / R-043 adds the ninth `action-xref` group to the current `tools/Test-CatalogConversion.ps1`: every non-empty adapter `ActionCode` must resolve exactly to `ops_Action`, and every non-empty action `EngineCode` must resolve exactly to `ops_Engine`; NULL/empty/Unicode-whitespace-only optional references are ignored by that relationship check. The verifier remains read-only, prints counts, table names, primary keys and identifiers but never a cell value, and exits 1 when any check fails. The original B4 real-snapshot evidence remains: the six cut catalogs passed 88 checks in 57 s (about 19,000 cells compared per catalog) and the new-machine catalog passed 23. Four deliberate damages to a copy of the real catalogs (a name in upper case, CRLF turned into LF in two templates, one row deleted, a Keycloak password put back in a rule) produced 11 failing checks, each naming table and key and no value. 19 unit checks include 16 kinds of damage that must each be reported in the right group. CI run 37326816893: unit tests pass and the LocalDB integration test passes with 41 checks, running this tool on the file-built and on the SQL Server-built catalogs.
+
+[CONFIRMED, C8] The action cross-reference comparison is exact/BINARY. Unit mutations cover the two stale R-043 adapter identifiers, a missing engine, case-only mismatches, and optional references made only of ASCII control whitespace or Unicode whitespace. Findings contain identifiers only.
 
 Defects found by the tamper tests in the tool itself (fixed): putting the original secret back into a redacted rule was not reported by the values group; integer primary keys and missing rows printed no key; a missing manifest returned no result.
 

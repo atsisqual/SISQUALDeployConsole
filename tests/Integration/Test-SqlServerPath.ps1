@@ -167,6 +167,13 @@ function New-FixtureRows {
                         elseif ($i -eq 2) { $row[$secretCol] = 'FXSECRET-' + $secretCol + '-' + $i }
                     }
                 }
+                'cfg.ConfigurationAdapterDefinition' {
+                    $row['ActionCode'] = 'FX_ACTION_' + $i
+                }
+                'ops.Action' {
+                    $row['ActionCode'] = 'FX_ACTION_' + $i
+                    $row['EngineCode'] = 'FX_ENGINE_' + $i
+                }
                 'ops.Engine' {
                     $text = "# fixture engine $i`r`nWrite-Host 'it''s $i'`r`n# accent: $eAcute`r`n"
                     $row['EngineCode'] = 'FX_ENGINE_' + $i
