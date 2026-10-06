@@ -36,6 +36,16 @@ try {
     Check 'newline-start credential assignment is fail-closed' (($credentialText -notmatch [regex]::Escape($credentialMarker)) -and ($credentialText -notmatch 'continuation-body') -and ($credentialText -match 'credential=\[REDACTED\]'))
     Check 'safe prefix before multiline credential remains available' ($credentialText -match 'safe-prefix')
     Check 'credential redaction remains one physical log record' (([IO.File]::ReadAllLines($credentialPath)).Count -eq 1)
+
+    $continuationRoot = Join-Path $tempBase 'same-line-continuation'
+    Initialize-SisqualRuntimeLog -LogRoot $continuationRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiContinuation' | Out-Null
+    $continuationMarker = 'SameLine' + 'ContinuationLeakMarker'
+    $continuationMessage = "safe-prefix credential=first-line`r`n$continuationMarker`nsecond-secret"
+    $continuationPath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.MULTICONTINUATION' -Message $continuationMessage -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
+    $continuationText = [IO.File]::ReadAllText($continuationPath)
+    Check 'same-line sensitive assignment continuation is fail-closed' (($continuationText -notmatch [regex]::Escape($continuationMarker)) -and ($continuationText -notmatch 'second-secret') -and ($continuationText -match 'credential=\[REDACTED\]'))
+    Check 'safe prefix before same-line continuation remains available' ($continuationText -match 'safe-prefix')
+    Check 'same-line continuation redaction remains one physical log record' (([IO.File]::ReadAllLines($continuationPath)).Count -eq 1)
 }
 finally {
     Remove-Module Sisqual.Runtime.Logging -ErrorAction SilentlyContinue
