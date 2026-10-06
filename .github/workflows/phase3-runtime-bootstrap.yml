@@ -73,12 +73,16 @@ jobs:
           $evidenceRoot = Join-Path $env:RUNNER_TEMP 'phase3a-launcher-logs'
           try {
               & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
-              if ($LASTEXITCODE -ne 20) { throw "Expected exit 20 for a missing manifest, got $LASTEXITCODE." }
+              $missingManifestExit = $LASTEXITCODE
+              $global:LASTEXITCODE = 0
+              if ($missingManifestExit -ne 20) { throw "Expected exit 20 for a missing manifest, got $missingManifestExit." }
               $manifestPath = Join-Path $PWD 'package-manifest.json'
               '{}' | Set-Content -LiteralPath $manifestPath -Encoding ascii
               try {
                   & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
-                  if ($LASTEXITCODE -ne 21) { throw "Expected exit 21 while the integrity verifier is not integrated, got $LASTEXITCODE." }
+                  $verifierUnavailableExit = $LASTEXITCODE
+                  $global:LASTEXITCODE = 0
+                  if ($verifierUnavailableExit -ne 21) { throw "Expected exit 21 while the integrity verifier is not integrated, got $verifierUnavailableExit." }
               }
               finally { Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue }
 
