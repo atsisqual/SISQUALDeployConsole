@@ -1,0 +1,62 @@
+[
+  {
+    "package": "Microsoft.Data.Sqlite",
+    "version": "10.0.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlite/10.0.12/microsoft.data.sqlite.10.0.12.nupkg",
+    "bytes": 30207,
+    "nupkgSha256": "246679D8C6C83FFCF4C8A480066E3F4FC4E051C96B71BEDFD932FE7A5AF1F7D4",
+    "rawNupkgSha512Base64": "yZ7JQJqVWSICoSZmKJSx0mCm6vgZ2lnIzmPomiEDDfpCKDq93sGY8/d/+7BBPXgeSOdddfqC7GThK6TcV8RSxg==",
+    "lockContentHash": "xUq9xUc653ue7ac2rMfCaf8UQN+U3zS8poWYlugycpvJllplMM0Mk7v/+MM0CTlu9zGvbGML4BPH8YWhrUOfGw==",
+    "lockedRestoreVerified": true
+  },
+  {
+    "package": "Microsoft.Data.Sqlite.Core",
+    "version": "10.0.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlite.core/10.0.12/microsoft.data.sqlite.core.10.0.12.nupkg",
+    "bytes": 208143,
+    "nupkgSha256": "5E8ED353006DADF55D5C7F56D237321C20BB10C786262E6B25526756E1036332",
+    "rawNupkgSha512Base64": "U6a1XGw24t9M39INjA7yjncLkGl/UrJBKIFKDaqdjB3JIUYH6HjUDNokXrfVX2XVS0WUDPGjmU/aOhW3E62m9Q==",
+    "lockContentHash": "2aL9eL5HQr0V4b8V909SD+jQAx6qnTTl7sT/v3D8dIvmr2UGdpZIQxqm1pj2Js3e4EYTvpw0oMH7DjapJJuPPw==",
+    "lockedRestoreVerified": true
+  },
+  {
+    "package": "SQLitePCLRaw.bundle_e_sqlite3",
+    "version": "2.1.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.bundle_e_sqlite3/2.1.12/sqlitepclraw.bundle_e_sqlite3.2.1.12.nupkg",
+    "bytes": 34064,
+    "nupkgSha256": "A9A06E6B5A313F6EF3675F91997D012ADEFFE8AA9E1FFD69ED46A4E685B054E1",
+    "rawNupkgSha512Base64": "KbeKXtiMrpxd7dFgsnorA1Gci/xVRDCBmkfZNdiiE1la6OdUEMtyTTJ3TBeCn9nIvZgXo5uCd9dVCji3Ay6LuA==",
+    "lockContentHash": "mAgscpQMLw5/nfA1Q5oJVAT29yROUo1ifZGbbTpx/lwZpSxMUGoYbKfmvdm8oXER+RzxqBmmQzeBEVKfeHv2nw==",
+    "lockedRestoreVerified": true
+  },
+  {
+    "package": "SQLitePCLRaw.core",
+    "version": "2.1.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.core/2.1.12/sqlitepclraw.core.2.1.12.nupkg",
+    "bytes": 36016,
+    "nupkgSha256": "AF06904138FFA6DC95A599133D64D254716D6FACC7543A6B3B910793DAE9DCA5",
+    "rawNupkgSha512Base64": "WgmgyKwGLTR6ZfIf1+1dFNxsOyp9GmsU9YjjeUjgz+NZnw2hyjVB0U8taT1Z1vv21s5+gvhHQ3vtpZajsMKJYg==",
+    "lockContentHash": "ETpNw9DY3ckWLgRRAeCHj+GKOuPi61aeczkXhgHexUvqoZBAYg8RYESE2J7O1M7+o6QbdSEZwrw9bfqztUVWXg==",
+    "lockedRestoreVerified": true
+  },
+  {
+    "package": "SQLitePCLRaw.lib.e_sqlite3",
+    "version": "2.1.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.lib.e_sqlite3/2.1.12/sqlitepclraw.lib.e_sqlite3.2.1.12.nupkg",
+    "bytes": 18762916,
+    "nupkgSha256": "4A22C02FFCF489792903CF263DEF9FCE27739716883F965F0B5EEFF1637430AC",
+    "rawNupkgSha512Base64": "Dli+ELKNuRX0g72Uq2I2OZa5zgi4fwSXV4Je3wyF7jH9oz6AKRA9wXIzMwuVeW7RfAZdSVgIcEeZZON59LdtiA==",
+    "lockContentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w==",
+    "lockedRestoreVerified": true
+  },
+  {
+    "package": "SQLitePCLRaw.provider.e_sqlite3",
+    "version": "2.1.12",
+    "source": "https://api.nuget.org/v3-flatcontainer/sqlitepclraw.provider.e_sqlite3/2.1.12/sqlitepclraw.provider.e_sqlite3.2.1.12.nupkg",
+    "bytes": 60225,
+    "nupkgSha256": "DF2B3271992E5D719186C4671E3CF4F8658097C154CBCD41494AB594C5997595",
+    "rawNupkgSha512Base64": "k4RCblP+Hc1JAc77crV+fFZLiZeJPaY8VjMA8kvki00Z0dohG6xxXw4qkuVyCUC2+HChbhwW+ydhmjmlUZAXUQ==",
+    "lockContentHash": "W3oH4XIfCzFrgUSDKHhN6N+dgzA5YHOR2VxX8GB6Qy7CyrJJgxPEG8NirgYWlPQC5P2jz2knSsexWu4tDUL33g==",
+    "lockedRestoreVerified": true
+  }
+]

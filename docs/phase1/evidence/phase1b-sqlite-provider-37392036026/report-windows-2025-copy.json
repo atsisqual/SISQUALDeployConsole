@@ -1,0 +1,107 @@
+{
+  "phase": "1B",
+  "probe": "sqlite-managed-provider",
+  "status": "[PROPOSED]",
+  "candidate": "Microsoft.Data.Sqlite",
+  "candidateVersion": "10.0.12",
+  "overall": "PASS",
+  "machine": "runnervmfi6oq",
+  "os": "Microsoft Windows 10.0.26100",
+  "architecture": "X64",
+  "powerShell": "7.6.6",
+  "startedAtUtc": "2026-10-06T00:08:32.5250240Z",
+  "completedAtUtc": "2026-10-06T00:08:33.0333750Z",
+  "durationSeconds": 0.508,
+  "checks": [
+    {
+      "id": "HOST_POWERSHELL",
+      "status": "PASS",
+      "message": "Probe runs in the pinned portable PowerShell version.",
+      "data": {
+        "expected": "7.6.6",
+        "actual": "7.6.6",
+        "psHome": "D:\\a\\_temp\\pwsh"
+      }
+    },
+    {
+      "id": "PROVIDER_PAYLOAD",
+      "status": "PASS",
+      "message": "Required managed and native provider files are present.",
+      "data": {
+        "managed": [
+          "SQLitePCLRaw.core.dll",
+          "SQLitePCLRaw.provider.e_sqlite3.dll",
+          "SQLitePCLRaw.batteries_v2.dll",
+          "Microsoft.Data.Sqlite.dll"
+        ],
+        "native": "e_sqlite3.dll"
+      }
+    },
+    {
+      "id": "PROVIDER_LOAD",
+      "status": "PASS",
+      "message": "Microsoft.Data.Sqlite loads directly in PowerShell without installation.",
+      "data": {
+        "expected": "10.0.12",
+        "productVersion": "10.0.12",
+        "assembly": "Microsoft.Data.Sqlite, Version=10.0.12.0, Culture=neutral, PublicKeyToken=adb9793829ddae60",
+        "location": "D:\\a\\_temp\\provider-copy\\Microsoft.Data.Sqlite.dll"
+      }
+    },
+    {
+      "id": "FIXTURE_CREATED",
+      "status": "PASS",
+      "message": "Fixture catalog was created by the pinned sqlite3 CLI.",
+      "data": {
+        "bytes": 196608,
+        "sha256": "FD5EF9679FA155487595B0C13B43DDB2F34C0F4B95494A3B8FB506D5CE587D86"
+      }
+    },
+    {
+      "id": "READ_ONLY_READS",
+      "status": "PASS",
+      "message": "Read-only connection supports catalog reads, parameters and integrity_check.",
+      "data": {
+        "rows": 10000,
+        "parameterizedValue": "C00042",
+        "integrity": "ok",
+        "sqliteVersion": "3.53.3"
+      }
+    },
+    {
+      "id": "WRITE_REJECTED",
+      "status": "PASS",
+      "message": "A write through Mode=ReadOnly must fail.",
+      "data": {
+        "rejected": true,
+        "sqliteErrorCode": null
+      }
+    },
+    {
+      "id": "MISSING_FILE_REJECTED",
+      "status": "PASS",
+      "message": "Read-only mode must not create a missing database.",
+      "data": {
+        "rejected": true,
+        "fileCreated": false
+      }
+    },
+    {
+      "id": "MULTIPLE_READ_CONNECTIONS",
+      "status": "PASS",
+      "message": "Twenty simultaneous read-only connections can open and query the same catalog.",
+      "data": null
+    },
+    {
+      "id": "NO_CATALOG_MUTATION",
+      "status": "PASS",
+      "message": "Read-only use leaves the catalog bytes unchanged and creates no sidecar files.",
+      "data": {
+        "before": "FD5EF9679FA155487595B0C13B43DDB2F34C0F4B95494A3B8FB506D5CE587D86",
+        "after": "FD5EF9679FA155487595B0C13B43DDB2F34C0F4B95494A3B8FB506D5CE587D86",
+        "sidecars": []
+      }
+    }
+  ],
+  "fatalError": null
+}
