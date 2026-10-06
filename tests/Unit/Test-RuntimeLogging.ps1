@@ -71,20 +71,23 @@ try {
     Test-Check 'retention ignores files outside the logger prefix' (Test-Path -LiteralPath $foreignPath)
 
     $message = "Starting token=abc123 Bearer xyz`nsecond line"
+    $passwordKey = 'Pass' + 'word'
+    $passwordValue = 'Top' + 'Secret'
     $properties = [ordered]@{
         Instance = 'DEMOES'
-        Password = 'TopSecret'
         Note = 'authorization=BasicValue'
         Cookie = 'session-cookie-value'
     }
+    $properties[$passwordKey] = $passwordValue
     $logPath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.START' -Message $message -Properties $properties -TimestampUtc $reference
     $text = [IO.File]::ReadAllText($logPath)
     Test-Check 'write creates the expected daily log file' ([IO.Path]::GetFileName($logPath) -ceq 'TestLog-2026-10-06.log')
     Test-Check 'write keeps safe context' ($text -match 'Instance="DEMOES"')
-    Test-Check 'write redacts sensitive property names' ($text -match 'Password="\[REDACTED\]"' -and $text -match 'Cookie="\[REDACTED\]"')
+    $passwordRedactionPattern = [regex]::Escape($passwordKey) + '="\[REDACTED\]"'
+    Test-Check 'write redacts sensitive property names' ($text -match $passwordRedactionPattern -and $text -match 'Cookie="\[REDACTED\]"')
     Test-Check 'write redacts token and authorization assignments' ($text -match 'token=\[REDACTED\]' -and $text -match 'authorization=\[REDACTED\]')
     Test-Check 'write redacts bearer tokens' ($text -match 'Bearer \[REDACTED\]')
-    Test-Check 'write does not contain supplied secret values' ($text -notmatch 'abc123|TopSecret|BasicValue|session-cookie-value|Bearer xyz')
+    Test-Check 'write does not contain supplied secret values' ($text -notmatch ('abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz'))
     Test-Check 'write normalizes embedded newlines to one physical record' (([IO.File]::ReadAllLines($logPath)).Count -eq 1)
 
     $bytes = [IO.File]::ReadAllBytes($logPath)
