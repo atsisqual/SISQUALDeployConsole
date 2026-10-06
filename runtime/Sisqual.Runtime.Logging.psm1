@@ -26,20 +26,32 @@ function Protect-SisqualRuntimeLogText {
     $text = [regex]::Replace($text, $pemAssignmentPattern, '$1=[REDACTED]')
 
     # For any other unquoted sensitive assignment that reaches a physical newline, inspect the
-    # remainder of that same physical line. If it contains another recognizable field/header,
-    # leave those independent fields for their own redaction. Otherwise the boundary is
-    # ambiguous, so fail closed by treating the remainder of the input as continuation data.
-    # This covers values such as "credential=first part\r\nsecond-secret" without swallowing a
-    # message like "token=abc Bearer ... credential=... Authorization: ...\n{json}".
+    # remainder of that same physical line. Recognizable sensitive fields/headers on that line
+    # delimit the current value: redact up to the boundary, preserve the boundary, and continue
+    # scanning from there. If there is no boundary, the multiline extent is ambiguous, so fail
+    # closed by treating the remainder of the input as continuation data.
     $multilineCandidatePattern = '(?im)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=][ \t]*(?!["''])(?<line>[^\r\n]*)(?<newline>\r\n|\r|\n)'
     $sameLineBoundaryPattern = '(?i)\b(Bearer|Basic)\s+|\b(authorization|proxy-authorization|cookie|set-cookie)\s*:|(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]'
-    foreach ($candidate in @([regex]::Matches($text, $multilineCandidatePattern))) {
+    $scanIndex = 0
+    while ($scanIndex -lt $text.Length) {
+        $candidate = [regex]::Match($text, $multilineCandidatePattern, $scanIndex)
+        if (-not $candidate.Success) {
+            break
+        }
+
         $sameLineValue = [string]$candidate.Groups['line'].Value
         $trimmedValue = $sameLineValue.Trim()
         if ($trimmedValue.StartsWith('[REDACTED]', [StringComparison]::Ordinal)) {
+            $scanIndex = $candidate.Groups['newline'].Index + $candidate.Groups['newline'].Length
             continue
         }
-        if ([regex]::IsMatch($sameLineValue, $sameLineBoundaryPattern)) {
+
+        $boundary = [regex]::Match($sameLineValue, $sameLineBoundaryPattern)
+        if ($boundary.Success) {
+            $boundaryIndex = $candidate.Groups['line'].Index + $boundary.Index
+            $replacement = $candidate.Groups[1].Value + '=[REDACTED] '
+            $text = $text.Substring(0, $candidate.Index) + $replacement + $text.Substring($boundaryIndex)
+            $scanIndex = $candidate.Index + $replacement.Length
             continue
         }
 
