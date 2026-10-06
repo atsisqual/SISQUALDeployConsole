@@ -41,14 +41,16 @@ Catalog schema version **2** is the first version with C7 structured database fi
 
 ## 4. Structured database-content predicates (C7)
 
-[CONFIRMED, owner decision] Runtime code must never execute the source `cfg.DatabaseObjectSettingRule.FilterClause` as SQL text. The Portable representation is zero or more column/value equality predicates joined only by `AND`; conversion is one-way and fail-closed.
+[CONFIRMED, owner decision] Runtime code must never execute the source `cfg.DatabaseObjectSettingRule.FilterClause` as SQL text. Conversion is one-way and fail-closed.
+
+[CONFIRMED] The reference model contains **61** `cfg.DatabaseObjectSettingRule` rows. Their populated filters fall into **seven shapes**: one to four literal equality terms joined by `AND`, plus three lookup-bearing variants. Three rules are intentionally unfiltered. The number seven therefore describes filter shapes, not source rows.
 
 For catalog schema version 2:
 
 - source `cfg.DatabaseObjectSettingRule.FilterClause` is **not present** in `cfg_DatabaseObjectSettingRule`;
 - the destination has `FilterPredicateJson TEXT NOT NULL`;
 - an empty/null source filter becomes exactly an explicit `ALL` predicate;
-- a non-empty source filter must parse completely into equality terms joined by `AND`; otherwise conversion stops before a catalog is accepted;
+- a non-empty source filter must parse completely into the restricted grammar below; otherwise conversion stops before a catalog is accepted;
 - the conversion manifest records that raw filter SQL is not carried.
 
 ### 4.1 JSON grammar
@@ -65,36 +67,29 @@ A filtered rule is:
 {"kind":"AND","terms":[{"column":"ColumnName","operator":"EQ","value":{"kind":"LITERAL","type":"TEXT","value":"value"}}]}
 ```
 
-`terms` contains one or more equality comparisons; the current converter applies a defensive maximum of 16. `operator` is currently only `EQ`. Literal `type` is `TEXT` or `NUMBER`; numeric values are stored as invariant text so conversion does not silently change precision.
+`terms` contains 1 to 16 equality comparisons. `operator` is currently only `EQ`. Literal `type` is `TEXT` or `NUMBER`; numeric values are stored as invariant text so conversion does not silently change precision.
 
-There is no subquery, lookup, expression or free-SQL node in the C7 contract.
+A lookup value is:
 
-### 4.2 Approved snapshot reconciliation
+```json
+{"kind":"LOOKUP","schema":null,"table":"CLIENT","selectColumn":"ID","predicate":{"kind":"AND","terms":[...]}}
+```
 
-The approved baseline contains exactly seven `cfg.DatabaseObjectSettingRule` rows. Three are intentionally unfiltered and therefore convert to `ALL`:
+`schema` is either `null` or one validated identifier. Lookups may nest to a maximum depth of 4. The converter accepts only the source's restricted `SELECT [TOP (1)] <column> FROM [schema.]<table> WHERE <predicate>` form. A lookup predicate is itself the same equality/`AND` grammar; there is no general SQL node.
 
-- `SISQUAL_VIEW_DATASOURCE_CONNECTION`
-- `SISQUAL_VIEW_REPORT_DEFAULT_CONNECTION`
-- `SISQUAL_VIEW_REPORT_DEFAULT_WFM_DATABASE`
+### 4.2 Accepted source grammar
 
-The four populated filters convert to the following ordered equality predicates:
+C7 supports the seven documented filter families across the 61 source rules: one to four equality comparisons joined by `AND`, including the three lookup-bearing variants represented by the `LOOKUP` node above. Bracketed identifiers and T-SQL `N'...'` string literals are accepted. Doubled single quotes decode to one quote.
 
-| SettingCode | Equality predicates joined by `AND` |
-|---|---|
-| `SISQUALPONTO_LANGUAGE_LOGIN` | `Aplicacao = 'SisqualPonto'`; `Seccao = 'Parametros'`; `Chave = 'LanguageLogin'` |
-| `SISQUALPONTO_LANGUAGE_TRANSLATION` | `Aplicacao = 'SisqualPonto'`; `Seccao = 'Parametros'`; `Chave = 'LanguageTranslation'` |
-| `PAPERLESS_LANGUAGE_ID` | `Aplicacao = 'sisqualPAPERLESS'`; `Seccao = 'Geral'`; `Chave = 'LanguageID'` |
-| `DASHBOARDS_DATA_CONNECTION` | `id = 'AD704BE6-AE67-43E3-BDB2-A89AEEEA2900'` |
+The converter rejects, rather than preserves or executes, every construct outside that grammar, including `OR`, `LIKE`, `IN`, functions/expressions, non-equality comparisons, comments, statement terminators, lookup queries without a `WHERE`, `TOP` values other than `TOP (1)`, and trailing SQL. The complete input must be consumed by the parser.
 
-Bracketed identifiers and T-SQL `N'...'` string literals are accepted as syntax variants of the same equality-only grammar. Doubled single quotes decode to one quote.
-
-The converter rejects, rather than preserves or executes, every construct outside that grammar, including `SELECT`/subqueries, `OR`, `LIKE`, `IN`, functions/expressions, non-equality comparisons, comments, statement terminators, parentheses and trailing SQL. The complete input must be consumed by the parser.
+The three intentionally unfiltered rules are represented by `ALL`; this does not make arbitrary empty filters safe at runtime. The future engine must apply its explicit row-count guard before an `ALL` predicate can update rows.
 
 ### 4.3 Runtime consumption
 
-The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/column identifiers against database metadata and compile this structure into parameterized SQL. Literal values must be SQL parameters; JSON text must never be concatenated back into executable SQL. `ALL` means an intentionally unfiltered rule and must remain subject to the engine's separate row-count guard.
+The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/column identifiers, including lookup schema/table/select-column identifiers, against database metadata and compile this structure into parameterized SQL. Literal values must be SQL parameters; JSON text must never be concatenated back into executable SQL. `ALL` means an intentionally unfiltered rule and remains subject to the engine's separate row-count guard.
 
-The textual GUID used by `DASHBOARDS_DATA_CONNECTION` remains text in the C7 catalog representation. Its SQL parameter type is selected by the future engine from the real destination column metadata; C7 does not infer SQL type from the column name.
+A `LOOKUP` node is data describing one restricted scalar lookup, not executable SQL text. Runtime compilation must preserve the same depth/term bounds and metadata validation as the conversion contract.
 
 ## 5. Global versus cut tables
 
