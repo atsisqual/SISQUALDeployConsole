@@ -101,12 +101,24 @@ try {
     Test-Check 'native runtime SQLite pin is 3.53.3' ($defaults.NativeSqliteVersion -ceq '3.53.3')
     Test-Check 'factory defaults are read-only private-cache' ($defaults.ConnectionMode -ceq 'ReadOnly' -and $defaults.CacheMode -ceq 'Private' -and -not $defaults.Pooling)
 
+    Test-Throws 'relative PackageRoot is rejected before normalization' {
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot '.' -ProviderRoot 'runtime\sqlite-provider' | Out-Null
+    }
     Test-Throws 'provider path outside package is rejected' {
         Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
     }
 
     $provider = Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot 'runtime\sqlite-provider'
     Test-Check 'copied provider payload initializes from package tree' ($provider.ProviderVersion -ceq '10.0.12' -and $provider.ProviderRoot -ceq [IO.Path]::GetFullPath($providerCopy))
+
+    $providerRenameBlocked = $false
+    try {
+        Rename-Item -LiteralPath $providerCopy -NewName 'sqlite-provider-moved' -ErrorAction Stop
+    }
+    catch {
+        $providerRenameBlocked = $true
+    }
+    Test-Check 'provider path guard blocks directory replacement after initialization' $providerRenameBlocked
 
     $validPath = Join-Path $catalogRoot 'catalog-DEMO.db'
     New-CatalogFixture -Path $validPath -ServerCode 'DEMO'
@@ -117,6 +129,15 @@ try {
     Test-Check 'valid catalog opens with query_only enabled' ($session.QueryOnly -and $session.CatalogPath -ceq [IO.Path]::GetFullPath($validPath))
     Test-Check 'native SQLite version is exact' ($session.NativeSqliteVersion -ceq '3.53.3')
     Test-Check 'catalog metadata is exact and case-sensitive' ($session.Metadata.ServerCode -ceq 'DEMO' -and $session.Metadata.SourceKind -ceq 'conversion-tool' -and $session.Metadata.SchemaVersion -eq 1)
+
+    $catalogRenameBlocked = $false
+    try {
+        Rename-Item -LiteralPath $catalogRoot -NewName 'catalog-moved' -ErrorAction Stop
+    }
+    catch {
+        $catalogRenameBlocked = $true
+    }
+    Test-Check 'catalog path guard blocks directory replacement while session is open' $catalogRenameBlocked
 
     $command = $session.Connection.CreateCommand()
     try {
