@@ -149,15 +149,15 @@ function Test-C9ValuesEqual {
 }
 
 function Get-C9SqliteSchema {
-    param([Parameter(Mandatory)][string]$Sqlite3, [Parameter(Mandatory)][string]$Db)
+    param([Parameter(Mandatory)][string]$Sqlite3, [Parameter(Mandatory)][string]$CatalogDb)
     $tables = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
-    $tableJson = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', '-json', $Db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+    $tableJson = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', '-json', $CatalogDb, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
     $tableRows = @()
     if (-not [string]::IsNullOrWhiteSpace($tableJson)) { $tableRows = @($tableJson | ConvertFrom-Json -DateKind String) }
     foreach ($tableRow in $tableRows) {
         $tableName = [string]$tableRow.name
         $escaped = $tableName.Replace("'", "''")
-        $columnJson = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', '-json', $Db, ("SELECT name,type,`"notnull`" AS not_null,pk FROM pragma_table_info('{0}') ORDER BY cid;" -f $escaped))
+        $columnJson = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', '-json', $CatalogDb, ("SELECT name,type,`"notnull`" AS not_null,pk FROM pragma_table_info('{0}') ORDER BY cid;" -f $escaped))
         $columnRows = @()
         if (-not [string]::IsNullOrWhiteSpace($columnJson)) { $columnRows = @($columnJson | ConvertFrom-Json -DateKind String) }
         $columns = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
@@ -357,9 +357,9 @@ function ConvertTo-C9OperationSql {
 }
 
 function Invoke-C9SqliteScript {
-    param([Parameter(Mandatory)][string]$Sqlite3, [Parameter(Mandatory)][string]$Db, [Parameter(Mandatory)][string]$Script)
+    param([Parameter(Mandatory)][string]$Sqlite3, [Parameter(Mandatory)][string]$CatalogDb, [Parameter(Mandatory)][string]$Script)
     $psi = [System.Diagnostics.ProcessStartInfo]::new($Sqlite3)
-    $psi.ArgumentList.Add($Db)
+    $psi.ArgumentList.Add($CatalogDb)
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
@@ -409,7 +409,7 @@ function Invoke-CatalogChange {
     $serverCode = [string]$initialCheck.Meta.ServerCode
     $beforeHash = Get-C9Sha256 -Path $catalogFull
     $proposalObject = Read-C9Proposal -Path $Proposal
-    $schema = Get-C9SqliteSchema -Sqlite3 $sqliteFull -Db $catalogFull
+    $schema = Get-C9SqliteSchema -Sqlite3 $sqliteFull -CatalogDb $catalogFull
     Assert-C9Proposal -Proposal $proposalObject -Schema $schema -ExpectedServerCode $serverCode -ExpectedHash $beforeHash
     $summary = Get-C9Summary -Proposal $proposalObject
 
@@ -460,7 +460,7 @@ function Invoke-CatalogChange {
             $scriptLines.Add(("SELECT '__C9_OP_{0:D4}__|' || changes();" -f $i))
         }
         $scriptLines.Add('COMMIT;')
-        $output = Invoke-C9SqliteScript -Sqlite3 $sqliteFull -Db $staged -Script (($scriptLines -join "`n") + "`n")
+        $output = Invoke-C9SqliteScript -Sqlite3 $sqliteFull -CatalogDb $staged -Script (($scriptLines -join "`n") + "`n")
         for ($i = 0; $i -lt $ops.Count; $i++) {
             $marker = '__C9_OP_{0:D4}__|' -f $i
             $matches = @($output -split "`r?`n" | Where-Object { $_.StartsWith($marker, [System.StringComparison]::Ordinal) })
