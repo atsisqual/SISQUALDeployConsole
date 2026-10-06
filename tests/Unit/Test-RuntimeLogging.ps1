@@ -131,6 +131,16 @@ try {
     $hasUtf8Bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     Test-Check 'log is UTF-8 without BOM' (-not $hasUtf8Bom)
 
+    $multilineRoot = Join-Path $tempBase 'multiline'
+    Initialize-SisqualRuntimeLog -LogRoot $multilineRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiLog' | Out-Null
+    $multilineMarker = 'Multi' + 'LineSecret'
+    $multilinePayload = "safe-prefix {`n  `"token`": [`n    `"one`",`n    `"$multilineMarker`"`n  ]`n}"
+    $multilinePath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.MULTILINE' -Message $multilinePayload -TimestampUtc $reference
+    $multilineText = [IO.File]::ReadAllText($multilinePath)
+    Test-Check 'multiline composite sensitive JSON is redacted' ($multilineText -notmatch [regex]::Escape($multilineMarker))
+    Test-Check 'safe prefix before multiline sensitive JSON remains available' ($multilineText -match 'safe-prefix')
+    Test-Check 'multiline JSON redaction remains one physical record' (([IO.File]::ReadAllLines($multilinePath)).Count -eq 1)
+
     $wallRoot = Join-Path $tempBase 'wallclock'
     Initialize-SisqualRuntimeLog -LogRoot $wallRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'WallLog' | Out-Null
     $wallNow = [datetime]::UtcNow
@@ -170,6 +180,18 @@ try {
     }
     Test-Check 'daily log symbolic-link target was not appended' ([IO.File]::ReadAllText($outsideFile) -ceq 'outside')
     Remove-Item -LiteralPath $dailyLinkPath -Force
+
+    $retentionLinkRoot = Join-Path $tempBase 'retention-link'
+    Initialize-SisqualRuntimeLog -LogRoot $retentionLinkRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'RetentionLog' | Out-Null
+    $retentionOutsideFile = Join-Path $junctionTarget 'retention-outside.log'
+    [IO.File]::WriteAllText($retentionOutsideFile, 'preserve')
+    $staleLinkPath = Join-Path $retentionLinkRoot 'RetentionLog-2026-10-01.log'
+    New-Item -ItemType SymbolicLink -Path $staleLinkPath -Target $retentionOutsideFile -Force | Out-Null
+    Test-Throws 'retention rejects a stale symbolic-link log file' {
+        Invoke-SisqualRuntimeLogRetention -ReferenceUtc $reference | Out-Null
+    }
+    Test-Check 'retention symbolic-link target was not deleted or modified' ((Test-Path -LiteralPath $retentionOutsideFile) -and [IO.File]::ReadAllText($retentionOutsideFile) -ceq 'preserve')
+    Remove-Item -LiteralPath $staleLinkPath -Force
 
     Test-Throws 'invalid event codes are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'bad event' -Message 'x' | Out-Null }
     Test-Throws 'unsafe property names are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.BADFIELD' -Message 'x' -Properties @{ 'bad field' = 'value' } | Out-Null }
