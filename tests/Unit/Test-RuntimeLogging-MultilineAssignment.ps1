@@ -57,6 +57,28 @@ try {
     Check 'safe prefix before whitespace multiline credential remains available' ($whitespaceText -match 'safe-prefix')
     Check 'whitespace multiline redaction remains one physical log record' (([IO.File]::ReadAllLines($whitespacePath)).Count -eq 1)
 
+    $singleLineRoot = Join-Path $tempBase 'single-line-whitespace'
+    Initialize-SisqualRuntimeLog -LogRoot $singleLineRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'SingleWhitespace' | Out-Null
+    $singleLineMarker = 'SingleLine' + 'WhitespaceLeakMarker'
+    $singleLineMessage = "safe-prefix credential=first $singleLineMarker safe-suffix"
+    $singleLinePath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.SINGLEWHITESPACE' -Message $singleLineMessage -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
+    $singleLineText = [IO.File]::ReadAllText($singleLinePath)
+    Check 'single-line whitespace-bearing credential is fail-closed' (($singleLineText -notmatch [regex]::Escape($singleLineMarker)) -and ($singleLineText -notmatch 'credential=first') -and ($singleLineText -match 'credential=\[REDACTED\]'))
+    Check 'safe prefix before single-line whitespace credential remains available' ($singleLineText -match 'safe-prefix')
+    Check 'single-line whitespace redaction remains one physical log record' (([IO.File]::ReadAllLines($singleLinePath)).Count -eq 1)
+
+    $singleBoundaryRoot = Join-Path $tempBase 'single-line-boundary'
+    Initialize-SisqualRuntimeLog -LogRoot $singleBoundaryRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'SingleBoundary' | Out-Null
+    $singleBoundaryMarker = 'SingleBoundary' + 'FirstLeakMarker'
+    $singleBoundarySecondMarker = 'SingleBoundary' + 'SecondLeakMarker'
+    $singleBoundarySecondName = 'pass' + 'word'
+    $singleBoundaryMessage = "safe-prefix credential=first $singleBoundaryMarker $singleBoundarySecondName=second $singleBoundarySecondMarker safe-suffix"
+    $singleBoundaryPath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.SINGLEBOUNDARY' -Message $singleBoundaryMessage -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
+    $singleBoundaryText = [IO.File]::ReadAllText($singleBoundaryPath)
+    Check 'single-line sensitive boundary preserves independent field redaction' (($singleBoundaryText -notmatch [regex]::Escape($singleBoundaryMarker)) -and ($singleBoundaryText -notmatch [regex]::Escape($singleBoundarySecondMarker)) -and ($singleBoundaryText -match 'credential=\[REDACTED\]') -and ($singleBoundaryText -match ([regex]::Escape($singleBoundarySecondName) + '=\[REDACTED\]')))
+    Check 'safe prefix before single-line sensitive boundary remains available' ($singleBoundaryText -match 'safe-prefix')
+    Check 'single-line boundary redaction remains one physical log record' (([IO.File]::ReadAllLines($singleBoundaryPath)).Count -eq 1)
+
     $boundaryRoot = Join-Path $tempBase 'same-line-boundary'
     Initialize-SisqualRuntimeLog -LogRoot $boundaryRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiBoundary' | Out-Null
     $boundaryMarker = 'Boundary' + 'ContinuationLeakMarker'
