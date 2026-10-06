@@ -264,8 +264,13 @@ function Invoke-CutConversion {
         [bool]$UseCodeCollation = $false
     )
     $script:C1C2Source = $Source
+    $previousCutRuleVersion = $script:CutRuleVersion
+    $script:CutRuleVersion = $(if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { 2 } else { 1 })
     try { return (& $script:C1C2CoreInvokeCutConversion @PSBoundParameters) }
-    finally { $script:C1C2Source = $null }
+    finally {
+        $script:CutRuleVersion = $previousCutRuleVersion
+        $script:C1C2Source = $null
+    }
 }
 
 function Invoke-NewMachineConversion {
@@ -282,8 +287,13 @@ function Invoke-NewMachineConversion {
         [bool]$UseCodeCollation = $false
     )
     $script:C1C2Source = $Source
+    $previousCutRuleVersion = $script:CutRuleVersion
+    $script:CutRuleVersion = $(if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { 2 } else { 1 })
     try { return (& $script:C1C2CoreInvokeNewMachineConversion @PSBoundParameters) }
-    finally { $script:C1C2Source = $null }
+    finally {
+        $script:CutRuleVersion = $previousCutRuleVersion
+        $script:C1C2Source = $null
+    }
 }
 
 if ($script:C1C2ShouldExecute) {
