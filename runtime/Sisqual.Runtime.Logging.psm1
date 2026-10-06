@@ -42,6 +42,31 @@ function Test-SisqualSensitiveLogField {
     return $Name -match '(?i)(secret|password|passwd|pwd|token|authorization|cookie|credential|private.?key|client.?secret|api.?key|connection.?string)'
 }
 
+function Assert-SisqualNoReparsePoint {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$Label
+    )
+
+    $current = [System.IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "$Label contains a reparse point and is not approved: $($item.FullName)"
+            }
+        }
+
+        $parent = [System.IO.Directory]::GetParent($current)
+        if ($null -eq $parent -or $parent.FullName -ceq $current) {
+            break
+        }
+        $current = $parent.FullName
+    }
+}
+
 function Resolve-SisqualRuntimeLogRoot {
     param(
         [Parameter(Mandatory)]
@@ -73,6 +98,9 @@ function Resolve-SisqualRuntimeLogRoot {
     if (-not $isApprovedRoot -and -not $isApprovedChild) {
         throw "LogRoot is outside the approved local log root: $fullApprovedRoot"
     }
+
+    Assert-SisqualNoReparsePoint -Path $fullApprovedRoot -Label 'ApprovedRoot'
+    Assert-SisqualNoReparsePoint -Path $fullRoot -Label 'LogRoot'
 
     return [pscustomobject]@{
         LogRoot = $fullRoot
@@ -144,7 +172,9 @@ function Initialize-SisqualRuntimeLog {
 
     $resolved = Resolve-SisqualRuntimeLogRoot -LogRoot $LogRoot -ApprovedRoot $ApprovedRoot
     [System.IO.Directory]::CreateDirectory($resolved.ApprovedRoot) | Out-Null
+    Assert-SisqualNoReparsePoint -Path $resolved.ApprovedRoot -Label 'ApprovedRoot'
     [System.IO.Directory]::CreateDirectory($resolved.LogRoot) | Out-Null
+    Assert-SisqualNoReparsePoint -Path $resolved.LogRoot -Label 'LogRoot'
 
     $script:LogState = [pscustomobject]@{
         ApprovedRoot = $resolved.ApprovedRoot
