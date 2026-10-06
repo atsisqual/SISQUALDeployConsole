@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $script:ExpectedProviderVersion = '10.0.12'
 $script:ExpectedNativeSqliteVersion = '3.53.3'
 $script:ProviderState = $null
+$script:CatalogSessions = @{}
 
 if (-not ('Sisqual.Runtime.CatalogPathNative' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -281,9 +282,6 @@ function Resolve-SisqualCatalogPackageMember {
         throw "$Label must be a local path."
     }
 
-    # The configured PackageRoot spelling is the exact security boundary. This deliberately
-    # rejects differently-cased aliases so per-directory NTFS case sensitivity cannot turn a
-    # sibling tree into an apparently contained provider/catalog path.
     if (-not $candidate.StartsWith($prefix, [StringComparison]::Ordinal)) {
         throw "$Label is outside PackageRoot: $candidate"
     }
@@ -319,6 +317,88 @@ function Find-SisqualCatalogProviderFile {
     }
     Assert-SisqualCatalogPathHasNoReparsePoint -Path $items[0].FullName -Label $Name
     return $items[0].FullName
+}
+
+function Get-SisqualVerifiedPackageFileEntry {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageRoot,
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+        [Parameter(Mandatory)]
+        [object[]]$VerifiedFiles
+    )
+
+    $relativePath = [System.IO.Path]::GetRelativePath($PackageRoot, $FilePath).Replace('\', '/')
+    $matches = [System.Collections.Generic.List[object]]::new()
+    foreach ($entry in @($VerifiedFiles)) {
+        if ($null -eq $entry) { continue }
+        $pathProperty = $entry.PSObject.Properties['path']
+        $hashProperty = $entry.PSObject.Properties['sha256']
+        $sizeProperty = $entry.PSObject.Properties['size']
+        if ($null -eq $pathProperty -or $null -eq $hashProperty -or $null -eq $sizeProperty) { continue }
+        if ([string]$pathProperty.Value -ceq $relativePath) {
+            $matches.Add($entry)
+        }
+    }
+
+    if ($matches.Count -ne 1) {
+        throw "Verified manifest files must contain exactly one entry for $relativePath; found $($matches.Count)."
+    }
+
+    $match = $matches[0]
+    $expectedHash = [string]$match.sha256
+    $expectedSize = [long]$match.size
+    if ($expectedHash -cnotmatch '^[0-9a-f]{64}$') {
+        throw "Verified manifest SHA-256 is invalid for $relativePath."
+    }
+    if ($expectedSize -lt 0) {
+        throw "Verified manifest size is invalid for $relativePath."
+    }
+
+    return [pscustomobject]@{
+        Path = $relativePath
+        Sha256 = $expectedHash
+        Size = $expectedSize
+    }
+}
+
+function Assert-SisqualGuardedPackageFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageRoot,
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+        [Parameter(Mandatory)]
+        [string]$ExpectedSha256,
+        [Parameter(Mandatory)]
+        [long]$ExpectedSize
+    )
+
+    if ($ExpectedSha256 -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'ExpectedSha256 must be lowercase SHA-256 hex.'
+    }
+    if ($ExpectedSize -lt 0) {
+        throw 'ExpectedSize cannot be negative.'
+    }
+
+    $relativePath = [System.IO.Path]::GetRelativePath($PackageRoot, $FilePath).Replace('\', '/')
+    $file = Get-Item -LiteralPath $FilePath -Force -ErrorAction Stop
+    $actualSize = [long]$file.Length
+    if ($actualSize -ne $ExpectedSize) {
+        throw "Guarded package file size mismatch for $relativePath. Expected $ExpectedSize, got $actualSize."
+    }
+
+    $actualHash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    if (-not $actualHash.Equals($ExpectedSha256, [StringComparison]::Ordinal)) {
+        throw "Guarded package file SHA-256 mismatch for $relativePath."
+    }
+
+    return [pscustomobject]@{
+        Path = $relativePath
+        Sha256 = $actualHash
+        Size = $actualSize
+    }
 }
 
 function Invoke-SisqualCatalogScalar {
@@ -358,7 +438,9 @@ function Initialize-SisqualRuntimeSqliteProvider {
         [Parameter(Mandatory)]
         [string]$PackageRoot,
         [Parameter(Mandatory)]
-        [string]$ProviderRoot
+        [string]$ProviderRoot,
+        [Parameter(Mandatory)]
+        [object[]]$VerifiedFiles
     )
 
     $resolvedProviderRoot = Resolve-SisqualCatalogPackageMember -PackageRoot $PackageRoot -Path $ProviderRoot -Label 'ProviderRoot' -PathType Directory
@@ -386,10 +468,14 @@ function Initialize-SisqualRuntimeSqliteProvider {
     $native = Find-SisqualCatalogProviderFile -ProviderRoot $resolvedProviderRoot -Name 'e_sqlite3.dll'
 
     $guards = [System.Collections.Generic.List[System.IDisposable]]::new()
+    $verifiedProviderFiles = [System.Collections.Generic.List[object]]::new()
     try {
         $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, $resolvedProviderRoot, $true))
         foreach ($path in @($managed.Values) + @($native)) {
-            $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, [string]$path, $false))
+            $filePath = [string]$path
+            $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, $filePath, $false))
+            $entry = Get-SisqualVerifiedPackageFileEntry -PackageRoot $resolvedPackageRoot -FilePath $filePath -VerifiedFiles $VerifiedFiles
+            $verifiedProviderFiles.Add((Assert-SisqualGuardedPackageFile -PackageRoot $resolvedPackageRoot -FilePath $filePath -ExpectedSha256 $entry.Sha256 -ExpectedSize $entry.Size))
         }
 
         $nativeHandle = [System.Runtime.InteropServices.NativeLibrary]::Load($native)
@@ -416,6 +502,7 @@ function Initialize-SisqualRuntimeSqliteProvider {
             NativeLibraryPath = $native
             NativeLibraryHandle = $nativeHandle
             AssemblyPath = $managed['Microsoft.Data.Sqlite.dll']
+            VerifiedFiles = @($verifiedProviderFiles)
             PathGuards = @($guards)
         }
         return $script:ProviderState
@@ -434,6 +521,11 @@ function Open-SisqualRuntimeCatalog {
         [Parameter(Mandatory)]
         [string]$CatalogPath,
         [Parameter(Mandatory)]
+        [ValidatePattern('^[0-9a-f]{64}$')]
+        [string]$ExpectedSha256,
+        [Parameter(Mandatory)]
+        [long]$ExpectedSize,
+        [Parameter(Mandatory)]
         [ValidatePattern('^[A-Za-z0-9_-]{1,60}$')]
         [string]$ExpectedServerCode,
         [Parameter(Mandatory)]
@@ -448,6 +540,9 @@ function Open-SisqualRuntimeCatalog {
     if ($null -eq $script:ProviderState) {
         throw 'SQLite provider has not been initialized.'
     }
+    if ($ExpectedSize -lt 0) {
+        throw 'ExpectedSize cannot be negative.'
+    }
 
     $fullPath = Resolve-SisqualCatalogPackageMember -PackageRoot $script:ProviderState.PackageRoot -Path $CatalogPath -Label 'CatalogPath' -PathType File
     $expectedName = 'catalog-{0}.db' -f $ExpectedServerCode
@@ -456,14 +551,16 @@ function Open-SisqualRuntimeCatalog {
     }
 
     $pathGuard = [Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($script:ProviderState.PackageRoot, $fullPath, $false)
-    $builder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
-    $builder.DataSource = $fullPath
-    $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
-    $builder.Cache = [Microsoft.Data.Sqlite.SqliteCacheMode]::Private
-    $builder.Pooling = $false
-    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new($builder.ConnectionString)
-
+    $connection = $null
     try {
+        [void](Assert-SisqualGuardedPackageFile -PackageRoot $script:ProviderState.PackageRoot -FilePath $fullPath -ExpectedSha256 $ExpectedSha256 -ExpectedSize $ExpectedSize)
+
+        $builder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
+        $builder.DataSource = $fullPath
+        $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
+        $builder.Cache = [Microsoft.Data.Sqlite.SqliteCacheMode]::Private
+        $builder.Pooling = $false
+        $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new($builder.ConnectionString)
         $connection.Open()
 
         $command = $connection.CreateCommand()
@@ -564,20 +661,33 @@ WHERE meta_id = $metaId;
             throw 'Catalog built_at_utc is not the required UTC second-precision format.'
         }
 
+        $sessionId = [guid]::NewGuid().ToString('N')
+        $script:CatalogSessions[$sessionId] = [pscustomobject]@{
+            Connection = $connection
+            PathGuard = $pathGuard
+        }
+
+        $connection = $null
+        $pathGuard = $null
         return [pscustomobject]@{
             PSTypeName = 'Sisqual.Runtime.CatalogSession'
+            SessionId = $sessionId
             CatalogPath = $fullPath
-            Connection = $connection
             Metadata = $metadata
             NativeSqliteVersion = $nativeVersion
             QueryOnly = $true
             OpenedAtUtc = [datetime]::UtcNow
-            PathGuard = $pathGuard
+            VerifiedSha256 = $ExpectedSha256
+            VerifiedSize = $ExpectedSize
         }
     }
     catch {
-        $connection.Dispose()
-        $pathGuard.Dispose()
+        if ($null -ne $connection) {
+            $connection.Dispose()
+        }
+        if ($null -ne $pathGuard) {
+            $pathGuard.Dispose()
+        }
         throw
     }
 }
@@ -589,11 +699,31 @@ function Close-SisqualRuntimeCatalog {
         $Session
     )
 
-    if ($null -ne $Session.Connection) {
-        $Session.Connection.Dispose()
+    $sessionProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionProperty -or [string]::IsNullOrWhiteSpace([string]$sessionProperty.Value)) {
+        throw 'Catalog session does not contain a valid SessionId.'
     }
-    if ($null -ne $Session.PSObject.Properties['PathGuard'] -and $null -ne $Session.PathGuard) {
-        $Session.PathGuard.Dispose()
+
+    $sessionId = [string]$sessionProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) {
+        return
+    }
+
+    $resource = $script:CatalogSessions[$sessionId]
+    try {
+        if ($null -ne $resource.Connection) {
+            $resource.Connection.Dispose()
+        }
+    }
+    finally {
+        try {
+            if ($null -ne $resource.PathGuard) {
+                $resource.PathGuard.Dispose()
+            }
+        }
+        finally {
+            [void]$script:CatalogSessions.Remove($sessionId)
+        }
     }
 }
 
