@@ -34,6 +34,7 @@ namespace Sisqual.Runtime
 
     public static class LogNative
     {
+        private const uint GENERIC_READ = 0x80000000;
         private const uint FILE_READ_ATTRIBUTES = 0x00000080;
         private const uint FILE_APPEND_DATA = 0x00000004;
         private const uint DELETE = 0x00010000;
@@ -185,7 +186,7 @@ namespace Sisqual.Runtime
         {
             var handle = CreateFileW(
                 path,
-                FILE_READ_ATTRIBUTES,
+                GENERIC_READ | FILE_READ_ATTRIBUTES,
                 FILE_SHARE_READ,
                 IntPtr.Zero,
                 OPEN_EXISTING,
