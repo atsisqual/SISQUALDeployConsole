@@ -6,6 +6,181 @@ $script:ExpectedProviderVersion = '10.0.12'
 $script:ExpectedNativeSqliteVersion = '3.53.3'
 $script:ProviderState = $null
 
+if (-not ('Sisqual.Runtime.CatalogPathNative' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Sisqual.Runtime
+{
+    public sealed class CatalogPathGuard : IDisposable
+    {
+        private readonly List<SafeFileHandle> _handles;
+        internal CatalogPathGuard(List<SafeFileHandle> handles) { _handles = handles; }
+        public void Dispose()
+        {
+            for (int i = _handles.Count - 1; i >= 0; i--) _handles[i].Dispose();
+            _handles.Clear();
+        }
+    }
+
+    public static class CatalogPathNative
+    {
+        private const uint FILE_READ_ATTRIBUTES = 0x00000080;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+        private const int FileAttributeTagInfo = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ATTRIBUTE_TAG_INFO
+        {
+            public uint FileAttributes;
+            public uint ReparseTag;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            SafeFileHandle hFile,
+            StringBuilder lpszFilePath,
+            uint cchFilePath,
+            uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(
+            SafeFileHandle hFile,
+            int FileInformationClass,
+            out FILE_ATTRIBUTE_TAG_INFO lpFileInformation,
+            uint dwBufferSize);
+
+        private static string NormalizePath(string path)
+        {
+            string value = path;
+            if (value.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                value = @"\\" + value.Substring(8);
+            else if (value.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                value = value.Substring(4);
+            return Path.GetFullPath(value).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private static string GetFinalPath(SafeFileHandle handle)
+        {
+            var buffer = new StringBuilder(512);
+            uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+            if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (length >= buffer.Capacity)
+            {
+                buffer = new StringBuilder((int)length + 1);
+                length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+                if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return NormalizePath(buffer.ToString());
+        }
+
+        private static SafeFileHandle OpenAndValidate(string path, bool directory, string label)
+        {
+            uint flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL);
+            var handle = CreateFileW(
+                path,
+                FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                flags,
+                IntPtr.Zero);
+            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot guard " + label + ": " + path);
+
+            try
+            {
+                FILE_ATTRIBUTE_TAG_INFO info;
+                if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out info, (uint)Marshal.SizeOf<FILE_ATTRIBUTE_TAG_INFO>()))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                if ((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                    throw new IOException(label + " is a reparse point and is not approved: " + path);
+
+                string expected = NormalizePath(path);
+                string actual = GetFinalPath(handle);
+                if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException(label + " resolved outside its validated path. Expected " + expected + ", got " + actual + ".");
+                return handle;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        private static bool IsWithin(string root, string target)
+        {
+            if (string.Equals(root, target, StringComparison.OrdinalIgnoreCase)) return true;
+            string prefix = root + Path.DirectorySeparatorChar;
+            return target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static CatalogPathGuard GuardPackageMember(string packageRoot, string targetPath, bool targetIsDirectory)
+        {
+            string root = NormalizePath(packageRoot);
+            string target = NormalizePath(targetPath);
+            if (!IsWithin(root, target))
+                throw new IOException("Guard target is outside PackageRoot: " + target);
+
+            string directoryTarget = targetIsDirectory ? target : Path.GetDirectoryName(target);
+            var directories = new Stack<string>();
+            var current = new DirectoryInfo(directoryTarget);
+            while (current != null)
+            {
+                string currentPath = NormalizePath(current.FullName);
+                if (!IsWithin(root, currentPath)) break;
+                directories.Push(currentPath);
+                if (string.Equals(currentPath, root, StringComparison.OrdinalIgnoreCase)) break;
+                current = current.Parent;
+            }
+            if (directories.Count == 0 || !string.Equals(directories.Peek(), root, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Could not establish a guarded path from PackageRoot to target.");
+
+            var handles = new List<SafeFileHandle>();
+            try
+            {
+                while (directories.Count > 0)
+                {
+                    string directory = directories.Pop();
+                    handles.Add(OpenAndValidate(directory, true, "Package directory"));
+                }
+                if (!targetIsDirectory)
+                    handles.Add(OpenAndValidate(target, false, "Package file"));
+                return new CatalogPathGuard(handles);
+            }
+            catch
+            {
+                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
+                throw;
+            }
+        }
+    }
+}
+'@
+}
+
 function Assert-SisqualCatalogPathHasNoReparsePoint {
     param(
         [Parameter(Mandatory)]
@@ -31,6 +206,34 @@ function Assert-SisqualCatalogPathHasNoReparsePoint {
     }
 }
 
+function Assert-SisqualCatalogLocalFixedRoot {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageRoot
+    )
+
+    if (-not [System.IO.Path]::IsPathRooted($PackageRoot)) {
+        throw 'PackageRoot must be an absolute local path.'
+    }
+    if ($PackageRoot.StartsWith('\\', [StringComparison]::Ordinal) -or
+        $PackageRoot.StartsWith('//', [StringComparison]::Ordinal) -or
+        $PackageRoot.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+        $PackageRoot.StartsWith('\\.\', [StringComparison]::Ordinal)) {
+        throw 'PackageRoot must be an absolute local fixed-drive path.'
+    }
+
+    $root = [System.IO.Path]::GetFullPath($PackageRoot)
+    $driveRoot = [System.IO.Path]::GetPathRoot($root)
+    if ([string]::IsNullOrWhiteSpace($driveRoot)) {
+        throw 'PackageRoot drive could not be resolved.'
+    }
+    $drive = [System.IO.DriveInfo]::new($driveRoot)
+    if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) {
+        throw "PackageRoot must be on a fixed local drive; detected $($drive.DriveType)."
+    }
+    return $root
+}
+
 function Resolve-SisqualCatalogPackageMember {
     param(
         [Parameter(Mandatory)]
@@ -48,10 +251,7 @@ function Resolve-SisqualCatalogPackageMember {
         throw "$Label and PackageRoot cannot be empty."
     }
 
-    $root = [System.IO.Path]::GetFullPath($PackageRoot)
-    if (-not [System.IO.Path]::IsPathRooted($root) -or $root.StartsWith('\\', [StringComparison]::Ordinal)) {
-        throw 'PackageRoot must be an absolute local path.'
-    }
+    $root = Assert-SisqualCatalogLocalFixedRoot -PackageRoot $PackageRoot
     if (-not (Test-Path -LiteralPath $root -PathType Container)) {
         throw "PackageRoot does not exist: $root"
     }
@@ -64,7 +264,10 @@ function Resolve-SisqualCatalogPackageMember {
         [System.IO.Path]::GetFullPath((Join-Path $root $Path))
     }
 
-    if ($candidate.StartsWith('\\', [StringComparison]::Ordinal)) {
+    if ($candidate.StartsWith('\\', [StringComparison]::Ordinal) -or
+        $candidate.StartsWith('//', [StringComparison]::Ordinal) -or
+        $candidate.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+        $candidate.StartsWith('\\.\', [StringComparison]::Ordinal)) {
         throw "$Label must be a local path."
     }
 
@@ -148,7 +351,7 @@ function Initialize-SisqualRuntimeSqliteProvider {
     )
 
     $resolvedProviderRoot = Resolve-SisqualCatalogPackageMember -PackageRoot $PackageRoot -Path $ProviderRoot -Label 'ProviderRoot' -PathType Directory
-    $resolvedPackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
+    $resolvedPackageRoot = Assert-SisqualCatalogLocalFixedRoot -PackageRoot $PackageRoot
 
     if ($null -ne $script:ProviderState) {
         if (-not $script:ProviderState.PackageRoot.Equals($resolvedPackageRoot, [StringComparison]::OrdinalIgnoreCase) -or
@@ -171,32 +374,47 @@ function Initialize-SisqualRuntimeSqliteProvider {
     }
     $native = Find-SisqualCatalogProviderFile -ProviderRoot $resolvedProviderRoot -Name 'e_sqlite3.dll'
 
-    $nativeHandle = [System.Runtime.InteropServices.NativeLibrary]::Load($native)
-    if ($nativeHandle -eq [IntPtr]::Zero) {
-        throw 'Failed to load the pinned native SQLite library.'
-    }
+    $guards = [System.Collections.Generic.List[System.IDisposable]]::new()
+    try {
+        $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, $resolvedProviderRoot, $true))
+        foreach ($path in @($managed.Values) + @($native)) {
+            $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, [string]$path, $false))
+        }
 
-    foreach ($name in $managedNames) {
-        Add-Type -Path $managed[$name] -ErrorAction Stop
-    }
-    [SQLitePCL.Batteries_V2]::Init()
+        $nativeHandle = [System.Runtime.InteropServices.NativeLibrary]::Load($native)
+        if ($nativeHandle -eq [IntPtr]::Zero) {
+            throw 'Failed to load the pinned native SQLite library.'
+        }
 
-    $providerFile = Get-Item -LiteralPath $managed['Microsoft.Data.Sqlite.dll']
-    $providerVersion = [string]$providerFile.VersionInfo.ProductVersion
-    if (-not $providerVersion.StartsWith($script:ExpectedProviderVersion, [StringComparison]::Ordinal)) {
-        throw "Microsoft.Data.Sqlite version mismatch. Expected $($script:ExpectedProviderVersion), got $providerVersion."
-    }
+        foreach ($name in $managedNames) {
+            Add-Type -Path $managed[$name] -ErrorAction Stop
+        }
+        [SQLitePCL.Batteries_V2]::Init()
 
-    $script:ProviderState = [pscustomobject]@{
-        PackageRoot = $resolvedPackageRoot
-        ProviderRoot = $resolvedProviderRoot
-        ProviderVersion = $script:ExpectedProviderVersion
-        NativeSqliteVersion = $script:ExpectedNativeSqliteVersion
-        NativeLibraryPath = $native
-        NativeLibraryHandle = $nativeHandle
-        AssemblyPath = $managed['Microsoft.Data.Sqlite.dll']
+        $providerFile = Get-Item -LiteralPath $managed['Microsoft.Data.Sqlite.dll']
+        $providerVersion = [string]$providerFile.VersionInfo.ProductVersion
+        if (-not $providerVersion.Equals($script:ExpectedProviderVersion, [StringComparison]::Ordinal)) {
+            throw "Microsoft.Data.Sqlite version mismatch. Expected $($script:ExpectedProviderVersion), got $providerVersion."
+        }
+
+        $script:ProviderState = [pscustomobject]@{
+            PackageRoot = $resolvedPackageRoot
+            ProviderRoot = $resolvedProviderRoot
+            ProviderVersion = $script:ExpectedProviderVersion
+            NativeSqliteVersion = $script:ExpectedNativeSqliteVersion
+            NativeLibraryPath = $native
+            NativeLibraryHandle = $nativeHandle
+            AssemblyPath = $managed['Microsoft.Data.Sqlite.dll']
+            PathGuards = @($guards)
+        }
+        return $script:ProviderState
     }
-    return $script:ProviderState
+    catch {
+        foreach ($guard in @($guards)) {
+            try { $guard.Dispose() } catch {}
+        }
+        throw
+    }
 }
 
 function Open-SisqualRuntimeCatalog {
@@ -226,6 +444,7 @@ function Open-SisqualRuntimeCatalog {
         throw "Catalog file name mismatch. Expected $expectedName."
     }
 
+    $pathGuard = [Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($script:ProviderState.PackageRoot, $fullPath, $false)
     $builder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
     $builder.DataSource = $fullPath
     $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
@@ -342,10 +561,12 @@ WHERE meta_id = $metaId;
             NativeSqliteVersion = $nativeVersion
             QueryOnly = $true
             OpenedAtUtc = [datetime]::UtcNow
+            PathGuard = $pathGuard
         }
     }
     catch {
         $connection.Dispose()
+        $pathGuard.Dispose()
         throw
     }
 }
@@ -359,6 +580,9 @@ function Close-SisqualRuntimeCatalog {
 
     if ($null -ne $Session.Connection) {
         $Session.Connection.Dispose()
+    }
+    if ($null -ne $Session.PSObject.Properties['PathGuard'] -and $null -ne $Session.PathGuard) {
+        $Session.PathGuard.Dispose()
     }
 }
 
