@@ -91,7 +91,27 @@ INSERT INTO sample VALUES('A','verified-main');
     }
     $mainStillVerified = ((Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash -ceq $hashBefore)
     Check 'late sidecar attempt cannot alter guarded main bytes' $mainStillVerified
-    Check 'late sidecars are blocked by the guard or isolated by immutable view' ($lateSidecarWriteBlocked -or $session.Immutable)
+
+    $lateSidecarPresent = (Test-Path -LiteralPath $wal) -or (Test-Path -LiteralPath $shm)
+    $lateSidecarHandled = $false
+    if (-not $lateSidecarPresent) {
+        $lateSidecarHandled = $lateSidecarWriteBlocked
+    }
+    else {
+        $unexpectedSession = $null
+        try {
+            $unexpectedSession = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-SIDECAR.db' -ExpectedSha256 $trust.Sha256 -ExpectedSize $trust.Size -ExpectedServerCode 'SIDECAR' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'sidecar-test'
+        }
+        catch {
+            $lateSidecarHandled = $true
+        }
+        finally {
+            if ($null -ne $unexpectedSession) {
+                Close-SisqualRuntimeCatalog -Session $unexpectedSession
+            }
+        }
+    }
+    Check 'late sidecars are blocked or rejected by a subsequent catalog open' $lateSidecarHandled
 }
 finally {
     if ($null -ne $session) { Close-SisqualRuntimeCatalog -Session $session }

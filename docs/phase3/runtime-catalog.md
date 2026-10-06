@@ -61,7 +61,7 @@ A catalog path/file guard is established before `SqliteConnection.Open` and reta
 A sealed catalog is defined as one authenticated main database image. Unverified SQLite sidecars are not part of that image. The factory therefore:
 
 - rejects existing `<catalog>-wal`, `<catalog>-shm` and `<catalog>-journal` files before open;
-- opens the authenticated main file through SQLite `immutable=1`, so a later sidecar is not part of the database view;
+- opens the authenticated main file through SQLite `immutable=1`, so a later sidecar is not part of the intended database view;
 - checks sidecar absence again immediately after open and fails closed if one appeared in that window.
 
 The factory fails closed unless:
@@ -86,7 +86,7 @@ The internal metadata lookup uses a SQLite parameter for `meta_id`; no browser-s
 
 The catalog factory does not authenticate the package-manifest signature. It assumes a future startup layer has already verified the signed manifest and passes authenticated expected file hashes/sizes and catalog metadata.
 
-The factory then binds those authenticated expectations to the files it actually uses: provider and catalog files are guarded first, then size/SHA-256 are revalidated under the retained guards before load/open. Package paths are restricted to a fixed local drive, reparse traversal is rejected, write/delete sharing is denied where trusted bytes are held, and catalog sessions use an immutable SQLite view that excludes unverified WAL/SHM/journal state.
+The factory then binds those authenticated expectations to the files it actually uses: provider and catalog files are guarded first, then size/SHA-256 are revalidated under the retained guards before load/open. Package paths are restricted to a fixed local drive, reparse traversal is rejected, write/delete sharing is denied where trusted bytes are held, and catalog sessions use an immutable SQLite view intended to exclude unverified WAL/SHM/journal state.
 
 This is still not a substitute for the bootstrap signature gate. The bootstrap must authenticate the manifest before this module is called.
 
@@ -102,9 +102,9 @@ This is still not a substitute for the bootstrap signature gate. The bootstrap m
 
 `tests/Integration/Test-RuntimeCatalog.ps1` validates exact provider/native pins, package containment, provider/catalog hash and size rebinding under retained guards, metadata exactness, opaque-session trust evidence, no raw SQLite connection exposure, path/write guards, byte identity, zero sidecars, mismatch and missing-file failures, junction rejection, and 20 simultaneous sessions.
 
-`tests/Integration/Test-RuntimeCatalog-Sidecars.ps1` separately proves that pre-existing unverified WAL/SHM sidecars fail closed without changing the authenticated main file, that the sealed catalog opens through an immutable guarded view without creating sidecars, and that a late sidecar attempt cannot alter the guarded main bytes and is either blocked by the package guard or isolated from the immutable database view.
+`tests/Integration/Test-RuntimeCatalog-Sidecars.ps1` separately proves that pre-existing unverified WAL/SHM sidecars fail closed without changing the authenticated main file, that the sealed catalog opens through the configured immutable guarded view without creating sidecars, and that a late sidecar attempt cannot alter the guarded main bytes. If late sidecar creation succeeds, the test requires a subsequent catalog open to reject it. This evidence deliberately does not claim observational proof that an already-open connection ignores a valid late WAL; `immutable=1` remains the runtime control for that design property.
 
-Historical runs remain in the PR history but are superseded by run `37440720047` for acceptance of the current functional implementation.
+Historical runs remain in the PR history but are superseded by run `37440720047` for acceptance of the tested functional implementation. The current evidence-clarification head changes only the sidecar assertion/wording described above and therefore requires a fresh execution before it can replace run `37440720047` as accepted evidence.
 
 ## Follow-up integration
 
