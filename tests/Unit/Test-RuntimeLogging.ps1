@@ -174,7 +174,7 @@ try {
     $jsonPayload = '{"' + $passwordKey + '":"' + $jsonMarker + '"}'
     $escapedJsonPayload = '{"' + $passwordKey + '":"prefix\"' + $escapedJsonMarker + '"}'
     $compositeJsonPayload = '{"token":["one","' + $compositeJsonMarker + '"]}'
-    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker $credentialName=$credentialMarker $privateKeyName=$privateKeyMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload`n$compositeJsonPayload"
+    $message = "Starting token=abc123 Bearer xyz $credentialName=$credentialMarker $privateKeyName=$privateKeyMarker Authorization: Basic $basicMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload`n$compositeJsonPayload"
     $properties = [ordered]@{
         Instance = 'DEMOES'
         Note = 'authorization=BasicValue'
