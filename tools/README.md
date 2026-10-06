@@ -4,21 +4,34 @@ Separate, on-demand tools run by a person. They are NOT part of the portable app
 and are never shipped inside it. All of them run on the latest PowerShell (7), as decided by
 the owner on 2026-10-05, and follow `docs/migration/catalog-conversion-plan.md`.
 
-Status: [PROPOSED]. Step B of the conversion plan, one small PR per tool.
+Status: [PROPOSED]. Step B of the conversion plan plus the approved follow-up tools, one small PR per tool.
 
 | Tool | Step | State |
 |---|---|---|
-| `Export-ManagementEngines.ps1` | B1 | this PR: exports the `ops.Engine` scripts to files plus a hash manifest |
-| `Convert-ManagementDb.ps1` | B2 | this PR: new-machine mode (global tables copied, cut tables empty, one ManagedServer row), redaction of literal secrets, safety-net scan, `.db` built with the pinned `sqlite3`; text is stored byte-exact (case and line endings unchanged), code columns compare exactly unless `-CodeCollation NoCase` |
-| `Convert-ManagementDb.ps1` | B3 | this PR: cut mode (default) - one catalog per existing machine of `dbo.ManagedServer`, each instance in exactly one catalog, orphans dropped and reported, completeness recorded in the manifest |
-| `Test-CatalogConversion.ps1` | B4 | this PR: read-only verification of the catalogs against the source in eight groups (manifest, sqlite, exclusions, values, cut, global, secrets, stored-hash); compares every cell, never prints a value; exit code 1 on any failure |
-| `Seal-Package.ps1` | B5 | this PR: validates the catalog, rehashes every file, writes `package-manifest.json`, has it signed by an external signer (no algorithm in the tool); `-VerifyOnly`, `-DryRun`, `-Unsigned` (development) |
-| credential tool (vault, issuer key, signer, import, issue) | B6 | in progress: B6.1a is the shared module `modules/Sisqual.Credentials` (canonical JSON, signature, credential entries); B6.1b adds the package and machine identity formats and the validation of the eight checks; B6.2a adds the encrypted vault (`tools/lib/Sisqual.CredentialVault.psm1`) with the issuer key inside it; the vault command, the signer and verifier scripts for `Seal-Package`, the one-time import and the issue follow in small PRs |
+| `Export-ManagementEngines.ps1` | B1 | exports the `ops.Engine` scripts to files plus a hash manifest |
+| `Convert-ManagementDb.ps1` | B2 | new-machine mode (global tables copied, cut tables empty, one ManagedServer row), redaction of literal secrets, safety-net scan, `.db` built with the pinned `sqlite3`; text is stored byte-exact (case and line endings unchanged), code columns compare exactly unless `-CodeCollation NoCase` |
+| `Convert-ManagementDb.ps1` | B3 | cut mode (default) - one catalog per existing machine of `dbo.ManagedServer`, each instance in exactly one catalog, orphans dropped and reported, completeness recorded in the manifest |
+| `Test-CatalogConversion.ps1` | B4 | read-only verification of the catalogs against the source; compares every carried cell, never prints a value; exit code 1 on any failure |
+| `Seal-Package.ps1` | B5 | validates the catalog, rehashes every file, writes `package-manifest.json`, has it signed by an external signer; `-VerifyOnly`, `-DryRun`, `-Unsigned` (development) |
+| credential tool (vault, issuer key, signer, import, issue) | B6 | in progress; B6.2 is developed independently |
+| `Apply-CatalogChange.ps1` | C9 | offline owner tool for a structured `contracts/catalog-change.schema.json` proposal; no raw SQL, exact base-catalog SHA-256 and PK/expected-state checks, edit on a temporary copy, B5 catalog validation, baseline copy, atomic replacement; it does not reseal |
 
 Rules for every tool: read-only toward SQL Server, no secret is ever printed or written,
 ASCII and LF in the repository, output outside the repository when it is not ASCII/LF,
 and a unit test in `tests/Unit/` that needs no real server.
 
-Run the tests: `pwsh -NoProfile -File tests/Unit/Test-ExportManagementEngines.ps1`; the converter tests need `SQLITE3_PATH` (the pinned sqlite3 executable): `pwsh -NoProfile -File tests/Unit/Test-ConvertManagementDb.ps1`.
+Run the tests: `pwsh -NoProfile -File tests/Unit/Test-ExportManagementEngines.ps1`; converter, seal and C9 tests need `SQLITE3_PATH` pointing to the pinned sqlite3 executable.
 
-Signing: `Seal-Package.ps1` has no signature algorithm and never sees a private key. It passes the canonical bytes of the manifest to a signer script (`-SignerScript`, provided by the credential tool, step B6) and stores what it returns; a verifier script (`-VerifierScript`) is used by `-VerifyOnly`. The algorithm and the canonical form are [PENDING] owner approval (`contracts/credential-package.md`, Q2). The tests use a throw-away ECDSA key created by the test itself.
+## C9 catalog change flow
+
+`Apply-CatalogChange.ps1` is the implementation of the accepted C9 / `LINKS_VISIBILITY` option A owner-edit step. It is not part of the runtime and it never updates `package-manifest.json`.
+
+1. Generate or review a structured proposal that matches `contracts/catalog-change.schema.json`. The proposal is bound to the exact catalog by `catalogServerCode` and `baseCatalogSha256`.
+2. Run `Apply-CatalogChange.ps1 -DryRun`. This validates the current catalog, proposal schema/rules, table and column names and the exact live primary keys without writing anything.
+3. For apply, choose a new `-BaselinePath` outside the package and confirm interactively or pass `-Yes`. The tool edits a same-volume temporary copy, requires every operation to affect exactly one row, validates it with the B5 catalog safety checks, writes the byte-exact baseline and atomically replaces the catalog.
+4. The package is now intentionally **unsealed**: its old manifest still hashes the old catalog. Run `Seal-Package.ps1` with that baseline and the normal signer/confirmation flow. In production the approved second-reader procedure applies before the seal.
+5. Keep the proposal, baseline according to the operational retention policy, and the external seal log as the review/audit trail. Do not hand-edit the derived `cfg_LinksPageDirectory`; cross-machine directory changes are handled by reconversion/reseal of all affected catalogs.
+
+C9 V1 supports TEXT, INTEGER/bit and NULL cell values. REAL and BLOB edits are refused. `catalog_meta`, SQLite internal tables, the derived Links directory, secret tables and forbidden secret/script columns cannot be edited. UPDATE and DELETE require an `expected` object, and UPDATE must state the same non-key columns in `expected` and `values` so the diff is explicit and reviewable.
+
+Signing: `Seal-Package.ps1` has no signature algorithm and never sees a private key. It passes the canonical bytes of the manifest to a signer script (`-SignerScript`, provided by the credential tool, step B6) and stores what it returns; a verifier script (`-VerifierScript`) is used by `-VerifyOnly`. C9 does not alter that integrity model.
