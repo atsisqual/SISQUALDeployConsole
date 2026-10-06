@@ -65,7 +65,7 @@ jobs:
           }
 
       - name: Re-run retention tests west of UTC
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           Set-TimeZone -Id 'SA Eastern Standard Time'
