@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sisqual:deploy:contract:catalog-change:0.1-proposed",
+  "title": "Catalog change proposal",
+  "description": "[CONFIRMED design direction] Declarative owner-approved catalog change consumed only by the offline C9 tool. It contains data, never SQL or executable text. Applying a proposal invalidates the old package manifest until the existing Seal-Package flow reseals the package.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "changeId", "catalogServerCode", "baseCatalogSha256", "note", "operations"],
+  "properties": {
+    "contractVersion": {
+      "const": "0.1-proposed"
+    },
+    "changeId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "catalogServerCode": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,60}$"
+    },
+    "baseCatalogSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "note": {
+      "description": "ASCII audit note. No secret or credential value.",
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^[\\x20-\\x7E]*$"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cellValue": {
+      "description": "C9 V1 supports SQLite NULL, INTEGER/bit and TEXT values. REAL and BLOB edits are intentionally not supported.",
+      "type": ["null", "boolean", "integer", "string"]
+    },
+    "rowValues": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/cellValue"
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "table", "key"],
+      "properties": {
+        "kind": {
+          "enum": ["INSERT", "UPDATE", "DELETE"]
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_]+$"
+        },
+        "key": {
+          "$ref": "#/$defs/rowValues"
+        },
+        "expected": {
+          "$ref": "#/$defs/rowValues"
+        },
+        "values": {
+          "$ref": "#/$defs/rowValues"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "INSERT" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["values"],
+            "not": { "required": ["expected"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "UPDATE" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["expected", "values"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "DELETE" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["expected"],
+            "not": { "required": ["values"] }
+          }
+        }
+      ]
+    }
+  },
+  "x-validationRules": [
+    "The proposal is data only. No SQL statement, expression, WHERE clause or identifier supplied by the proposal is executed directly.",
+    "baseCatalogSha256 must equal the catalog bytes at validation time and again immediately before replacement. A stale proposal fails closed.",
+    "catalogServerCode must equal catalog_meta.server_code exactly.",
+    "The key object must name exactly the live SQLite primary-key columns, using exact column spelling.",
+    "INSERT requires the target primary-key row to be absent and merges key plus values; duplicate column names and conflicting key/value pairs are refused.",
+    "UPDATE and DELETE require expected values; the generated predicate includes both the primary key and expected values and exactly one row must match.",
+    "Primary-key columns cannot be changed by UPDATE.",
+    "catalog_meta, SQLite internal tables, cfg_LinksPageDirectory and any table or column forbidden by the package seal safety rules cannot be changed.",
+    "C9 V1 refuses REAL and BLOB cell edits. TEXT is encoded byte-exact as UTF-8 and INTEGER/bit values are invariant integers.",
+    "Dry-run applies the proposal only to a same-volume temporary copy and performs the same operation-count and catalog-safety validation as apply; it never replaces the catalog or writes a baseline. Apply writes a byte-exact baseline at a new path that the tool never overwrites, rechecks the original SHA-256 and only then replaces the catalog.",
+    "The tool does not update or sign package-manifest.json. A successful edit is intentionally unsealed and must be followed by Seal-Package with the baseline and the production second-reader procedure."
+  ]
+}
