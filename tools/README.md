@@ -27,8 +27,8 @@ Run the tests: `pwsh -NoProfile -File tests/Unit/Test-ExportManagementEngines.ps
 `Apply-CatalogChange.ps1` is the implementation of the accepted C9 / `LINKS_VISIBILITY` option A owner-edit step. It is not part of the runtime and it never updates `package-manifest.json`.
 
 1. Generate or review a structured proposal that matches `contracts/catalog-change.schema.json`. The proposal is bound to the exact catalog by `catalogServerCode` and `baseCatalogSha256`.
-2. Run `Apply-CatalogChange.ps1 -DryRun`. This validates the current catalog, proposal schema/rules, table and column names and the exact live primary keys without writing anything.
-3. For apply, choose a new `-BaselinePath` outside the package and confirm interactively or pass `-Yes`. The tool edits a same-volume temporary copy, requires every operation to affect exactly one row, validates it with the B5 catalog safety checks, writes the byte-exact baseline and atomically replaces the catalog.
+2. Run `Apply-CatalogChange.ps1 -DryRun`. This validates the current catalog, proposal schema/rules and exact live schema/primary keys, then executes the proposal on a same-volume temporary copy. It requires every operation to affect exactly one row and runs the same B5 catalog safety checks as apply. The temporary copy is discarded; the catalog and baseline are not written.
+3. For apply, choose a new `-BaselinePath` outside the package and confirm interactively or pass `-Yes`. The tool repeats the same staged execution and validation, writes a byte-exact baseline at a new path it will not overwrite, rechecks the source SHA-256 and atomically replaces the catalog.
 4. The package is now intentionally **unsealed**: its old manifest still hashes the old catalog. Run `Seal-Package.ps1` with that baseline and the normal signer/confirmation flow. In production the approved second-reader procedure applies before the seal.
 5. Keep the proposal, baseline according to the operational retention policy, and the external seal log as the review/audit trail. Do not hand-edit the derived `cfg_LinksPageDirectory`; cross-machine directory changes are handled by reconversion/reseal of all affected catalogs.
 

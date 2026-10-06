@@ -119,7 +119,7 @@
     "Primary-key columns cannot be changed by UPDATE.",
     "catalog_meta, SQLite internal tables, cfg_LinksPageDirectory and any table or column forbidden by the package seal safety rules cannot be changed.",
     "C9 V1 refuses REAL and BLOB cell edits. TEXT is encoded byte-exact as UTF-8 and INTEGER/bit values are invariant integers.",
-    "Dry-run never writes the catalog or baseline. Apply edits a same-volume temporary copy, validates SQLite integrity and foreign keys, writes an immutable baseline copy, rechecks the original SHA-256 and only then replaces the catalog.",
+    "Dry-run applies the proposal only to a same-volume temporary copy and performs the same operation-count and catalog-safety validation as apply; it never replaces the catalog or writes a baseline. Apply writes a byte-exact baseline at a new path that the tool never overwrites, rechecks the original SHA-256 and only then replaces the catalog.",
     "The tool does not update or sign package-manifest.json. A successful edit is intentionally unsealed and must be followed by Seal-Package with the baseline and the production second-reader procedure."
   ]
 }

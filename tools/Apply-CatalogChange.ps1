@@ -7,8 +7,9 @@
     C9 offline owner tool. The proposal contains data only, never SQL. The tool validates the
     current catalog with the existing Seal-Package catalog validator, binds the proposal to the
     exact catalog SHA-256 and ServerCode, resolves every table/column/primary key from SQLite
-    metadata, edits a same-volume temporary copy, validates that copy, writes a baseline copy,
-    rechecks the source hash and atomically replaces the catalog.
+    metadata, stages the proposed edit on a same-volume temporary copy and validates that copy.
+    Apply then writes a byte-exact baseline, rechecks the source hash and atomically replaces the
+    catalog; dry-run discards the validated staged copy without touching the catalog or baseline.
 
     It deliberately does NOT update package-manifest.json and does not sign anything. After a
     successful edit the package no longer matches its old manifest and must be processed by
@@ -418,26 +419,20 @@ function Invoke-CatalogChange {
     Write-Host ('Operations: {0} insert, {1} update, {2} delete across {3} table(s).' -f $summary.Counts.INSERT, $summary.Counts.UPDATE, $summary.Counts.DELETE, $summary.Tables.Count)
     foreach ($table in $summary.Tables) { Write-Host ('  table: {0}' -f $table) }
 
-    if ($Preview) {
-        Write-Host 'Dry run: proposal and catalog validated; nothing was written.'
-        return [pscustomobject]@{
-            Applied = $false; ChangeId = [string]$proposalObject['changeId']; ServerCode = $serverCode
-            Operations = @($proposalObject['operations']).Count; Tables = $summary.Tables; BeforeSha256 = $beforeHash
-            AfterSha256 = $beforeHash; BaselinePath = ''; RequiresReseal = $false
+    $baselineFull = ''
+    if (-not $Preview) {
+        if ([string]::IsNullOrWhiteSpace($Baseline)) { throw '-BaselinePath is required when applying a catalog change.' }
+        $baselineFull = [System.IO.Path]::GetFullPath($Baseline)
+        if ([string]::Equals($baselineFull, $catalogFull, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'BaselinePath must be different from CatalogPath.' }
+        if (Test-Path -LiteralPath $baselineFull) { throw ('BaselinePath already exists and will not be overwritten: {0}' -f $baselineFull) }
+        $baselineParent = [System.IO.Path]::GetDirectoryName($baselineFull)
+        if ([string]::IsNullOrWhiteSpace($baselineParent) -or -not (Test-Path -LiteralPath $baselineParent -PathType Container)) { throw 'The BaselinePath parent folder must already exist.' }
+
+        if (-not $Confirmed) {
+            if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { throw 'Confirmation is needed. Run in a console or pass -Yes.' }
+            $answer = Read-Host 'Type APPLY to replace the catalog (it must be resealed afterwards)'
+            if ($answer -cne 'APPLY') { throw 'Not confirmed. Nothing was written.' }
         }
-    }
-
-    if ([string]::IsNullOrWhiteSpace($Baseline)) { throw '-BaselinePath is required when applying a catalog change.' }
-    $baselineFull = [System.IO.Path]::GetFullPath($Baseline)
-    if ([string]::Equals($baselineFull, $catalogFull, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'BaselinePath must be different from CatalogPath.' }
-    if (Test-Path -LiteralPath $baselineFull) { throw ('BaselinePath already exists and will not be overwritten: {0}' -f $baselineFull) }
-    $baselineParent = [System.IO.Path]::GetDirectoryName($baselineFull)
-    if ([string]::IsNullOrWhiteSpace($baselineParent) -or -not (Test-Path -LiteralPath $baselineParent -PathType Container)) { throw 'The BaselinePath parent folder must already exist.' }
-
-    if (-not $Confirmed) {
-        if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { throw 'Confirmation is needed. Run in a console or pass -Yes.' }
-        $answer = Read-Host 'Type APPLY to replace the catalog (it must be resealed afterwards)'
-        if ($answer -cne 'APPLY') { throw 'Not confirmed. Nothing was written.' }
     }
 
     $catalogDir = [System.IO.Path]::GetDirectoryName($catalogFull)
@@ -472,6 +467,15 @@ function Invoke-CatalogChange {
         $stagedHash = Get-C9Sha256 -Path $staged
         if ($stagedHash -ceq $beforeHash) { throw 'The proposal produced no byte change; the original catalog was not changed.' }
         if ((Get-C9Sha256 -Path $catalogFull) -cne $beforeHash) { throw 'The catalog changed after validation; the proposal is stale and was not applied.' }
+
+        if ($Preview) {
+            Write-Host 'Dry run: staged catalog change validated; catalog and baseline were not written.'
+            return [pscustomobject]@{
+                Applied = $false; ChangeId = [string]$proposalObject['changeId']; ServerCode = $serverCode
+                Operations = $ops.Count; Tables = $summary.Tables; BeforeSha256 = $beforeHash
+                AfterSha256 = $beforeHash; BaselinePath = ''; RequiresReseal = $false
+            }
+        }
 
         [System.IO.File]::Copy($catalogFull, $baselineFull, $false)
         $baselineCreated = $true

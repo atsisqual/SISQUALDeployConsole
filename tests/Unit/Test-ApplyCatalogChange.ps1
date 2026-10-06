@@ -122,7 +122,7 @@ function Write-Proposal {
 }
 
 try {
-    # 1. Dry-run validates but writes nothing.
+    # 1. Dry-run stages and fully validates the change but writes nothing.
     $db = New-TestCatalog 'dry'
     $before = Get-C9Sha256 -Path $db
     $proposal = Write-Proposal -Db $db -Name 'dry' -Operations @(
@@ -132,6 +132,20 @@ try {
     $r = Invoke-CatalogChange -Proposal $proposal -Catalog $db -Sqlite3 $sqlite3 -Baseline $baseline -Preview $true -Confirmed $true 6>$null
     Assert-That 'dry-run reports not applied' (-not $r.Applied -and -not $r.RequiresReseal)
     Assert-That 'dry-run leaves catalog byte-exact and writes no baseline' ((Get-C9Sha256 $db) -ceq $before -and -not (Test-Path $baseline))
+
+    $proposal = Write-Proposal -Db $db -Name 'dry-wrong-expected' -Operations @(
+        [ordered]@{ kind='UPDATE'; table='cfg_LinksPageInstanceApplication'; key=[ordered]@{ InstanceCode='INST1'; ApplicationCode='APP1' }; expected=[ordered]@{ IsVisibleInWeb=0 }; values=[ordered]@{ IsVisibleInWeb=1 } }
+    )
+    $baseline = Join-Path $work 'dry-wrong-expected-baseline.db'
+    Assert-Throws 'dry-run executes optimistic-state predicates on the staged copy' { Invoke-CatalogChange -Proposal $proposal -Catalog $db -Sqlite3 $sqlite3 -Baseline $baseline -Preview $true -Confirmed $true 6>$null } '*exactly one row*'
+    Assert-That 'failed dry-run predicate leaves catalog and baseline untouched' ((Get-C9Sha256 $db) -ceq $before -and -not (Test-Path $baseline))
+
+    $proposal = Write-Proposal -Db $db -Name 'dry-secret' -Operations @(
+        [ordered]@{ kind='UPDATE'; table='cfg_ConfigRule'; key=[ordered]@{ RuleCode='SAFE_RULE' }; expected=[ordered]@{ ExpectedTemplate='safe text' }; values=[ordered]@{ ExpectedTemplate='password=abcdefghi' } }
+    )
+    $baseline = Join-Path $work 'dry-secret-baseline.db'
+    Assert-Throws 'dry-run runs the staged catalog safety and secret scan' { Invoke-CatalogChange -Proposal $proposal -Catalog $db -Sqlite3 $sqlite3 -Baseline $baseline -Preview $true -Confirmed $true 6>$null } '*staged catalog is not safe*'
+    Assert-That 'failed dry-run safety check leaves catalog and baseline untouched' ((Get-C9Sha256 $db) -ceq $before -and -not (Test-Path $baseline))
 
     # 2. One atomic proposal can update, insert and delete by the real composite PK.
     $db = New-TestCatalog 'apply'
