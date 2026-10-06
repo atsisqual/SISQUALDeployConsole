@@ -1,15 +1,15 @@
 # Per-machine catalog schema
 
-**Status:** [PROPOSED] draft, version `0.1-proposed`. Only the frame is defined here. The table-by-table content is [PENDING] the conversion plan (`docs/migration/catalog-conversion-plan.md`, task 4 step A) and ADR-0007 (accepted 2026-10-05).
+**Status:** [PROPOSED] draft, version `0.1-proposed`. The table-by-table source-carried content follows the conversion plan (`docs/migration/catalog-conversion-plan.md`) and ADR-0007. C1/C2 defines the derived Links instance directory without changing `schema_version`; it changes the cut rules only.
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 1. What a catalog is
 
-- [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each instance appears in exactly one catalog.
-- [PLANNED, 2026-10-05] Exception for links pages: a catalog that hosts a general links page also carries a read-only directory of the instances of other machines (public columns only), because the general page lists every enabled instance of the same country across all machines (`cfg.GetLinksPageItemPlan`). The directory is a separate table; the rule above is about the full instance rows.
+- [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each complete instance row appears in exactly one catalog.
+- [CONFIRMED, C1/C2, 2026-10-06] A catalog whose machine hosts an enabled general Links page also carries a read-only directory of enabled instances of the same country on other enabled machines. A machine without a general page carries an empty directory. The directory is derived public data and never replaces the complete local instance row.
 - [CONFIRMED] Replaces the central database `_sisqualMANAGEMENT`, which ceases to exist. No runtime sync, no connection to any server to obtain configuration.
-- [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts (engines become files). Secret-bearing surfaces never enter a catalog (R-026).
-- [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4, so no managed SQLite provider is needed to build it (the provider is decided in Phase 1B and only has to open files read-only).
+- [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts. Secret-bearing surfaces never enter a catalog (R-026).
+- [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4; the runtime provider only has to open files read-only.
 - [PROPOSED] Opened with a read-only URI and `PRAGMA query_only = ON`. The file is listed with its SHA-256 in the signed package manifest (`package-manifest.schema.json`).
 
 ## 2. Mandatory metadata table
@@ -24,29 +24,61 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 | `source_kind` | TEXT NOT NULL | `conversion-tool`, `manual-edit-sealed` or `build` |
 | `source_reference` | TEXT NOT NULL | Conversion run id, repository commit or seal note; ASCII, no secrets |
 | `built_at_utc` | TEXT NOT NULL | `YYYY-MM-DDTHH:MM:SSZ`, shown in the UI |
-| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting rules used by the conversion tool |
+| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting and derived-table rules |
 
-`schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error and the application refuses to start (except with the logged development flag). `built_at_utc` is the time the catalog content was produced or last sealed after a manual edit; it is not required to equal the manifest's `builtAt` (the time of the last seal of the whole package) [PROPOSED, implemented by `tools/Seal-Package.ps1`].
+`schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error. `built_at_utc` is the time the catalog content was produced or last sealed after a manual edit; it is not required to equal the manifest's `builtAt`.
+
+C1/C2 is additive to catalog schema v1 and therefore keeps `schema_version = 1`; it bumps `cut_rule_version` from 1 to 2. The later C7 structured-filter work has its own schema-version transition and is reconciled when the PRs are integrated.
 
 ## 3. Conventions for all tables [PROPOSED]
 
-- Text is stored byte-exact: case and line endings are never changed (owner preference of 2026-10-05; some identity-provider links are case-sensitive). All text columns, including the `*Code` columns, compare exactly (SQLite default `BINARY`). The source databases use `Latin1_General_CI_AS`; the conversion tool can declare `*Code` columns `COLLATE NOCASE` only on request (`-CodeCollation NoCase`), and the default does not. Consumers must not rely on case-insensitive matching.
-- `dbo_ManagedServer` has no `ManagementDatabaseName` column (dropped, the central database ceases to exist).
-- Text is UTF-8. Dates and times converted from SQL Server `datetime2` are ISO 8601 text kept exactly as in the source, WITHOUT a time zone: the source values come from `SYSDATETIME()` (server local time), so they are not UTC and must not be treated as UTC. Only values created by the new tools (`built_at_utc`, manifest times) are UTC with a `Z`. See `docs/migration/catalog-conversion-plan.md` section 1.1.
-- Booleans (SQL Server `bit`) are INTEGER 0 or 1 with a `CHECK`.
-- Identity columns keep their source values so that origin and destination rows can be compared by key.
-- Binary content (`varbinary`) is stored as BLOB in every catalog (owner answer of 2026-10-05), together with its SHA-256 column where the source has one; BLOBs are read on demand. Secret-bearing binary content never enters a catalog.
-- Foreign keys are declared and checked at build time (`PRAGMA foreign_key_check` must return no rows).
-- Every table that is cut per machine carries the key it is cut by (`ServerCode` or `InstanceCode`) so completeness of the cut can be tested.
+- Text is stored byte-exact: case and line endings are never changed. All text columns, including `*Code`, compare exactly (`BINARY`) unless the converter is explicitly run with `-CodeCollation NoCase`.
+- `dbo_ManagedServer` has no `ManagementDatabaseName` column.
+- Text is UTF-8. SQL Server local `datetime2` values remain timezone-less ISO text; only values created by new tools and explicitly named UTC carry `Z`.
+- SQL Server `bit` is INTEGER 0 or 1 with a `CHECK`.
+- Identity values are preserved.
+- Binary content is BLOB; secret-bearing binary content never enters a catalog.
+- Foreign keys are checked at build time.
+- Every source table cut per machine carries the key used to cut it.
 
-## 4. Global versus cut tables
+## 4. Derived Links instance directory (C1/C2)
 
-[PENDING] The assignment of each source table to "global (identical in every catalog)" or "cut by ServerCode/InstanceCode" is produced by the conversion plan and then copied here as a table. Examples named by the owner as global: applications, rules, policies, action definitions.
+[CONFIRMED, owner Q9, 2026-10-06] The derived table is `cfg_LinksPageDirectory`. It is present in every catalog but is empty when that machine has no enabled instance with `LinksIncludeAllInstances = 1` (C2).
 
-## 5. Open items
+For a catalog of machine M, the directory contains exactly the enabled instances that:
 
-- [PENDING] Final table list and DDL (conversion plan).
-- [PENDING] Whether the long-term authority for the catalog is a declarative source in this repository compiled by a build tool, or an editor tool (deferred by the owner, ADR-0007 item 1).
-- [CONFIRMED] Machines without policy rows in the server policy tables are cut as they are (empty tables, no template server); see the conversion plan section 2.6.
-- [OBSOLETE, 2026-10-05] Machines that have no local database: no longer applicable. Under ADR-0007 every machine receives its catalog inside the portable package.
-- [PENDING] Whether a package contains one catalog or all catalogs (see the manifest schema).
+- belong to an enabled machine other than M;
+- have `CountryCode` equal, under the source database's case-insensitive comparison, to the country of at least one enabled general-page instance of M;
+- are not complete local instance rows of M.
+
+Only public data used by the general Links page is copied. C1 explicitly includes `LinksAssignedUserName`, because the current public page already prints it. Tokens, passwords, database names, ports, paths, SQL configuration and other private instance data never enter this table.
+
+`cfg_LinksPageDirectory` is `STRICT`, has no foreign key to `dbo_ManagedInstance`, and has these columns in this order:
+
+| Column | Type source | Nullability | Rule |
+|---|---|---|---|
+| `InstanceCode` | `dbo.ManagedInstance.InstanceCode` | NOT NULL, PRIMARY KEY | remote instance code |
+| `ServerCode` | `dbo.ManagedInstance.ServerCode` | NOT NULL | provenance; never equals `catalog_meta.server_code` |
+| `CountryCode` | `dbo.ManagedInstance.CountryCode` | NOT NULL | exactly two characters |
+| `CustomerCode` | `dbo.ManagedInstance.CustomerCode` | NULL | preserved; general-page ordering already handles NULL last |
+| `CustomerName` | `dbo.ManagedInstance.CustomerName` | NULL | preserved; the page falls back to `InstanceCode` when absent |
+| `HostName` | `dbo.ManagedInstance.HostName` | NOT NULL | non-empty; used to build links |
+| `AssignedUserName` | `dbo.ManagedInstance.LinksAssignedUserName` | NULL | public display value accepted by C1 |
+
+The nullable `CustomerCode` and `CustomerName` definitions deliberately follow the real SQL schema and the existing page behavior; the earlier design draft that marked them NOT NULL was too strict.
+
+The conversion manifest records `linksPageDirectoryCount` per catalog. `Test-CatalogConversion` independently recomputes the expected rows and values from the source, requires the exact seven-column shape, verifies no row is local or from the catalog's own server, and requires an empty table for C2 machines without a general page.
+
+The directory is the only derived cross-machine instance table. `cfg.Application.LinksHubInstanceCode` remains a global code string and is not resolved through this directory.
+
+## 5. Global versus cut source tables
+
+[PENDING] The final assignment of each source table to global or cut-by-machine is produced by the conversion plan. The Links directory is not a 63rd source table: it is derived during the cut from `dbo.ManagedServer` and `dbo.ManagedInstance`.
+
+## 6. Open items
+
+- [PENDING] Final source table list and DDL for the remaining catalog tables.
+- [PENDING] Whether the long-term authority for the catalog is declarative source in this repository or an editor tool.
+- [CONFIRMED] Machines without policy rows are cut as they are (empty policy tables).
+- [OBSOLETE, 2026-10-05] Machines without a local database are no longer applicable under ADR-0007.
+- [PENDING] Whether a package contains one catalog or all catalogs.
