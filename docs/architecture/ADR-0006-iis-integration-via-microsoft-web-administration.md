@@ -27,7 +27,7 @@ Evidence for the write path (run 37290642287, 22 of 22 checks, windows-2022 and 
 1. Equivalence matrix between every `IIS_RECONCILE` rule (about 11 distinct cmdlets plus the `IIS:\` provider) and its MWA counterpart, reviewed before the engine is ported.
 2. A run of the write spike on a sandbox with a real topology (hundreds of pools, existing drift, locked sections) [V].
 3. A test of application pool identity with real credentials, SNI and central certificate store bindings, and handler and module sections.
-4. Changes are committed in batches and the certificate store name is standardised as `MY`.
+4. Changes are committed in batches. [AMENDED 2026-10-06, owner decision Q8] The certificate store name is policy data, not a standard: the four server policies use `WebHosting`, the name is compared ignoring case and a runner test covers `WebHosting`. It is no longer standardised as `MY`. Also decided: V1 never deletes IIS objects it does not manage.
 
 ## Consequences
 
