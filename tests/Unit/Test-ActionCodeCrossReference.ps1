@@ -42,10 +42,12 @@ INSERT INTO ops_Engine VALUES ('WINDOWS_SERVICES');
 INSERT INTO ops_Action VALUES ('DATABASE_SETTINGS','DATABASE_CONTENT_SYNC');
 INSERT INTO ops_Action VALUES ('WINDOWS_SERVICES','WINDOWS_SERVICES');
 INSERT INTO ops_Action VALUES ('READ_ONLY',NULL);
+INSERT INTO ops_Action VALUES ('NO_ENGINE','   ');
 INSERT INTO cfg_ConfigurationAdapterDefinition VALUES ('DATABASE_SETTING','DATABASE_SETTINGS');
 INSERT INTO cfg_ConfigurationAdapterDefinition VALUES ('WINDOWS_SERVICE','WINDOWS_SERVICES');
 INSERT INTO cfg_ConfigurationAdapterDefinition VALUES ('LINKS',NULL);
 INSERT INTO cfg_ConfigurationAdapterDefinition VALUES ('MANAGED_INSTANCE','');
+INSERT INTO cfg_ConfigurationAdapterDefinition VALUES ('WHITESPACE','   ');
 $ExtraSql
 "@
     [void](Invoke-Sqlite3 -Exe $sqlite3 -Arguments @($Path, $sql))
@@ -70,7 +72,7 @@ try {
     Assert-That 'valid catalog produces exactly two action-xref checks' ($checks.Count -eq 2 -and @($checks | Where-Object group -ne 'action-xref').Count -eq 0)
     Assert-That 'valid adapter references pass' (@($checks | Where-Object { $_.check -like '*adapter ActionCode*' -and $_.ok }).Count -eq 1)
     Assert-That 'valid action engine references pass' (@($checks | Where-Object { $_.check -like '*EngineCode*' -and $_.ok }).Count -eq 1)
-    Assert-That 'NULL and blank adapter actions plus NULL engine are allowed' (@($checks | Where-Object { -not $_.ok }).Count -eq 0)
+    Assert-That 'NULL, empty and whitespace-only optional references are allowed' (@($checks | Where-Object { -not $_.ok }).Count -eq 0)
 
     $staleAdapter = Join-Path $work 'stale-adapter.db'
     New-C8Database -Path $staleAdapter -ExtraSql @"
