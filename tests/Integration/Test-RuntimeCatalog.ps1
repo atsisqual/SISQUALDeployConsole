@@ -107,7 +107,7 @@ try {
     Test-Throws 'provider path outside package is rejected' {
         Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
     }
-    $caseVariantProvider = Join-Path (Join-Path $tempRoot 'PACKAGE') 'runtime\sqlite-provider'
+    $caseVariantProvider = $providerCopy.Replace('\package\', '\PACKAGE\')
     Test-Throws 'package containment rejects case-distinct boundary spelling' {
         Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $caseVariantProvider | Out-Null
     }
