@@ -24,8 +24,15 @@ function Protect-SisqualRuntimeLogText {
     # Authentication schemes may also appear in assignment-shaped or free text.
     $text = [regex]::Replace($text, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 [REDACTED]')
 
-    # Accept plain keys and serialized forms. Quoted values consume escaped characters as one unit.
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
+
+    # For serialized JSON, prefer conservative over-redaction: once a sensitive quoted key is seen,
+    # consume its value and the remainder of that physical line. This safely covers scalar, escaped,
+    # array and object values without attempting to parse arbitrary embedded JSON fragments.
+    $serializedSensitivePattern = '(?i)"(' + $sensitiveNamePattern + ')"\s*:\s*[^\r\n]*'
+    $text = [regex]::Replace($text, $serializedSensitivePattern, '$1=[REDACTED]')
+
+    # Plain assignment-shaped text is handled separately.
     $doubleQuotedValue = '"(?:\\.|[^"\\])*"'
     $singleQuotedValue = '''(?:\\.|[^''\\])*'''
     $assignmentPattern = '(?i)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*(' + $doubleQuotedValue + '|' + $singleQuotedValue + '|[^\s,;}\]]+)'
@@ -250,7 +257,8 @@ function Write-SisqualRuntimeLog {
     }
 
     $timestamp = $TimestampUtc.ToUniversalTime()
-    $currentUtcDate = [DateOnly]::FromDateTime($timestamp)
+    $retentionNowUtc = [datetime]::UtcNow
+    $retentionUtcDate = [DateOnly]::FromDateTime($retentionNowUtc)
     $fileName = '{0}-{1}.log' -f $script:LogState.Prefix, $timestamp.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
     $path = Join-Path $script:LogState.LogRoot $fileName
     $safeMessage = Protect-SisqualRuntimeLogText -Value $Message
@@ -282,9 +290,11 @@ function Write-SisqualRuntimeLog {
     [System.Threading.Monitor]::Enter($script:WriteLock)
     try {
         Assert-SisqualRuntimeLogRootStillApproved
-        if ($null -eq $script:LogState.LastRetentionUtcDate -or $currentUtcDate -gt $script:LogState.LastRetentionUtcDate) {
-            Invoke-SisqualRuntimeLogRetentionCore -ReferenceUtc $timestamp | Out-Null
+        Assert-SisqualNoReparsePoint -Path $path -Label 'LogFile'
+        if ($null -eq $script:LogState.LastRetentionUtcDate -or $retentionUtcDate -gt $script:LogState.LastRetentionUtcDate) {
+            Invoke-SisqualRuntimeLogRetentionCore -ReferenceUtc $retentionNowUtc | Out-Null
         }
+        Assert-SisqualNoReparsePoint -Path $path -Label 'LogFile'
         [System.IO.File]::AppendAllText($path, $line + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
     }
     finally {
