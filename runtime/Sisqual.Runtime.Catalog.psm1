@@ -2,517 +2,36 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ExpectedProviderVersion = '10.0.12'
-$script:ExpectedNativeSqliteVersion = '3.53.3'
-$script:ProviderState = $null
-$script:CatalogSessions = @{}
+# Keep the reviewed provider/path-guard implementation byte-identical in the core file.
+# This wrapper only hardens catalog opening against unverified SQLite sidecars.
+. (Join-Path $PSScriptRoot 'Sisqual.Runtime.Catalog.Core.ps1')
 
-if (-not ('Sisqual.Runtime.CatalogPathNative' -as [type])) {
-    Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-using Microsoft.Win32.SafeHandles;
-
-namespace Sisqual.Runtime
-{
-    public sealed class CatalogPathGuard : IDisposable
-    {
-        private readonly List<SafeFileHandle> _handles;
-        internal CatalogPathGuard(List<SafeFileHandle> handles) { _handles = handles; }
-        public void Dispose()
-        {
-            for (int i = _handles.Count - 1; i >= 0; i--) _handles[i].Dispose();
-            _handles.Clear();
-        }
-    }
-
-    public static class CatalogPathNative
-    {
-        private const uint GENERIC_READ = 0x80000000;
-        private const uint FILE_READ_ATTRIBUTES = 0x00000080;
-        private const uint FILE_SHARE_READ = 0x00000001;
-        private const uint FILE_SHARE_WRITE = 0x00000002;
-        private const uint OPEN_EXISTING = 3;
-        private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
-        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
-        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
-        private const int FileAttributeTagInfo = 9;
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct FILE_ATTRIBUTE_TAG_INFO
-        {
-            public uint FileAttributes;
-            public uint ReparseTag;
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern SafeFileHandle CreateFileW(
-            string lpFileName,
-            uint dwDesiredAccess,
-            uint dwShareMode,
-            IntPtr lpSecurityAttributes,
-            uint dwCreationDisposition,
-            uint dwFlagsAndAttributes,
-            IntPtr hTemplateFile);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern uint GetFinalPathNameByHandleW(
-            SafeFileHandle hFile,
-            StringBuilder lpszFilePath,
-            uint cchFilePath,
-            uint dwFlags);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetFileInformationByHandleEx(
-            SafeFileHandle hFile,
-            int FileInformationClass,
-            out FILE_ATTRIBUTE_TAG_INFO lpFileInformation,
-            uint dwBufferSize);
-
-        private static string NormalizePath(string path)
-        {
-            string value = path;
-            if (value.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-                value = @"\\" + value.Substring(8);
-            else if (value.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
-                value = value.Substring(4);
-            return Path.GetFullPath(value).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-
-        private static string GetFinalPath(SafeFileHandle handle)
-        {
-            var buffer = new StringBuilder(512);
-            uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
-            if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
-            if (length >= buffer.Capacity)
-            {
-                buffer = new StringBuilder((int)length + 1);
-                length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
-                if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-            return NormalizePath(buffer.ToString());
-        }
-
-        private static SafeFileHandle OpenAndValidate(string path, bool directory, string label)
-        {
-            uint flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL);
-            uint desiredAccess = directory ? FILE_READ_ATTRIBUTES : GENERIC_READ | FILE_READ_ATTRIBUTES;
-            uint shareMode = directory ? FILE_SHARE_READ | FILE_SHARE_WRITE : FILE_SHARE_READ;
-            var handle = CreateFileW(
-                path,
-                desiredAccess,
-                shareMode,
-                IntPtr.Zero,
-                OPEN_EXISTING,
-                flags,
-                IntPtr.Zero);
-            if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot guard " + label + ": " + path);
-
-            try
-            {
-                FILE_ATTRIBUTE_TAG_INFO info;
-                if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out info, (uint)Marshal.SizeOf<FILE_ATTRIBUTE_TAG_INFO>()))
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                if ((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
-                    throw new IOException(label + " is a reparse point and is not approved: " + path);
-
-                string expected = NormalizePath(path);
-                string actual = GetFinalPath(handle);
-                if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException(label + " resolved outside its validated path. Expected " + expected + ", got " + actual + ".");
-                return handle;
-            }
-            catch
-            {
-                handle.Dispose();
-                throw;
-            }
-        }
-
-        private static bool IsWithin(string root, string target)
-        {
-            if (string.Equals(root, target, StringComparison.Ordinal)) return true;
-            string prefix = root + Path.DirectorySeparatorChar;
-            return target.StartsWith(prefix, StringComparison.Ordinal);
-        }
-
-        public static CatalogPathGuard GuardPackageMember(string packageRoot, string targetPath, bool targetIsDirectory)
-        {
-            string root = NormalizePath(packageRoot);
-            string target = NormalizePath(targetPath);
-            if (!IsWithin(root, target))
-                throw new IOException("Guard target is outside PackageRoot: " + target);
-
-            string directoryTarget = targetIsDirectory ? target : Path.GetDirectoryName(target);
-            var directories = new Stack<string>();
-            var current = new DirectoryInfo(directoryTarget);
-            while (current != null)
-            {
-                string currentPath = NormalizePath(current.FullName);
-                if (!IsWithin(root, currentPath)) break;
-                directories.Push(currentPath);
-                if (string.Equals(currentPath, root, StringComparison.Ordinal)) break;
-                current = current.Parent;
-            }
-            if (directories.Count == 0 || !string.Equals(directories.Peek(), root, StringComparison.Ordinal))
-                throw new IOException("Could not establish a guarded path from PackageRoot to target.");
-
-            var handles = new List<SafeFileHandle>();
-            try
-            {
-                while (directories.Count > 0)
-                {
-                    string directory = directories.Pop();
-                    handles.Add(OpenAndValidate(directory, true, "Package directory"));
-                }
-                if (!targetIsDirectory)
-                    handles.Add(OpenAndValidate(target, false, "Package file"));
-                return new CatalogPathGuard(handles);
-            }
-            catch
-            {
-                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
-                throw;
-            }
-        }
-    }
-}
-'@
-}
-
-function Assert-SisqualCatalogPathHasNoReparsePoint {
+function Assert-SisqualCatalogSidecarsAbsent {
     param(
         [Parameter(Mandatory)]
-        [string]$Path,
-        [Parameter(Mandatory)]
-        [string]$Label
+        [string]$CatalogPath
     )
 
-    $current = [System.IO.Path]::GetFullPath($Path)
-    while (-not [string]::IsNullOrWhiteSpace($current)) {
-        if (Test-Path -LiteralPath $current) {
-            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
-            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "$Label contains a reparse point and is not approved: $($item.FullName)"
-            }
+    foreach ($suffix in @('-wal', '-shm', '-journal')) {
+        $sidecar = $CatalogPath + $suffix
+        if (Test-Path -LiteralPath $sidecar) {
+            throw "Unverified SQLite sidecar is not permitted for a sealed catalog: $([IO.Path]::GetFileName($sidecar))"
         }
-
-        $parent = [System.IO.Directory]::GetParent($current)
-        if ($null -eq $parent -or $parent.FullName -ceq $current) {
-            break
-        }
-        $current = $parent.FullName
     }
 }
 
-function Assert-SisqualCatalogLocalFixedRoot {
+function Get-SisqualImmutableCatalogUri {
     param(
         [Parameter(Mandatory)]
-        [string]$PackageRoot
+        [string]$CatalogPath
     )
 
-    if (-not [System.IO.Path]::IsPathRooted($PackageRoot)) {
-        throw 'PackageRoot must be an absolute local path.'
+    $absolute = [IO.Path]::GetFullPath($CatalogPath)
+    $uri = [Uri]::new($absolute).AbsoluteUri
+    if (-not $uri.StartsWith('file:', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Catalog path could not be represented as a local file URI.'
     }
-    if ($PackageRoot.StartsWith('\\', [StringComparison]::Ordinal) -or
-        $PackageRoot.StartsWith('//', [StringComparison]::Ordinal) -or
-        $PackageRoot.StartsWith('\\?\', [StringComparison]::Ordinal) -or
-        $PackageRoot.StartsWith('\\.\', [StringComparison]::Ordinal)) {
-        throw 'PackageRoot must be an absolute local fixed-drive path.'
-    }
-
-    $root = [System.IO.Path]::GetFullPath($PackageRoot)
-    $driveRoot = [System.IO.Path]::GetPathRoot($root)
-    if ([string]::IsNullOrWhiteSpace($driveRoot)) {
-        throw 'PackageRoot drive could not be resolved.'
-    }
-    $drive = [System.IO.DriveInfo]::new($driveRoot)
-    if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) {
-        throw "PackageRoot must be on a fixed local drive; detected $($drive.DriveType)."
-    }
-    return $root
-}
-
-function Resolve-SisqualCatalogPackageMember {
-    param(
-        [Parameter(Mandatory)]
-        [string]$PackageRoot,
-        [Parameter(Mandatory)]
-        [string]$Path,
-        [Parameter(Mandatory)]
-        [string]$Label,
-        [ValidateSet('File','Directory')]
-        [string]$PathType,
-        [switch]$AllowMissing
-    )
-
-    if ([string]::IsNullOrWhiteSpace($PackageRoot) -or [string]::IsNullOrWhiteSpace($Path)) {
-        throw "$Label and PackageRoot cannot be empty."
-    }
-
-    $root = Assert-SisqualCatalogLocalFixedRoot -PackageRoot $PackageRoot
-    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
-        throw "PackageRoot does not exist: $root"
-    }
-    Assert-SisqualCatalogPathHasNoReparsePoint -Path $root -Label 'PackageRoot'
-
-    $separator = [System.IO.Path]::DirectorySeparatorChar
-    $prefix = $root.TrimEnd($separator, [System.IO.Path]::AltDirectorySeparatorChar) + $separator
-    $pathIsRooted = [System.IO.Path]::IsPathRooted($Path)
-    if ($pathIsRooted -and -not $Path.StartsWith($prefix, [StringComparison]::Ordinal)) {
-        throw "$Label is outside PackageRoot: $Path"
-    }
-
-    $candidate = if ($pathIsRooted) {
-        [System.IO.Path]::GetFullPath($Path)
-    }
-    else {
-        [System.IO.Path]::GetFullPath((Join-Path $root $Path))
-    }
-
-    if ($candidate.StartsWith('\\', [StringComparison]::Ordinal) -or
-        $candidate.StartsWith('//', [StringComparison]::Ordinal) -or
-        $candidate.StartsWith('\\?\', [StringComparison]::Ordinal) -or
-        $candidate.StartsWith('\\.\', [StringComparison]::Ordinal)) {
-        throw "$Label must be a local path."
-    }
-
-    if (-not $candidate.StartsWith($prefix, [StringComparison]::Ordinal)) {
-        throw "$Label is outside PackageRoot: $candidate"
-    }
-
-    Assert-SisqualCatalogPathHasNoReparsePoint -Path $candidate -Label $Label
-
-    if (-not $AllowMissing) {
-        $ok = if ($PathType -eq 'File') {
-            Test-Path -LiteralPath $candidate -PathType Leaf
-        }
-        else {
-            Test-Path -LiteralPath $candidate -PathType Container
-        }
-        if (-not $ok) {
-            throw "$Label does not exist as a ${PathType}: $candidate"
-        }
-    }
-
-    return $candidate
-}
-
-function Find-SisqualCatalogProviderFile {
-    param(
-        [Parameter(Mandatory)]
-        [string]$ProviderRoot,
-        [Parameter(Mandatory)]
-        [string]$Name
-    )
-
-    $items = @(Get-ChildItem -LiteralPath $ProviderRoot -Recurse -File -Filter $Name -ErrorAction Stop)
-    if ($items.Count -ne 1) {
-        throw "Expected exactly one $Name below provider root; found $($items.Count)."
-    }
-    Assert-SisqualCatalogPathHasNoReparsePoint -Path $items[0].FullName -Label $Name
-    return $items[0].FullName
-}
-
-function Get-SisqualVerifiedPackageFileEntry {
-    param(
-        [Parameter(Mandatory)]
-        [string]$PackageRoot,
-        [Parameter(Mandatory)]
-        [string]$FilePath,
-        [Parameter(Mandatory)]
-        [object[]]$VerifiedFiles
-    )
-
-    $relativePath = [System.IO.Path]::GetRelativePath($PackageRoot, $FilePath).Replace('\', '/')
-    $matches = [System.Collections.Generic.List[object]]::new()
-    foreach ($entry in @($VerifiedFiles)) {
-        if ($null -eq $entry) { continue }
-        $pathProperty = $entry.PSObject.Properties['path']
-        $hashProperty = $entry.PSObject.Properties['sha256']
-        $sizeProperty = $entry.PSObject.Properties['size']
-        if ($null -eq $pathProperty -or $null -eq $hashProperty -or $null -eq $sizeProperty) { continue }
-        if ([string]$pathProperty.Value -ceq $relativePath) {
-            $matches.Add($entry)
-        }
-    }
-
-    if ($matches.Count -ne 1) {
-        throw "Verified manifest files must contain exactly one entry for $relativePath; found $($matches.Count)."
-    }
-
-    $match = $matches[0]
-    $expectedHash = [string]$match.sha256
-    $expectedSize = [long]$match.size
-    if ($expectedHash -cnotmatch '^[0-9a-f]{64}$') {
-        throw "Verified manifest SHA-256 is invalid for $relativePath."
-    }
-    if ($expectedSize -lt 0) {
-        throw "Verified manifest size is invalid for $relativePath."
-    }
-
-    return [pscustomobject]@{
-        Path = $relativePath
-        Sha256 = $expectedHash
-        Size = $expectedSize
-    }
-}
-
-function Assert-SisqualGuardedPackageFile {
-    param(
-        [Parameter(Mandatory)]
-        [string]$PackageRoot,
-        [Parameter(Mandatory)]
-        [string]$FilePath,
-        [Parameter(Mandatory)]
-        [string]$ExpectedSha256,
-        [Parameter(Mandatory)]
-        [long]$ExpectedSize
-    )
-
-    if ($ExpectedSha256 -cnotmatch '^[0-9a-f]{64}$') {
-        throw 'ExpectedSha256 must be lowercase SHA-256 hex.'
-    }
-    if ($ExpectedSize -lt 0) {
-        throw 'ExpectedSize cannot be negative.'
-    }
-
-    $relativePath = [System.IO.Path]::GetRelativePath($PackageRoot, $FilePath).Replace('\', '/')
-    $file = Get-Item -LiteralPath $FilePath -Force -ErrorAction Stop
-    $actualSize = [long]$file.Length
-    if ($actualSize -ne $ExpectedSize) {
-        throw "Guarded package file size mismatch for $relativePath. Expected $ExpectedSize, got $actualSize."
-    }
-
-    $actualHash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
-    if (-not $actualHash.Equals($ExpectedSha256, [StringComparison]::Ordinal)) {
-        throw "Guarded package file SHA-256 mismatch for $relativePath."
-    }
-
-    return [pscustomobject]@{
-        Path = $relativePath
-        Sha256 = $actualHash
-        Size = $actualSize
-    }
-}
-
-function Invoke-SisqualCatalogScalar {
-    param(
-        [Parameter(Mandatory)]
-        $Connection,
-        [Parameter(Mandatory)]
-        [string]$Sql
-    )
-
-    $command = $Connection.CreateCommand()
-    try {
-        $command.CommandText = $Sql
-        return $command.ExecuteScalar()
-    }
-    finally {
-        $command.Dispose()
-    }
-}
-
-function Get-SisqualRuntimeSqliteDefaults {
-    [CmdletBinding()]
-    param()
-
-    return [pscustomobject]@{
-        ProviderVersion = $script:ExpectedProviderVersion
-        NativeSqliteVersion = $script:ExpectedNativeSqliteVersion
-        ConnectionMode = 'ReadOnly'
-        CacheMode = 'Private'
-        Pooling = $false
-    }
-}
-
-function Initialize-SisqualRuntimeSqliteProvider {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$PackageRoot,
-        [Parameter(Mandatory)]
-        [string]$ProviderRoot,
-        [Parameter(Mandatory)]
-        [object[]]$VerifiedFiles
-    )
-
-    $resolvedProviderRoot = Resolve-SisqualCatalogPackageMember -PackageRoot $PackageRoot -Path $ProviderRoot -Label 'ProviderRoot' -PathType Directory
-    $resolvedPackageRoot = Assert-SisqualCatalogLocalFixedRoot -PackageRoot $PackageRoot
-
-    if ($null -ne $script:ProviderState) {
-        if (-not $script:ProviderState.PackageRoot.Equals($resolvedPackageRoot, [StringComparison]::Ordinal) -or
-            -not $script:ProviderState.ProviderRoot.Equals($resolvedProviderRoot, [StringComparison]::Ordinal)) {
-            throw 'SQLite provider is already initialized from a different package path in this process.'
-        }
-        return $script:ProviderState
-    }
-
-    $managedNames = @(
-        'SQLitePCLRaw.core.dll',
-        'SQLitePCLRaw.provider.e_sqlite3.dll',
-        'SQLitePCLRaw.batteries_v2.dll',
-        'Microsoft.Data.Sqlite.dll'
-    )
-
-    $managed = [ordered]@{}
-    foreach ($name in $managedNames) {
-        $managed[$name] = Find-SisqualCatalogProviderFile -ProviderRoot $resolvedProviderRoot -Name $name
-    }
-    $native = Find-SisqualCatalogProviderFile -ProviderRoot $resolvedProviderRoot -Name 'e_sqlite3.dll'
-
-    $guards = [System.Collections.Generic.List[System.IDisposable]]::new()
-    $verifiedProviderFiles = [System.Collections.Generic.List[object]]::new()
-    try {
-        $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, $resolvedProviderRoot, $true))
-        foreach ($path in @($managed.Values) + @($native)) {
-            $filePath = [string]$path
-            $guards.Add([Sisqual.Runtime.CatalogPathNative]::GuardPackageMember($resolvedPackageRoot, $filePath, $false))
-            $entry = Get-SisqualVerifiedPackageFileEntry -PackageRoot $resolvedPackageRoot -FilePath $filePath -VerifiedFiles $VerifiedFiles
-            $verifiedProviderFiles.Add((Assert-SisqualGuardedPackageFile -PackageRoot $resolvedPackageRoot -FilePath $filePath -ExpectedSha256 $entry.Sha256 -ExpectedSize $entry.Size))
-        }
-
-        $nativeHandle = [System.Runtime.InteropServices.NativeLibrary]::Load($native)
-        if ($nativeHandle -eq [IntPtr]::Zero) {
-            throw 'Failed to load the pinned native SQLite library.'
-        }
-
-        foreach ($name in $managedNames) {
-            Add-Type -Path $managed[$name] -ErrorAction Stop
-        }
-        [SQLitePCL.Batteries_V2]::Init()
-
-        $providerFile = Get-Item -LiteralPath $managed['Microsoft.Data.Sqlite.dll']
-        $providerVersion = [string]$providerFile.VersionInfo.ProductVersion
-        if (-not $providerVersion.Equals($script:ExpectedProviderVersion, [StringComparison]::Ordinal)) {
-            throw "Microsoft.Data.Sqlite version mismatch. Expected $($script:ExpectedProviderVersion), got $providerVersion."
-        }
-
-        $script:ProviderState = [pscustomobject]@{
-            PackageRoot = $resolvedPackageRoot
-            ProviderRoot = $resolvedProviderRoot
-            ProviderVersion = $script:ExpectedProviderVersion
-            NativeSqliteVersion = $script:ExpectedNativeSqliteVersion
-            NativeLibraryPath = $native
-            NativeLibraryHandle = $nativeHandle
-            AssemblyPath = $managed['Microsoft.Data.Sqlite.dll']
-            VerifiedFiles = @($verifiedProviderFiles)
-            PathGuards = @($guards)
-        }
-        return $script:ProviderState
-    }
-    catch {
-        foreach ($guard in @($guards)) {
-            try { $guard.Dispose() } catch {}
-        }
-        throw
-    }
+    return $uri + '?immutable=1'
 }
 
 function Open-SisqualRuntimeCatalog {
@@ -546,7 +65,7 @@ function Open-SisqualRuntimeCatalog {
 
     $fullPath = Resolve-SisqualCatalogPackageMember -PackageRoot $script:ProviderState.PackageRoot -Path $CatalogPath -Label 'CatalogPath' -PathType File
     $expectedName = 'catalog-{0}.db' -f $ExpectedServerCode
-    if ([System.IO.Path]::GetFileName($fullPath) -cne $expectedName) {
+    if ([IO.Path]::GetFileName($fullPath) -cne $expectedName) {
         throw "Catalog file name mismatch. Expected $expectedName."
     }
 
@@ -555,13 +74,24 @@ function Open-SisqualRuntimeCatalog {
     try {
         [void](Assert-SisqualGuardedPackageFile -PackageRoot $script:ProviderState.PackageRoot -FilePath $fullPath -ExpectedSha256 $ExpectedSha256 -ExpectedSize $ExpectedSize)
 
+        # Sealed catalogs are a single authenticated database image. Existing WAL/SHM/journal
+        # files are never part of that authenticated image, so reject them. The connection also
+        # uses SQLite immutable=1 so a sidecar created after this check cannot become part of the
+        # read view while the retained main-file/path guards keep the immutable assertion true.
+        Assert-SisqualCatalogSidecarsAbsent -CatalogPath $fullPath
+        $immutableUri = Get-SisqualImmutableCatalogUri -CatalogPath $fullPath
+
         $builder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
-        $builder.DataSource = $fullPath
+        $builder.DataSource = $immutableUri
         $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
         $builder.Cache = [Microsoft.Data.Sqlite.SqliteCacheMode]::Private
         $builder.Pooling = $false
         $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new($builder.ConnectionString)
         $connection.Open()
+
+        # Detect a sidecar created during the open window as a package-hygiene violation as well.
+        # immutable=1 prevents it from influencing the opened view; this second check fails closed.
+        Assert-SisqualCatalogSidecarsAbsent -CatalogPath $fullPath
 
         $command = $connection.CreateCommand()
         try {
@@ -676,6 +206,7 @@ WHERE meta_id = $metaId;
             Metadata = $metadata
             NativeSqliteVersion = $nativeVersion
             QueryOnly = $true
+            Immutable = $true
             OpenedAtUtc = [datetime]::UtcNow
             VerifiedSha256 = $ExpectedSha256
             VerifiedSize = $ExpectedSize
@@ -691,40 +222,3 @@ WHERE meta_id = $metaId;
         throw
     }
 }
-
-function Close-SisqualRuntimeCatalog {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        $Session
-    )
-
-    $sessionProperty = $Session.PSObject.Properties['SessionId']
-    if ($null -eq $sessionProperty -or [string]::IsNullOrWhiteSpace([string]$sessionProperty.Value)) {
-        throw 'Catalog session does not contain a valid SessionId.'
-    }
-
-    $sessionId = [string]$sessionProperty.Value
-    if (-not $script:CatalogSessions.ContainsKey($sessionId)) {
-        return
-    }
-
-    $resource = $script:CatalogSessions[$sessionId]
-    try {
-        if ($null -ne $resource.Connection) {
-            $resource.Connection.Dispose()
-        }
-    }
-    finally {
-        try {
-            if ($null -ne $resource.PathGuard) {
-                $resource.PathGuard.Dispose()
-            }
-        }
-        finally {
-            [void]$script:CatalogSessions.Remove($sessionId)
-        }
-    }
-}
-
-Export-ModuleMember -Function Get-SisqualRuntimeSqliteDefaults, Initialize-SisqualRuntimeSqliteProvider, Open-SisqualRuntimeCatalog, Close-SisqualRuntimeCatalog
