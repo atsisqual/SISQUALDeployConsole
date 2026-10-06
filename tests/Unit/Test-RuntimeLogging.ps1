@@ -72,6 +72,10 @@ try {
     Remove-Item -LiteralPath $junctionPath -Force
     Test-Check 'junction target was not written by rejected initialization' (-not (Test-Path -LiteralPath (Join-Path $junctionTarget 'console')))
 
+    $nestedRoot = Join-Path $tempBase 'guarded-create\one\two\console'
+    $nestedState = Initialize-SisqualRuntimeLog -LogRoot $nestedRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'NestedLog'
+    Test-Check 'guarded initialization creates nested missing directories' ((Test-Path -LiteralPath $nestedRoot -PathType Container) -and $nestedState.LogRoot -ceq [IO.Path]::GetFullPath($nestedRoot))
+
     $state = Initialize-SisqualRuntimeLog -LogRoot $tempRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'TestLog'
     Test-Check 'initialize creates configured directory' (Test-Path -LiteralPath $tempRoot -PathType Container)
     Test-Check 'initialize returns canonical approved root' ($state.ApprovedRoot -ceq [System.IO.Path]::GetFullPath($tempBase))
@@ -181,6 +185,19 @@ try {
     Test-Check 'daily log symbolic-link target was not appended' ([IO.File]::ReadAllText($outsideFile) -ceq 'outside')
     Remove-Item -LiteralPath $dailyLinkPath -Force
 
+    $hardLinkRoot = Join-Path $tempBase 'hardlink'
+    Initialize-SisqualRuntimeLog -LogRoot $hardLinkRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'HardLog' | Out-Null
+    $hardTimestamp = [datetime]::UtcNow
+    $dailyHardPath = Join-Path $hardLinkRoot ('HardLog-' + $hardTimestamp.ToString('yyyy-MM-dd') + '.log')
+    $outsideHardFile = Join-Path $junctionTarget 'outside-hard.log'
+    [IO.File]::WriteAllText($outsideHardFile, 'outside-hard')
+    New-Item -ItemType HardLink -Path $dailyHardPath -Target $outsideHardFile -Force | Out-Null
+    Test-Throws 'write rejects an existing daily log file hard link' {
+        Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.HARDLINK' -Message 'safe' -TimestampUtc $hardTimestamp | Out-Null
+    }
+    Test-Check 'daily log hard-link target was not appended' ([IO.File]::ReadAllText($outsideHardFile) -ceq 'outside-hard')
+    Remove-Item -LiteralPath $dailyHardPath -Force
+
     $retentionLinkRoot = Join-Path $tempBase 'retention-link'
     Initialize-SisqualRuntimeLog -LogRoot $retentionLinkRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'RetentionLog' | Out-Null
     $retentionOutsideFile = Join-Path $junctionTarget 'retention-outside.log'
@@ -192,6 +209,18 @@ try {
     }
     Test-Check 'retention symbolic-link target was not deleted or modified' ((Test-Path -LiteralPath $retentionOutsideFile) -and [IO.File]::ReadAllText($retentionOutsideFile) -ceq 'preserve')
     Remove-Item -LiteralPath $staleLinkPath -Force
+
+    $retentionHardRoot = Join-Path $tempBase 'retention-hardlink'
+    Initialize-SisqualRuntimeLog -LogRoot $retentionHardRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'HardRetention' | Out-Null
+    $retentionHardOutside = Join-Path $junctionTarget 'retention-hard-outside.log'
+    [IO.File]::WriteAllText($retentionHardOutside, 'preserve-hard')
+    $staleHardPath = Join-Path $retentionHardRoot 'HardRetention-2026-10-01.log'
+    New-Item -ItemType HardLink -Path $staleHardPath -Target $retentionHardOutside -Force | Out-Null
+    Test-Throws 'retention rejects a stale hard-linked log file' {
+        Invoke-SisqualRuntimeLogRetention -ReferenceUtc $reference | Out-Null
+    }
+    Test-Check 'retention hard-link target was not deleted or modified' ((Test-Path -LiteralPath $retentionHardOutside) -and [IO.File]::ReadAllText($retentionHardOutside) -ceq 'preserve-hard')
+    Remove-Item -LiteralPath $staleHardPath -Force
 
     Test-Throws 'invalid event codes are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'bad event' -Message 'x' | Out-Null }
     Test-Throws 'unsafe property names are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.BADFIELD' -Message 'x' -Properties @{ 'bad field' = 'value' } | Out-Null }
