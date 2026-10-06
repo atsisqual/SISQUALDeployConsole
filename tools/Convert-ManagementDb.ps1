@@ -288,9 +288,20 @@ function Invoke-NewMachineConversion {
     )
     $script:C1C2Source = $Source
     $previousCutRuleVersion = $script:CutRuleVersion
-    $script:CutRuleVersion = $(if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { 2 } else { 1 })
+    $hasDirectory = $script:CarriedTables.Contains($script:LinksPageDirectoryTable)
+    $previousDirectoryClass = $null
+    if ($hasDirectory) {
+        $previousDirectoryClass = $script:CarriedTables[$script:LinksPageDirectoryTable]
+        # The legacy new-machine path treats every non-global table as a missing cut/policy
+        # surface and emits a policy-missing finding. The derived directory is expected to be
+        # empty on a new machine with no general page, so classify it as global only while the
+        # core builds this catalog; New-CatalogFile still derives and overwrites its rows.
+        $script:CarriedTables[$script:LinksPageDirectoryTable] = 'G'
+    }
+    $script:CutRuleVersion = $(if ($hasDirectory) { 2 } else { 1 })
     try { return (& $script:C1C2CoreInvokeNewMachineConversion @PSBoundParameters) }
     finally {
+        if ($hasDirectory) { $script:CarriedTables[$script:LinksPageDirectoryTable] = $previousDirectoryClass }
         $script:CutRuleVersion = $previousCutRuleVersion
         $script:C1C2Source = $null
     }
