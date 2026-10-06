@@ -119,13 +119,13 @@ function Get-ExcludedColumnList {
             foreach ($column in @($map[$table])) { $excluded.Add(('{0}.{1}' -f $table, $column)) }
         }
     }
-    return , $excluded.ToArray()
+    return $excluded.ToArray()
 }
 
 function Write-ConversionManifest {
     param([string]$Folder, [string]$Mode, [string]$BuiltAtUtc, [hashtable]$SourceInfo, [bool]$UseCodeCollation, $Entries, [hashtable]$Extra = @{})
     $manifest = [ordered]@{
-        contractVersion = '0.2-proposed'
+        contractVersion = '0.1-proposed'
         tool = 'Convert-ManagementDb'
         toolVersion = $script:ToolVersion
         mode = $Mode
