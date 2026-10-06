@@ -26,7 +26,7 @@ function New-Column {
     param([string]$Name, [string]$Type, [int]$Length = 0, [bool]$Nullable = $false)
     return [pscustomobject]@{ Name = $Name; Type = $Type; Length = $Length; Precision = 0; Scale = 0; Identity = $false; Nullable = $Nullable }
 }
-function New-List { return [System.Collections.Generic.List[object]]::new() }
+function New-List { return ,([System.Collections.Generic.List[object]]::new()) }
 
 # Narrow fixture: two source tables plus the derived C1/C2 table. This keeps the test focused
 # while still exercising catalog writing, manifest counts and the independent verifier overlay.
