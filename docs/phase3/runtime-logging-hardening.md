@@ -1,7 +1,7 @@
 # Phase 3 - Runtime logging hardening
 
 **Date:** 2026-10-06
-**Status:** [CONFIRMED] technical hardening validated on Windows Server 2022/2025; final repository-wide tests and fresh Codex review remain [PENDING].
+**Status:** [CONFIRMED] technical hardening validated on Windows Server 2022/2025; fresh Codex review remains [PENDING].
 
 ## Reason for this follow-up
 
@@ -79,7 +79,7 @@ The 47 checks include the hard-link append/retention cases and guarded nested-di
 - ASCII/LF PASS;
 - secret scan PASS.
 
-[PENDING] repository-wide `tools-tests` run `37428570421` is still completing.
+[CONFIRMED] repository-wide `tools-tests` run `37428570421` (#66) also completed SUCCESS on the same functional commit.
 
 [PENDING] fresh Codex security review of the final corrected head. Earlier findings remain preserved as history but are superseded by the current implementation where their lines are outdated.
 
