@@ -33,11 +33,11 @@ The cancelled jobs were re-requested without changing the spike commit. They aga
 
 Before this run could become accepted evidence, review also found a defect in the NuGet hash collection: a PackageReference restore does not guarantee that `.nupkg` archives remain in the global package directory, so `nupkgSha256` could be null.
 
-[CONFIRMED] The evidence defect was corrected in commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3`. The corrected workflow reads exact package IDs and versions from `packages.lock.json`, downloads every resolved archive explicitly, records SHA-256 and SHA-512, and verifies SHA-512 against the lock-file `contentHash`.
+[CONFIRMED] Commit `a1b8e28bc11d518c22e3aaf34a581f5e346a9ba3` changed the hash collection: it reads exact package IDs and versions from `packages.lock.json`, downloads every resolved archive explicitly and records SHA-256 and SHA-512. [CONFIRMED] That commit also verified the raw archive SHA-512 against the lock-file `contentHash`, which is not a valid comparison (see the README of run `37372704803`). That revision is therefore superseded and was never accepted.
 
 ## Superseding run
 
-[CONFIRMED] Run `37372704803` is the first run eligible for acceptance because it uses the corrected dependency-evidence workflow.
+[CONFIRMED] Run `37372704803` used the `a1b8e28` workflow and was not accepted (see its README). The first fully accepted run is `37392036026`: `docs/phase1/evidence/phase1b-sqlite-provider-37392036026/README.md`.
 
 See `docs/phase1/evidence/phase1b-sqlite-provider-37372704803/README.md`.
 
@@ -49,7 +49,7 @@ Even if this historical run were re-run later, its workflow revision does not sa
 2. pass original-folder and copied-folder provider probes;
 3. preserve the exact resolved NuGet graph;
 4. record a non-empty SHA-256 for every resolved package archive;
-5. verify each archive SHA-512 against the lock-file `contentHash`;
+5. validate `packages.lock.json` with `dotnet restore --locked-mode` on an empty package cache (the raw archive SHA-512 and the lock-file `contentHash` have different semantics: both are recorded, never compared);
 6. record the native SQLite version loaded by the provider.
 
 A cancellation before runner assignment is an infrastructure event only and does not change the candidate status.

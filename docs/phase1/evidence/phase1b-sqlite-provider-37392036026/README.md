@@ -69,8 +69,23 @@ The nine gates are:
 
 [CONFIRMED] The lock file and generated package graph are byte-identical across both artifacts:
 
-- `packages.lock.json`: 2206 bytes; SHA-256 `F0C6BAD7D4581F55ED79E0182429E89BE888E62AC6684E88D0D05095278948EA`
-- `nuget-graph.json`: 3567 bytes; SHA-256 `2F78A1CA873E2EA70901F4C67420847420C7B9CA7AF7CBB3B24C0F56DCE1A3C7`
+- `packages.lock.json`, artifact bytes as produced on Windows (before the line-ending normalization of Git): 2206 bytes; SHA-256 `F0C6BAD7D4581F55ED79E0182429E89BE888E62AC6684E88D0D05095278948EA`
+- `packages.lock.json`, bytes committed in Git (LF): 2148 bytes; SHA-256 `C380C7EC969189221C8B521B5218F7426B1ED03F519F6FCBCDAF3D0ABA35CAD4`
+- `nuget-graph.json`, artifact bytes as produced on Windows (before the line-ending normalization of Git): 3567 bytes; SHA-256 `2F78A1CA873E2EA70901F4C67420847420C7B9CA7AF7CBB3B24C0F56DCE1A3C7`
+- `nuget-graph.json`, bytes committed in Git (LF): 3505 bytes; SHA-256 `D0035D1A2640EB72C56A4038A60C536088D2367154D78A517C70BB3CFEF27F65`
+
+[CONFIRMED] The artifact bytes and the committed bytes differ only by line endings (Git stores these files with LF). To verify the accepted evidence from Git use the committed hashes; the artifact hashes apply to the files inside the workflow artifacts.
+
+Committed bytes of every JSON file of this directory:
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `report-windows-2022-original.json` | 3175 | `9A59252C12A207C2039220695CC3CAE118A6E92D4E89D8C516D4B664C38EFCD4` |
+| `report-windows-2022-copy.json` | 3180 | `F80624405EAB368A586421634FC81D2D7D445A8862713EC4791357CA6CE7276F` |
+| `report-windows-2025-original.json` | 3175 | `2E3503E148A6CE4671227BAA260D7AED99EA638D234A68A6FAF3944C6890DA58` |
+| `report-windows-2025-copy.json` | 3180 | `0508D783B8FBB51C4423AD54E4622748F457C118C9E103BF5C56A711046FF390` |
+| `packages.lock.json` | 2148 | `C380C7EC969189221C8B521B5218F7426B1ED03F519F6FCBCDAF3D0ABA35CAD4` |
+| `nuget-graph.json` | 3505 | `D0035D1A2640EB72C56A4038A60C536088D2367154D78A517C70BB3CFEF27F65` |
 
 Exact resolved package archives:
 

@@ -103,8 +103,12 @@ The probe uses `Mode=ReadOnly;Cache=Private`.
 
 [CONFIRMED] The lock and generated graph were byte-identical on both systems:
 
-- `packages.lock.json`: SHA-256 `F0C6BAD7D4581F55ED79E0182429E89BE888E62AC6684E88D0D05095278948EA`;
-- `nuget-graph.json`: SHA-256 `2F78A1CA873E2EA70901F4C67420847420C7B9CA7AF7CBB3B24C0F56DCE1A3C7`.
+- `packages.lock.json`, artifact bytes as produced on Windows (before the line-ending normalization of Git): 2206 bytes; SHA-256 `F0C6BAD7D4581F55ED79E0182429E89BE888E62AC6684E88D0D05095278948EA`
+- `packages.lock.json`, bytes committed in Git (LF): 2148 bytes; SHA-256 `C380C7EC969189221C8B521B5218F7426B1ED03F519F6FCBCDAF3D0ABA35CAD4`
+- `nuget-graph.json`, artifact bytes as produced on Windows (before the line-ending normalization of Git): 3567 bytes; SHA-256 `2F78A1CA873E2EA70901F4C67420847420C7B9CA7AF7CBB3B24C0F56DCE1A3C7`
+- `nuget-graph.json`, bytes committed in Git (LF): 3505 bytes; SHA-256 `D0035D1A2640EB72C56A4038A60C536088D2367154D78A517C70BB3CFEF27F65`
+
+The two kinds of hash differ only by line endings; the committed hashes are the ones to use when verifying from Git (the full table is in the evidence README).
 
 Resolved packages:
 
