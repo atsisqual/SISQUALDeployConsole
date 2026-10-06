@@ -3,7 +3,12 @@ name: phase3-runtime-logging
 on:
   push:
     branches:
-      - feat/phase3-runtime-logging
+      - main
+    paths:
+      - 'runtime/Sisqual.Runtime.Logging.psm1'
+      - 'tests/Unit/Test-RuntimeLogging.ps1'
+      - '.github/workflows/phase3-runtime-logging.yml'
+  pull_request:
     paths:
       - 'runtime/Sisqual.Runtime.Logging.psm1'
       - 'tests/Unit/Test-RuntimeLogging.ps1'
@@ -54,6 +59,16 @@ jobs:
       - name: Run runtime logging unit tests
         shell: pwsh
         run: |
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging.ps1
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Re-run retention tests west of UTC
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-TimeZone -Id 'SA Eastern Standard Time'
           & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging.ps1
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
