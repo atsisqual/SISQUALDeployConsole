@@ -96,7 +96,13 @@ INSERT INTO sample VALUES('A','verified-main');
 finally {
     if ($null -ne $session) { Close-SisqualRuntimeCatalog -Session $session }
     Remove-Module Sisqual.Runtime.Catalog -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
+
+    # The native provider is intentionally retained for the PowerShell process lifetime. On
+    # Windows that keeps e_sqlite3.dll locked until process exit, so disposable provider cleanup
+    # is best-effort and must not turn a successful security test into a false negative.
+    if (Test-Path -LiteralPath $tempRoot) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
