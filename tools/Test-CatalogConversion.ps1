@@ -95,7 +95,11 @@ WHERE a.ActionCode IS NOT NULL
 ORDER BY a.AdapterCode;
 "@
         $adapterMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -Db $db -Sql $adapterSql)
-        $adapterDetail = if ($adapterMissing.Count -eq 0) { '' } else { (($adapterMissing | Select-Object -First 5) -join ', ') + $(if ($adapterMissing.Count -gt 5) { ' ...' } else { '' })) }
+        $adapterDetail = ''
+        if ($adapterMissing.Count -gt 0) {
+            $adapterDetail = (($adapterMissing | Select-Object -First 5) -join ', ')
+            if ($adapterMissing.Count -gt 5) { $adapterDetail += ' ...' }
+        }
         Add-Check 'action-xref' ('{0}: every non-empty adapter ActionCode resolves exactly to ops_Action' -f $code) ($adapterMissing.Count -eq 0) $adapterDetail
 
         $engineSql = @"
@@ -109,7 +113,11 @@ WHERE a.EngineCode IS NOT NULL
 ORDER BY a.ActionCode;
 "@
         $engineMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -Db $db -Sql $engineSql)
-        $engineDetail = if ($engineMissing.Count -eq 0) { '' } else { (($engineMissing | Select-Object -First 5) -join ', ') + $(if ($engineMissing.Count -gt 5) { ' ...' } else { '' })) }
+        $engineDetail = ''
+        if ($engineMissing.Count -gt 0) {
+            $engineDetail = (($engineMissing | Select-Object -First 5) -join ', ')
+            if ($engineMissing.Count -gt 5) { $engineDetail += ' ...' }
+        }
         Add-Check 'action-xref' ('{0}: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine' -f $code) ($engineMissing.Count -eq 0) $engineDetail
     }
 }
