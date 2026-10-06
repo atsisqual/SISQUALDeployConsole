@@ -120,6 +120,14 @@ jobs:
           pwsh -NoProfile -File tests/Integration/Test-SqlServerPath.ps1 -SqlClientPath (Join-Path $env:RUNNER_TEMP 'sqlclient') -Sqlite3Path $env:SQLITE3_PATH *>&1 | Tee-Object -FilePath $log
           exit $LASTEXITCODE
 
+      - name: Integration test of the credential import on LocalDB
+        id: credential-import
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'credential-import.log'
+          pwsh -NoProfile -File tests/Integration/Test-CredentialImportSql.ps1 -SqlClientPath (Join-Path $env:RUNNER_TEMP 'sqlclient') *>&1 | Tee-Object -FilePath $log
+          exit $LASTEXITCODE
+
       - name: Publish the logs to a temporary results branch
         if: always()
         shell: pwsh
@@ -137,6 +145,7 @@ jobs:
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           $utf8 = [Text.UTF8Encoding]::new($false)
           [IO.File]::WriteAllText((Join-Path $stage 'integration.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'integration.log') 'no log was produced'), $utf8)
+          [IO.File]::WriteAllText((Join-Path $stage 'credential-import.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'credential-import.log') 'no credential import log was produced'), $utf8)
           [IO.File]::WriteAllText((Join-Path $stage 'unit.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'unit.log') 'no unit log was produced'), $utf8)
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -147,6 +156,7 @@ jobs:
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           Copy-Item -LiteralPath (Join-Path $stage 'integration.log') -Destination (Join-Path $dest 'integration.log')
           Copy-Item -LiteralPath (Join-Path $stage 'unit.log') -Destination (Join-Path $dest 'unit.log')
+          Copy-Item -LiteralPath (Join-Path $stage 'credential-import.log') -Destination (Join-Path $dest 'credential-import.log')
           git add -A
           git commit -q -m ('results: logs of run ' + $env:GITHUB_RUN_ID)
           git push origin $branch
