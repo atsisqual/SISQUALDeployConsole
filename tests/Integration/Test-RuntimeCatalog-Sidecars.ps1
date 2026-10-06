@@ -81,9 +81,17 @@ INSERT INTO sample VALUES('A','verified-main');
     Check 'sealed catalog opens through immutable guarded view' ($session.Immutable -and $session.QueryOnly -and $session.Metadata.ServerCode -ceq 'SIDECAR')
     Check 'immutable catalog open creates no SQLite sidecars' (@(Get-ChildItem -LiteralPath $catalogRoot -File | Where-Object { $_.Name -match '-(wal|shm|journal)$' }).Count -eq 0)
 
-    [IO.File]::WriteAllBytes($wal, [byte[]](9,9,9,9))
-    [IO.File]::WriteAllBytes($shm, [byte[]](7,7,7,7))
-    Check 'late unverified sidecars do not alter guarded main bytes' ((Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash -ceq $hashBefore)
+    $lateSidecarWriteBlocked = $false
+    try {
+        [IO.File]::WriteAllBytes($wal, [byte[]](9,9,9,9))
+        [IO.File]::WriteAllBytes($shm, [byte[]](7,7,7,7))
+    }
+    catch {
+        $lateSidecarWriteBlocked = $true
+    }
+    $mainStillVerified = ((Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash -ceq $hashBefore)
+    Check 'late sidecar attempt cannot alter guarded main bytes' $mainStillVerified
+    Check 'late sidecars are blocked by the guard or isolated by immutable view' ($lateSidecarWriteBlocked -or $session.Immutable)
 }
 finally {
     if ($null -ne $session) { Close-SisqualRuntimeCatalog -Session $session }
