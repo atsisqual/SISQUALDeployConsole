@@ -45,6 +45,7 @@ namespace Sisqual.Runtime
         private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
         private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
         private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+        private const int ERROR_ALREADY_EXISTS = 183;
         private const int FileDispositionInfo = 4;
         private const int FileAttributeTagInfo = 9;
 
@@ -53,6 +54,28 @@ namespace Sisqual.Runtime
         {
             public uint FileAttributes;
             public uint ReparseTag;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME
+        {
+            public uint LowDateTime;
+            public uint HighDateTime;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint FileAttributes;
+            public FILETIME CreationTime;
+            public FILETIME LastAccessTime;
+            public FILETIME LastWriteTime;
+            public uint VolumeSerialNumber;
+            public uint FileSizeHigh;
+            public uint FileSizeLow;
+            public uint NumberOfLinks;
+            public uint FileIndexHigh;
+            public uint FileIndexLow;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -73,11 +96,21 @@ namespace Sisqual.Runtime
             IntPtr hTemplateFile);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateDirectoryW(string lpPathName, IntPtr lpSecurityAttributes);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetFinalPathNameByHandleW(
             SafeFileHandle hFile,
             StringBuilder lpszFilePath,
             uint cchFilePath,
             uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(
+            SafeFileHandle hFile,
+            out BY_HANDLE_FILE_INFORMATION lpFileInformation);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool GetFileInformationByHandleEx(
@@ -139,6 +172,16 @@ namespace Sisqual.Runtime
                 throw new IOException(label + " resolved outside its validated path. Expected " + expected + ", got " + actual + ".");
         }
 
+        private static void ValidateSingleLinkFile(SafeFileHandle handle, string expectedPath, string label)
+        {
+            ValidateHandle(handle, expectedPath, label);
+            BY_HANDLE_FILE_INFORMATION info;
+            if (!GetFileInformationByHandle(handle, out info))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (info.NumberOfLinks != 1)
+                throw new IOException(label + " must have exactly one hard link; found " + info.NumberOfLinks + ": " + expectedPath);
+        }
+
         private static SafeFileHandle OpenDirectory(string path)
         {
             var handle = CreateFileW(
@@ -162,7 +205,7 @@ namespace Sisqual.Runtime
             }
         }
 
-        public static LogDirectoryGuard GuardDirectoryTree(string path)
+        private static Stack<string> BuildDirectoryStack(string path)
         {
             string full = Path.GetFullPath(path);
             var stack = new Stack<string>();
@@ -172,7 +215,12 @@ namespace Sisqual.Runtime
                 stack.Push(current.FullName);
                 current = current.Parent;
             }
+            return stack;
+        }
 
+        public static LogDirectoryGuard GuardDirectoryTree(string path)
+        {
+            var stack = BuildDirectoryStack(path);
             var handles = new List<SafeFileHandle>();
             try
             {
@@ -191,12 +239,38 @@ namespace Sisqual.Runtime
             }
         }
 
+        public static LogDirectoryGuard EnsureDirectoryTree(string path)
+        {
+            var stack = BuildDirectoryStack(path);
+            var handles = new List<SafeFileHandle>();
+            try
+            {
+                while (stack.Count > 0)
+                {
+                    string directory = stack.Pop();
+                    if (!CreateDirectoryW(directory, IntPtr.Zero))
+                    {
+                        int error = Marshal.GetLastWin32Error();
+                        if (error != ERROR_ALREADY_EXISTS)
+                            throw new Win32Exception(error, "Cannot create guarded log directory: " + directory);
+                    }
+                    handles.Add(OpenDirectory(directory));
+                }
+                return new LogDirectoryGuard(handles);
+            }
+            catch
+            {
+                for (int i = handles.Count - 1; i >= 0; i--) handles[i].Dispose();
+                throw;
+            }
+        }
+
         public static void AppendUtf8(string path, string text)
         {
             var handle = CreateFileW(
                 path,
                 FILE_APPEND_DATA | FILE_READ_ATTRIBUTES,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                0,
                 IntPtr.Zero,
                 OPEN_ALWAYS,
                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -204,12 +278,13 @@ namespace Sisqual.Runtime
             if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open log file: " + path);
             using (handle)
             {
-                ValidateHandle(handle, path, "Log file");
+                ValidateSingleLinkFile(handle, path, "Log file");
                 byte[] bytes = new UTF8Encoding(false).GetBytes(text);
                 uint written;
                 if (!WriteFile(handle, bytes, (uint)bytes.Length, out written, IntPtr.Zero))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot append log file: " + path);
                 if (written != bytes.Length) throw new IOException("Incomplete log write: " + path);
+                ValidateSingleLinkFile(handle, path, "Log file");
             }
         }
 
@@ -218,7 +293,7 @@ namespace Sisqual.Runtime
             var handle = CreateFileW(
                 path,
                 DELETE | FILE_READ_ATTRIBUTES,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                0,
                 IntPtr.Zero,
                 OPEN_EXISTING,
                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -226,7 +301,7 @@ namespace Sisqual.Runtime
             if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open log file for deletion: " + path);
             using (handle)
             {
-                ValidateHandle(handle, path, "Retention file");
+                ValidateSingleLinkFile(handle, path, "Retention file");
                 var disposition = new FILE_DISPOSITION_INFO { DeleteFile = true };
                 if (!SetFileInformationByHandle(handle, FileDispositionInfo, ref disposition, (uint)Marshal.SizeOf<FILE_DISPOSITION_INFO>()))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot delete retained log file: " + path);
@@ -423,10 +498,20 @@ function Initialize-SisqualRuntimeLog {
     )
 
     $resolved = Resolve-SisqualRuntimeLogRoot -LogRoot $LogRoot -ApprovedRoot $ApprovedRoot
-    [System.IO.Directory]::CreateDirectory($resolved.ApprovedRoot) | Out-Null
-    Assert-SisqualNoReparsePoint -Path $resolved.ApprovedRoot -Label 'ApprovedRoot'
-    [System.IO.Directory]::CreateDirectory($resolved.LogRoot) | Out-Null
-    Assert-SisqualNoReparsePoint -Path $resolved.LogRoot -Label 'LogRoot'
+    $approvedGuard = [Sisqual.Runtime.LogNative]::EnsureDirectoryTree($resolved.ApprovedRoot)
+    try {
+        $logGuard = [Sisqual.Runtime.LogNative]::EnsureDirectoryTree($resolved.LogRoot)
+        try {
+            Assert-SisqualNoReparsePoint -Path $resolved.ApprovedRoot -Label 'ApprovedRoot'
+            Assert-SisqualNoReparsePoint -Path $resolved.LogRoot -Label 'LogRoot'
+        }
+        finally {
+            $logGuard.Dispose()
+        }
+    }
+    finally {
+        $approvedGuard.Dispose()
+    }
 
     $script:LogState = [pscustomobject]@{
         ApprovedRoot = $resolved.ApprovedRoot
