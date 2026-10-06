@@ -94,9 +94,12 @@ try {
     $passwordKey = 'Pass' + 'word'
     $passwordValue = 'Top' + 'Secret'
     $jsonMarker = 'Json' + 'Marker'
+    $escapedJsonMarker = 'Escaped' + 'Tail'
     $basicMarker = 'dXNl' + 'cjpwYXNz'
+    $foldedMarker = 'Rm9s' + 'ZGVkQ3JlZA=='
     $jsonPayload = '{"' + $passwordKey + '":"' + $jsonMarker + '"}'
-    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker`n$jsonPayload"
+    $escapedJsonPayload = '{"' + $passwordKey + '":"prefix\"' + $escapedJsonMarker + '"}'
+    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload"
     $properties = [ordered]@{
         Instance = 'DEMOES'
         Note = 'authorization=BasicValue'
@@ -114,8 +117,10 @@ try {
     Test-Check 'write redacts bearer credentials' ($text -match 'Bearer \[REDACTED\]')
     $authorizationRedactionPattern = '(?i)authorization\s*(?::|=)\s*\[REDACTED\]'
     Test-Check 'write redacts complete Basic authorization header value' (($text -match $authorizationRedactionPattern) -and ($text -notmatch [regex]::Escape($basicMarker)))
+    Test-Check 'write consumes folded authorization continuation credentials' ($text -notmatch [regex]::Escape($foldedMarker))
     Test-Check 'write redacts quoted sensitive JSON keys' ($text -match ([regex]::Escape($passwordKey) + '=\[REDACTED\]'))
-    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($jsonMarker)
+    Test-Check 'write consumes escaped quotes inside sensitive JSON values' ($text -notmatch [regex]::Escape($escapedJsonMarker))
+    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($foldedMarker) + '|' + [regex]::Escape($jsonMarker) + '|' + [regex]::Escape($escapedJsonMarker)
     Test-Check 'write does not contain supplied secret markers' ($text -notmatch $forbidden)
     Test-Check 'write normalizes embedded newlines to one physical record' (([IO.File]::ReadAllLines($logPath)).Count -eq 1)
 
@@ -128,6 +133,16 @@ try {
     $nextPath = Write-SisqualRuntimeLog -Level WARN -EventCode 'RUNTIME.NEXTDAY' -Message 'next' -TimestampUtc $nextDay
     Test-Check 'daily rotation chooses a new file by UTC day' ([IO.Path]::GetFileName($nextPath) -ceq 'TestLog-2026-10-07.log')
     Test-Check 'daily rollover re-runs retention' (-not (Test-Path -LiteralPath $boundaryPath))
+
+    $swapRoot = Join-Path $tempBase 'swap'
+    Initialize-SisqualRuntimeLog -LogRoot $swapRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'SwapLog' | Out-Null
+    Remove-Item -LiteralPath $swapRoot -Recurse -Force
+    New-Item -ItemType Junction -Path $swapRoot -Target $junctionTarget -Force | Out-Null
+    Test-Throws 'write rejects a log root replaced by a junction after initialization' {
+        Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.REPARSE' -Message 'safe' -TimestampUtc $reference | Out-Null
+    }
+    Remove-Item -LiteralPath $swapRoot -Force
+    Test-Check 'post-initialization junction target was not written' (@(Get-ChildItem -LiteralPath $junctionTarget -File -ErrorAction SilentlyContinue).Count -eq 0)
 
     Test-Throws 'invalid event codes are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'bad event' -Message 'x' | Out-Null }
     Test-Throws 'unsafe property names are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.BADFIELD' -Message 'x' -Properties @{ 'bad field' = 'value' } | Out-Null }
