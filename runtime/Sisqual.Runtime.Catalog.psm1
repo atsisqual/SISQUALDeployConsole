@@ -84,7 +84,7 @@ function Resolve-SisqualCatalogPackageMember {
             Test-Path -LiteralPath $candidate -PathType Container
         }
         if (-not $ok) {
-            throw "$Label does not exist as a $PathType: $candidate"
+            throw "$Label does not exist as a ${PathType}: $candidate"
         }
     }
 
