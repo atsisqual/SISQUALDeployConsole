@@ -55,7 +55,9 @@ $ExtraSql
 
 function Invoke-C8Only {
     param([string]$Db)
-    $script:Checks.Clear()
+    # Add-Check appends to a Generic.List. Re-create it for every mutation case instead of
+    # reusing output that PowerShell may have materialized as a fixed-size object array.
+    $script:Checks = [System.Collections.Generic.List[object]]::new()
     $folder = Split-Path -Parent $Db
     $entry = [pscustomobject]@{ serverCode = 'TEST'; file = (Split-Path -Leaf $Db) }
     Add-C8ActionCrossReferenceChecks -Folder $folder -Sqlite3 $sqlite3 -Entries @($entry)
@@ -101,7 +103,7 @@ UPDATE ops_Action SET EngineCode='windows_services' WHERE ActionCode='WINDOWS_SE
 
     $missingTable = Join-Path $work 'missing-table.db'
     [void](Invoke-Sqlite3 -Exe $sqlite3 -Arguments @($missingTable, 'CREATE TABLE ops_Action (ActionCode TEXT PRIMARY KEY, EngineCode TEXT NULL) STRICT;'))
-    $script:Checks.Clear()
+    $script:Checks = [System.Collections.Generic.List[object]]::new()
     $entry = [pscustomobject]@{ serverCode = 'TEST'; file = 'missing-table.db' }
     Add-C8ActionCrossReferenceChecks -Folder $work -Sqlite3 $sqlite3 -Entries @($entry)
     Assert-That 'narrow fixtures without all three C8 tables are not misclassified' ($script:Checks.Count -eq 0)
