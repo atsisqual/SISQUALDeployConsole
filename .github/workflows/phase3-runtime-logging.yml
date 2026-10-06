@@ -3,10 +3,19 @@ name: phase3-runtime-logging
 on:
   push:
     branches:
-      - feat/phase3-runtime-logging
+      - main
     paths:
       - 'runtime/Sisqual.Runtime.Logging.psm1'
+      - 'runtime/Sisqual.Runtime.Logging.Core.ps1'
       - 'tests/Unit/Test-RuntimeLogging.ps1'
+      - 'tests/Unit/Test-RuntimeLogging-MultilineAssignment.ps1'
+      - '.github/workflows/phase3-runtime-logging.yml'
+  pull_request:
+    paths:
+      - 'runtime/Sisqual.Runtime.Logging.psm1'
+      - 'runtime/Sisqual.Runtime.Logging.Core.ps1'
+      - 'tests/Unit/Test-RuntimeLogging.ps1'
+      - 'tests/Unit/Test-RuntimeLogging-MultilineAssignment.ps1'
       - '.github/workflows/phase3-runtime-logging.yml'
   workflow_dispatch:
 
@@ -55,6 +64,16 @@ jobs:
         shell: pwsh
         run: |
           & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging.ps1
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging-MultilineAssignment.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Re-run retention tests west of UTC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-TimeZone -Id 'SA Eastern Standard Time'
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -File .\tests\Unit\Test-RuntimeLogging-MultilineAssignment.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
