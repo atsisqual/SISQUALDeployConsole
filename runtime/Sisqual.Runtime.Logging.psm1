@@ -38,7 +38,6 @@ namespace Sisqual.Runtime
         private const uint FILE_APPEND_DATA = 0x00000004;
         private const uint DELETE = 0x00010000;
         private const uint FILE_SHARE_READ = 0x00000001;
-        private const uint FILE_SHARE_WRITE = 0x00000002;
         private const uint OPEN_EXISTING = 3;
         private const uint OPEN_ALWAYS = 4;
         private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
@@ -187,7 +186,7 @@ namespace Sisqual.Runtime
             var handle = CreateFileW(
                 path,
                 FILE_READ_ATTRIBUTES,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_SHARE_READ,
                 IntPtr.Zero,
                 OPEN_EXISTING,
                 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -327,7 +326,7 @@ function Protect-SisqualRuntimeLogText {
     $text = [regex]::Replace($text, $headerPattern, '$1: [REDACTED]')
     $text = [regex]::Replace($text, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 [REDACTED]')
 
-    $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
+    $sensitiveNamePattern = 'password|passwd|pwd|secret|token|credential|private.?key|client.?secret|authorization|cookie|api.?key|connection.?string'
 
     # Decode JSON property-name escapes before deciding whether the field is sensitive. Once a
     # sensitive serialized key is found, conservatively redact the remainder of the field so
