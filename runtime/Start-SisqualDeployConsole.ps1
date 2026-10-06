@@ -12,7 +12,7 @@ $packageRoot = Split-Path -Parent $runtimeRoot
 $bootstrapLibrary = Join-Path $runtimeRoot 'RuntimeBootstrap.ps1'
 
 if (-not (Test-Path -LiteralPath $bootstrapLibrary -PathType Leaf)) {
-    Write-Error 'SISQUALDeployConsole runtime bootstrap library is missing.'
+    [Console]::Error.WriteLine('SISQUALDeployConsole runtime bootstrap library is missing.')
     exit 13
 }
 
@@ -20,7 +20,7 @@ if (-not (Test-Path -LiteralPath $bootstrapLibrary -PathType Leaf)) {
 $defaults = Get-SisqualRuntimeDefaults
 $hostResult = Test-SisqualRuntimeHost -ExpectedVersion $defaults.ExpectedPowerShellVersion
 if (-not $hostResult.Success) {
-    Write-Error ('SISQUALDeployConsole requires portable PowerShell {0} Core x64; actual version={1}, edition={2}, x64={3}.' -f $hostResult.ExpectedVersion, $hostResult.ActualVersion, $hostResult.PSEdition, $hostResult.Is64BitProcess)
+    [Console]::Error.WriteLine(('SISQUALDeployConsole requires portable PowerShell {0} Core x64; actual version={1}, edition={2}, x64={3}.' -f $hostResult.ExpectedVersion, $hostResult.ActualVersion, $hostResult.PSEdition, $hostResult.Is64BitProcess))
     exit 10
 }
 
@@ -34,14 +34,14 @@ try {
     Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'HOST_VALID'
 }
 catch {
-    Write-Error ('SISQUALDeployConsole could not initialize its text log: {0}' -f $_.Exception.Message)
+    [Console]::Error.WriteLine(('SISQUALDeployConsole could not initialize its text log: {0}' -f $_.Exception.Message))
     exit 11
 }
 
 $manifestPath = Join-Path $packageRoot $defaults.ManifestFileName
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'MANIFEST_MISSING' -Level 'ERROR'
-    Write-Error 'SISQUALDeployConsole package manifest is missing. Startup is blocked.'
+    [Console]::Error.WriteLine('SISQUALDeployConsole package manifest is missing. Startup is blocked.')
     exit 20
 }
 
@@ -49,5 +49,5 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 # signature/trust implementation. Until that verifier is integrated, no module,
 # catalog, credential package, HTTP adapter or engine may be loaded.
 Write-SisqualBootstrapEvent -LogPath $logContext.LogPath -EventId 'INTEGRITY_VERIFIER_UNAVAILABLE' -Level 'ERROR'
-Write-Error 'SISQUALDeployConsole package integrity verifier is not integrated yet. Startup is blocked.'
+[Console]::Error.WriteLine('SISQUALDeployConsole package integrity verifier is not integrated yet. Startup is blocked.')
 exit 21
