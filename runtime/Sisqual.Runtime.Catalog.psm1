@@ -31,6 +31,7 @@ namespace Sisqual.Runtime
 
     public static class CatalogPathNative
     {
+        private const uint GENERIC_READ = 0x80000000;
         private const uint FILE_READ_ATTRIBUTES = 0x00000080;
         private const uint FILE_SHARE_READ = 0x00000001;
         private const uint FILE_SHARE_WRITE = 0x00000002;
@@ -99,10 +100,11 @@ namespace Sisqual.Runtime
         private static SafeFileHandle OpenAndValidate(string path, bool directory, string label)
         {
             uint flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL);
+            uint desiredAccess = directory ? FILE_READ_ATTRIBUTES : GENERIC_READ | FILE_READ_ATTRIBUTES;
             uint shareMode = directory ? FILE_SHARE_READ | FILE_SHARE_WRITE : FILE_SHARE_READ;
             var handle = CreateFileW(
                 path,
-                FILE_READ_ATTRIBUTES,
+                desiredAccess,
                 shareMode,
                 IntPtr.Zero,
                 OPEN_EXISTING,
@@ -258,7 +260,14 @@ function Resolve-SisqualCatalogPackageMember {
     }
     Assert-SisqualCatalogPathHasNoReparsePoint -Path $root -Label 'PackageRoot'
 
-    $candidate = if ([System.IO.Path]::IsPathRooted($Path)) {
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $prefix = $root.TrimEnd($separator, [System.IO.Path]::AltDirectorySeparatorChar) + $separator
+    $pathIsRooted = [System.IO.Path]::IsPathRooted($Path)
+    if ($pathIsRooted -and -not $Path.StartsWith($prefix, [StringComparison]::Ordinal)) {
+        throw "$Label is outside PackageRoot: $Path"
+    }
+
+    $candidate = if ($pathIsRooted) {
         [System.IO.Path]::GetFullPath($Path)
     }
     else {
@@ -275,8 +284,6 @@ function Resolve-SisqualCatalogPackageMember {
     # The configured PackageRoot spelling is the exact security boundary. This deliberately
     # rejects differently-cased aliases so per-directory NTFS case sensitivity cannot turn a
     # sibling tree into an apparently contained provider/catalog path.
-    $separator = [System.IO.Path]::DirectorySeparatorChar
-    $prefix = $root.TrimEnd($separator, [System.IO.Path]::AltDirectorySeparatorChar) + $separator
     if (-not $candidate.StartsWith($prefix, [StringComparison]::Ordinal)) {
         throw "$Label is outside PackageRoot: $candidate"
     }
