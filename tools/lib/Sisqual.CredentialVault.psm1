@@ -19,7 +19,8 @@
 
     Failures are plain codes with no detail: VAULT_FORMAT (the text is not a vault), VAULT_OPEN (wrong
     passphrase or altered file, deliberately indistinguishable), VAULT_WEAK_KDF, VAULT_EXISTS, VAULT_CHANGED,
-    VAULT_IN_REPOSITORY, VAULT_PASSPHRASE, VAULT_CLOSED, VAULT_ACL, ISSUER_EXISTS, ISSUER_MISSING.
+    VAULT_IN_REPOSITORY, VAULT_PASSPHRASE, VAULT_PASSPHRASE_INPUT, VAULT_PASSPHRASE_MISMATCH, VAULT_PATH,
+    VAULT_CLOSED, VAULT_ACL, ISSUER_EXISTS, ISSUER_MISSING.
 #>
 Set-StrictMode -Version Latest
 
@@ -377,8 +378,43 @@ function Restore-CredentialVault {
     return $info
 }
 
+
+function Get-DefaultVaultPath {
+    # SISQUAL_VAULT_PATH wins; otherwise the folder decided in ADR-0007 on Windows. Nothing is guessed elsewhere.
+    $fromEnv = [Environment]::GetEnvironmentVariable('SISQUAL_VAULT_PATH')
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if ($IsWindows) { return 'C:\SISQUALWFM\WFM.Files\SISQUALDeployManagement\credential-vault.sisqual' }
+    Stop-Vault 'VAULT_PATH'
+}
+
+function Read-VaultPassphrase {
+    # Interactive prompt, never echoed. The environment route exists only for tests and unattended runs: it needs
+    # SISQUAL_VAULT_PASSPHRASE together with the explicit opt-in SISQUAL_ALLOW_ENV_PASSPHRASE=1, and the variable
+    # is removed from this process as soon as it has been read. A redirected input never waits for a prompt.
+    param([string]$Prompt = 'Vault passphrase', [switch]$Twice)
+    $fromEnv = [Environment]::GetEnvironmentVariable('SISQUAL_VAULT_PASSPHRASE')
+    if (-not [string]::IsNullOrEmpty($fromEnv)) {
+        if ([Environment]::GetEnvironmentVariable('SISQUAL_ALLOW_ENV_PASSPHRASE') -cne '1') { Stop-Vault 'VAULT_PASSPHRASE_INPUT' }
+        $secure = ConvertTo-SecureString -String $fromEnv -AsPlainText -Force
+        [Environment]::SetEnvironmentVariable('SISQUAL_VAULT_PASSPHRASE', $null)
+        return $secure
+    }
+    if ([Console]::IsInputRedirected) { Stop-Vault 'VAULT_PASSPHRASE_INPUT' }
+    $first = Read-Host -Prompt $Prompt -AsSecureString
+    if ($Twice) {
+        $second = Read-Host -Prompt 'Repeat the passphrase' -AsSecureString
+        [byte[]]$a = Get-PassphraseBytes -Passphrase $first
+        [byte[]]$b = Get-PassphraseBytes -Passphrase $second
+        try { $same = ($a.Length -eq $b.Length) -and [System.Security.Cryptography.CryptographicOperations]::FixedTimeEquals($a, $b) }
+        finally { [Array]::Clear($a, 0, $a.Length); [Array]::Clear($b, 0, $b.Length) }
+        if (-not $same) { Stop-Vault 'VAULT_PASSPHRASE_MISMATCH' }
+    }
+    return $first
+}
+
 Export-ModuleMember -Function @(
     'New-CredentialVault', 'Open-CredentialVault', 'Save-CredentialVault', 'Close-CredentialVault',
     'New-VaultIssuerKey', 'Get-VaultIssuerInfo', 'Invoke-VaultIssuerSign',
-    'Backup-CredentialVault', 'Restore-CredentialVault'
+    'Backup-CredentialVault', 'Restore-CredentialVault',
+    'Get-DefaultVaultPath', 'Read-VaultPassphrase'
 )
