@@ -95,11 +95,13 @@ try {
     $passwordValue = 'Top' + 'Secret'
     $jsonMarker = 'Json' + 'Marker'
     $escapedJsonMarker = 'Escaped' + 'Tail'
+    $compositeJsonMarker = 'Composite' + 'Tail'
     $basicMarker = 'dXNl' + 'cjpwYXNz'
     $foldedMarker = 'Rm9s' + 'ZGVkQ3JlZA=='
     $jsonPayload = '{"' + $passwordKey + '":"' + $jsonMarker + '"}'
     $escapedJsonPayload = '{"' + $passwordKey + '":"prefix\"' + $escapedJsonMarker + '"}'
-    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload"
+    $compositeJsonPayload = '{"token":["one","' + $compositeJsonMarker + '"]}'
+    $message = "Starting token=abc123 Bearer xyz Authorization: Basic $basicMarker`n$jsonPayload`nAuthorization: Basic`r`n $foldedMarker`n$escapedJsonPayload`n$compositeJsonPayload"
     $properties = [ordered]@{
         Instance = 'DEMOES'
         Note = 'authorization=BasicValue'
@@ -120,7 +122,8 @@ try {
     Test-Check 'write consumes folded authorization continuation credentials' ($text -notmatch [regex]::Escape($foldedMarker))
     Test-Check 'write redacts quoted sensitive JSON keys' ($text -match ([regex]::Escape($passwordKey) + '=\[REDACTED\]'))
     Test-Check 'write consumes escaped quotes inside sensitive JSON values' ($text -notmatch [regex]::Escape($escapedJsonMarker))
-    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($foldedMarker) + '|' + [regex]::Escape($jsonMarker) + '|' + [regex]::Escape($escapedJsonMarker)
+    Test-Check 'write consumes complete composite sensitive JSON values' ($text -notmatch [regex]::Escape($compositeJsonMarker))
+    $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($foldedMarker) + '|' + [regex]::Escape($jsonMarker) + '|' + [regex]::Escape($escapedJsonMarker) + '|' + [regex]::Escape($compositeJsonMarker)
     Test-Check 'write does not contain supplied secret markers' ($text -notmatch $forbidden)
     Test-Check 'write normalizes embedded newlines to one physical record' (([IO.File]::ReadAllLines($logPath)).Count -eq 1)
 
@@ -128,11 +131,22 @@ try {
     $hasUtf8Bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     Test-Check 'log is UTF-8 without BOM' (-not $hasUtf8Bom)
 
-    Test-Check 'rollover fixture exists before next UTC day' (Test-Path -LiteralPath $boundaryPath)
-    $nextDay = $reference.AddDays(1)
-    $nextPath = Write-SisqualRuntimeLog -Level WARN -EventCode 'RUNTIME.NEXTDAY' -Message 'next' -TimestampUtc $nextDay
-    Test-Check 'daily rotation chooses a new file by UTC day' ([IO.Path]::GetFileName($nextPath) -ceq 'TestLog-2026-10-07.log')
-    Test-Check 'daily rollover re-runs retention' (-not (Test-Path -LiteralPath $boundaryPath))
+    $wallRoot = Join-Path $tempBase 'wallclock'
+    Initialize-SisqualRuntimeLog -LogRoot $wallRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'WallLog' | Out-Null
+    $wallNow = [datetime]::UtcNow
+    $wallKeepPath = Join-Path $wallRoot ('WallLog-' + $wallNow.AddDays(-1).ToString('yyyy-MM-dd') + '.log')
+    [IO.File]::WriteAllText($wallKeepPath, 'keep')
+    $futureTimestamp = $wallNow.AddYears(5)
+    $futurePath = Write-SisqualRuntimeLog -Level WARN -EventCode 'RUNTIME.FUTURE' -Message 'future event' -TimestampUtc $futureTimestamp
+    Test-Check 'event timestamp still controls the event log file date' ([IO.Path]::GetFileName($futurePath) -ceq ('WallLog-' + $futureTimestamp.ToString('yyyy-MM-dd') + '.log'))
+    Test-Check 'future event timestamp does not drive automatic retention' (Test-Path -LiteralPath $wallKeepPath)
+
+    $stalePath = Join-Path $wallRoot ('WallLog-' + $wallNow.AddDays(-3).ToString('yyyy-MM-dd') + '.log')
+    [IO.File]::WriteAllText($stalePath, 'stale')
+    $module = Get-Module Sisqual.Runtime.Logging
+    & $module { $script:LogState.LastRetentionUtcDate = [DateOnly]::FromDateTime([datetime]::UtcNow.AddDays(-1)) }
+    Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.ROLLOVER' -Message 'wall clock rollover' -TimestampUtc $reference | Out-Null
+    Test-Check 'wall-clock UTC rollover automatically re-runs retention' (-not (Test-Path -LiteralPath $stalePath))
 
     $swapRoot = Join-Path $tempBase 'swap'
     Initialize-SisqualRuntimeLog -LogRoot $swapRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'SwapLog' | Out-Null
@@ -143,6 +157,19 @@ try {
     }
     Remove-Item -LiteralPath $swapRoot -Force
     Test-Check 'post-initialization junction target was not written' (@(Get-ChildItem -LiteralPath $junctionTarget -File -ErrorAction SilentlyContinue).Count -eq 0)
+
+    $fileLinkRoot = Join-Path $tempBase 'filelink'
+    Initialize-SisqualRuntimeLog -LogRoot $fileLinkRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'LinkLog' | Out-Null
+    $linkTimestamp = [datetime]::UtcNow
+    $dailyLinkPath = Join-Path $fileLinkRoot ('LinkLog-' + $linkTimestamp.ToString('yyyy-MM-dd') + '.log')
+    $outsideFile = Join-Path $junctionTarget 'outside-daily.log'
+    [IO.File]::WriteAllText($outsideFile, 'outside')
+    New-Item -ItemType SymbolicLink -Path $dailyLinkPath -Target $outsideFile -Force | Out-Null
+    Test-Throws 'write rejects an existing daily log file symbolic link' {
+        Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.FILELINK' -Message 'safe' -TimestampUtc $linkTimestamp | Out-Null
+    }
+    Test-Check 'daily log symbolic-link target was not appended' ([IO.File]::ReadAllText($outsideFile) -ceq 'outside')
+    Remove-Item -LiteralPath $dailyLinkPath -Force
 
     Test-Throws 'invalid event codes are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'bad event' -Message 'x' | Out-Null }
     Test-Throws 'unsafe property names are rejected' { Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.BADFIELD' -Message 'x' -Properties @{ 'bad field' = 'value' } | Out-Null }
