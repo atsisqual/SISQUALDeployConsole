@@ -1,0 +1,112 @@
+name: phase3-runtime-bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/phase3-runtime-bootstrap
+    paths:
+      - Start.cmd
+      - runtime/**
+      - tests/Integration/Test-RuntimeBootstrap.ps1
+      - .github/workflows/phase3-runtime-bootstrap.yml
+  pull_request:
+    paths:
+      - Start.cmd
+      - runtime/**
+      - tests/Integration/Test-RuntimeBootstrap.ps1
+      - .github/workflows/phase3-runtime-bootstrap.yml
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Materialize pinned portable PowerShell 7.6.6
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uri = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip'
+          $expected = '02FE458BE20493FBDF43F61EA20610B811EE6C738AB1676C61B9CFCD1A33C860'
+          $zip = Join-Path $env:RUNNER_TEMP 'PowerShell-7.6.6-win-x64.zip'
+          Invoke-WebRequest -Uri $uri -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToUpperInvariant()
+          if ($actual -cne $expected) {
+              throw "PowerShell SHA-256 mismatch. Expected $expected, actual $actual."
+          }
+          $destination = Join-Path $PWD 'runtime\pwsh'
+          if (Test-Path -LiteralPath $destination) {
+              Remove-Item -LiteralPath $destination -Recurse -Force
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath $destination -Force
+          $version = & (Join-Path $destination 'pwsh.exe') -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
+          if ([string]$version -cne '7.6.6') {
+              throw "Unexpected portable PowerShell version: $version"
+          }
+
+      - name: Run runtime bootstrap tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pwsh = Join-Path $PWD 'runtime\pwsh\pwsh.exe'
+          $report = Join-Path $env:RUNNER_TEMP ('phase3a-runtime-bootstrap-{0}.json' -f '${{ matrix.os }}')
+          & $pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '.\tests\Integration\Test-RuntimeBootstrap.ps1' -OutputPath $report
+          if ($LASTEXITCODE -ne 0) {
+              throw "Runtime bootstrap tests failed with exit code $LASTEXITCODE."
+          }
+          $payload = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ($payload.PowerShell -cne '7.6.6' -or $payload.FailCount -ne 0 -or $null -ne $payload.Fatal) {
+              throw 'Runtime bootstrap report did not meet the acceptance gate.'
+          }
+
+      - name: Prove Start.cmd fails closed before integrity integration
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $logRoot = Join-Path $env:RUNNER_TEMP 'phase3a-launcher-logs'
+          & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
+          $missingManifestExit = $LASTEXITCODE
+          if ($missingManifestExit -ne 20) {
+              throw "Expected exit 20 for a missing manifest, got $missingManifestExit."
+          }
+
+          $manifestPath = Join-Path $PWD 'package-manifest.json'
+          '{}' | Set-Content -LiteralPath $manifestPath -Encoding ascii
+          try {
+              & cmd.exe /d /s /c ('"{0}" -LogRoot "{1}"' -f (Join-Path $PWD 'Start.cmd'), $logRoot)
+              $noVerifierExit = $LASTEXITCODE
+              if ($noVerifierExit -ne 21) {
+                  throw "Expected exit 21 while the integrity verifier is not integrated, got $noVerifierExit."
+              }
+          }
+          finally {
+              Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+          }
+
+          $logFiles = @(Get-ChildItem -LiteralPath $logRoot -File -Filter 'SISQUALDeployConsole-*.log')
+          if ($logFiles.Count -ne 1) {
+              throw "Expected one daily bootstrap log, found $($logFiles.Count)."
+          }
+          $text = Get-Content -LiteralPath $logFiles[0].FullName -Raw
+          foreach ($eventId in @('BOOTSTRAP_STARTED','HOST_VALID','MANIFEST_MISSING','INTEGRITY_VERIFIER_UNAVAILABLE')) {
+              if ($text -notmatch [regex]::Escape($eventId)) {
+                  throw "Missing expected bootstrap event $eventId."
+              }
+          }
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-runtime-bootstrap-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/phase3a-runtime-bootstrap-${{ matrix.os }}.json
+            ${{ runner.temp }}/phase3a-launcher-logs/*.log
+          if-no-files-found: error
