@@ -53,6 +53,7 @@ try {
     Add-Check 'RETENTION_REMOVES_OLD_MATCHING_LOG' (-not (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2000-01-01.log'))) 'Expired matching log is removed.'
     Add-Check 'RETENTION_PRESERVES_UNRELATED_FILE' (Test-Path -LiteralPath (Join-Path $logRoot 'other-2000-01-01.log') -PathType Leaf) 'Unrelated files are not deleted.'
     Add-Check 'RETENTION_KEEPS_DAY_30' (Test-Path -LiteralPath (Join-Path $logRoot 'SISQUALDeployConsole-2026-09-07.log') -PathType Leaf) 'The 30th retained daily log is preserved.'
+    # The runtime canonicalizes the root path; this gate intentionally asserts only the UTC daily filename contract.
     Add-Check 'DAILY_LOG_NAME' ([IO.Path]::GetFileName($context.LogPath) -ceq 'SISQUALDeployConsole-2026-10-06.log') 'Daily log uses an invariant UTC date name.'
     Write-SisqualBootstrapEvent -LogPath $context.LogPath -EventId 'BOOTSTRAP_STARTED' -NowUtc $now
     Write-SisqualBootstrapEvent -LogPath $context.LogPath -EventId 'HOST_VALID' -NowUtc $now.AddSeconds(1)
