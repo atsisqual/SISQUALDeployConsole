@@ -46,6 +46,16 @@ try {
     Check 'same-line sensitive assignment continuation is fail-closed' (($continuationText -notmatch [regex]::Escape($continuationMarker)) -and ($continuationText -notmatch 'second-secret') -and ($continuationText -match 'credential=\[REDACTED\]'))
     Check 'safe prefix before same-line continuation remains available' ($continuationText -match 'safe-prefix')
     Check 'same-line continuation redaction remains one physical log record' (([IO.File]::ReadAllLines($continuationPath)).Count -eq 1)
+
+    $whitespaceRoot = Join-Path $tempBase 'whitespace-continuation'
+    Initialize-SisqualRuntimeLog -LogRoot $whitespaceRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiWhitespace' | Out-Null
+    $whitespaceMarker = 'Whitespace' + 'ContinuationLeakMarker'
+    $whitespaceMessage = "safe-prefix credential=first part`r`n$whitespaceMarker`nsecond-secret"
+    $whitespacePath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.MULTIWHITESPACE' -Message $whitespaceMessage -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
+    $whitespaceText = [IO.File]::ReadAllText($whitespacePath)
+    Check 'whitespace-bearing multiline credential is fail-closed' (($whitespaceText -notmatch [regex]::Escape($whitespaceMarker)) -and ($whitespaceText -notmatch 'first part') -and ($whitespaceText -notmatch 'second-secret') -and ($whitespaceText -match 'credential=\[REDACTED\]'))
+    Check 'safe prefix before whitespace multiline credential remains available' ($whitespaceText -match 'safe-prefix')
+    Check 'whitespace multiline redaction remains one physical log record' (([IO.File]::ReadAllLines($whitespacePath)).Count -eq 1)
 }
 finally {
     Remove-Module Sisqual.Runtime.Logging -ErrorAction SilentlyContinue
