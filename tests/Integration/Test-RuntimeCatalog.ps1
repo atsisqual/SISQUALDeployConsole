@@ -1,0 +1,250 @@
+#requires -Version 7.0
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$ProviderRoot,
+    [Parameter(Mandatory)]
+    [string]$SqliteCli,
+    [string]$ReportPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+$modulePath = Join-Path $repo 'runtime' 'Sisqual.Runtime.Catalog.psm1'
+Import-Module $modulePath -Force
+
+$script:Passed = 0
+$script:Failed = 0
+$script:Checks = [System.Collections.Generic.List[object]]::new()
+
+function Test-Check {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][bool]$Condition
+    )
+
+    $status = if ($Condition) { 'PASS' } else { 'FAIL' }
+    if ($Condition) { $script:Passed++ } else { $script:Failed++ }
+    $script:Checks.Add([pscustomobject]@{ name = $Name; status = $status })
+    Write-Host "$status  $Name"
+}
+
+function Test-Throws {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][scriptblock]$Action
+    )
+
+    $threw = $false
+    try { & $Action } catch { $threw = $true }
+    Test-Check -Name $Name -Condition $threw
+}
+
+function ConvertTo-SqliteLiteral {
+    param([Parameter(Mandatory)][string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function New-CatalogFixture {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ServerCode,
+        [int]$SchemaVersion = 1,
+        [string]$SourceKind = 'conversion-tool',
+        [string]$SourceReference = 'test-run',
+        [string]$BuiltAtUtc = '2026-10-06T01:00:00Z',
+        [int]$CutRuleVersion = 1,
+        [switch]$TwoMetaRows
+    )
+
+    $metaConstraint = if ($TwoMetaRows) { '' } else { ' PRIMARY KEY CHECK (meta_id = 1)' }
+    $sql = @"
+CREATE TABLE catalog_meta(
+  meta_id INTEGER$metaConstraint,
+  schema_version INTEGER NOT NULL,
+  server_code TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_reference TEXT NOT NULL,
+  built_at_utc TEXT NOT NULL,
+  cut_rule_version INTEGER NOT NULL
+);
+INSERT INTO catalog_meta(meta_id,schema_version,server_code,source_kind,source_reference,built_at_utc,cut_rule_version)
+VALUES(1,$SchemaVersion,$(ConvertTo-SqliteLiteral $ServerCode),$(ConvertTo-SqliteLiteral $SourceKind),$(ConvertTo-SqliteLiteral $SourceReference),$(ConvertTo-SqliteLiteral $BuiltAtUtc),$CutRuleVersion);
+CREATE TABLE sample(code TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO sample(code,value) VALUES('A','alpha'),('B','beta');
+"@
+    if ($TwoMetaRows) {
+        $sql += "`nINSERT INTO catalog_meta(meta_id,schema_version,server_code,source_kind,source_reference,built_at_utc,cut_rule_version) VALUES(2,$SchemaVersion,$(ConvertTo-SqliteLiteral $ServerCode),$(ConvertTo-SqliteLiteral $SourceKind),'second','2026-10-06T01:00:00Z',$CutRuleVersion);"
+    }
+
+    $output = & $SqliteCli $Path $sql 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "sqlite3 fixture creation failed: $($output -join ' ')"
+    }
+}
+
+$tempRoot = Join-Path $env:TEMP ('sisqual-runtime-catalog-' + [guid]::NewGuid().ToString('N'))
+$outsideRoot = Join-Path $env:TEMP ('sisqual-runtime-catalog-outside-' + [guid]::NewGuid().ToString('N'))
+$openSessions = [System.Collections.Generic.List[object]]::new()
+try {
+    New-Item -ItemType Directory -Path $tempRoot, $outsideRoot -Force | Out-Null
+    $packageRoot = Join-Path $tempRoot 'package'
+    $providerCopy = Join-Path $packageRoot 'runtime\sqlite-provider'
+    $catalogRoot = Join-Path $packageRoot 'catalog'
+    New-Item -ItemType Directory -Path $packageRoot, $catalogRoot -Force | Out-Null
+    Copy-Item -LiteralPath $ProviderRoot -Destination $providerCopy -Recurse -Force
+
+    $defaults = Get-SisqualRuntimeSqliteDefaults
+    Test-Check 'provider version pin is 10.0.12' ($defaults.ProviderVersion -ceq '10.0.12')
+    Test-Check 'native runtime SQLite pin is 3.53.3' ($defaults.NativeSqliteVersion -ceq '3.53.3')
+    Test-Check 'factory defaults are read-only private-cache' ($defaults.ConnectionMode -ceq 'ReadOnly' -and $defaults.CacheMode -ceq 'Private')
+
+    Test-Throws 'provider path outside package is rejected' {
+        Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot $ProviderRoot | Out-Null
+    }
+
+    $provider = Initialize-SisqualRuntimeSqliteProvider -PackageRoot $packageRoot -ProviderRoot 'runtime\sqlite-provider'
+    Test-Check 'copied provider payload initializes from package tree' ($provider.ProviderVersion -ceq '10.0.12' -and $provider.ProviderRoot -ceq [IO.Path]::GetFullPath($providerCopy))
+
+    $validPath = Join-Path $catalogRoot 'catalog-DEMO.db'
+    New-CatalogFixture -Path $validPath -ServerCode 'DEMO'
+    $hashBefore = (Get-FileHash -LiteralPath $validPath -Algorithm SHA256).Hash
+
+    $session = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'test-run'
+    $openSessions.Add($session)
+    Test-Check 'valid catalog opens with query_only enabled' ($session.QueryOnly -and $session.CatalogPath -ceq [IO.Path]::GetFullPath($validPath))
+    Test-Check 'native SQLite version is exact' ($session.NativeSqliteVersion -ceq '3.53.3')
+    Test-Check 'catalog metadata is exact and case-sensitive' ($session.Metadata.ServerCode -ceq 'DEMO' -and $session.Metadata.SourceKind -ceq 'conversion-tool' -and $session.Metadata.SchemaVersion -eq 1)
+
+    $command = $session.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'SELECT value FROM sample WHERE code = $code;'
+        $parameter = $command.CreateParameter()
+        $parameter.ParameterName = '$code'
+        $parameter.Value = 'B'
+        [void]$command.Parameters.Add($parameter)
+        $parameterizedValue = [string]$command.ExecuteScalar()
+    }
+    finally {
+        $command.Dispose()
+    }
+    Test-Check 'parameterized catalog reads work' ($parameterizedValue -ceq 'beta')
+
+    $writeRejected = $false
+    $command = $session.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'CREATE TABLE forbidden_write(id INTEGER);'
+        try { [void]$command.ExecuteNonQuery() } catch { $writeRejected = $true }
+    }
+    finally {
+        $command.Dispose()
+    }
+    Test-Check 'write through runtime catalog session is rejected' $writeRejected
+    Close-SisqualRuntimeCatalog -Session $session
+    $openSessions.Remove($session) | Out-Null
+
+    $hashAfter = (Get-FileHash -LiteralPath $validPath -Algorithm SHA256).Hash
+    Test-Check 'catalog bytes remain unchanged' ($hashAfter -ceq $hashBefore)
+    $sidecars = @(Get-ChildItem -LiteralPath $catalogRoot -File | Where-Object { $_.Name -match '-(wal|shm|journal)$' })
+    Test-Check 'read-only factory creates no SQLite sidecars' ($sidecars.Count -eq 0)
+
+    $missingPath = Join-Path $catalogRoot 'catalog-MISSING.db'
+    Test-Throws 'missing catalog is rejected without creation' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MISSING.db' -ExpectedServerCode 'MISSING' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+    Test-Check 'missing catalog was not created' (-not (Test-Path -LiteralPath $missingPath))
+
+    Test-Throws 'catalog path outside package is rejected' {
+        Open-SisqualRuntimeCatalog -CatalogPath (Join-Path $outsideRoot 'catalog-OUT.db') -ExpectedServerCode 'OUT' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+
+    $otherPath = Join-Path $catalogRoot 'catalog-OTHER.db'
+    Copy-Item -LiteralPath $validPath -Destination $otherPath
+    Test-Throws 'metadata ServerCode mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-OTHER.db' -ExpectedServerCode 'OTHER' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+    Test-Throws 'metadata schema version mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 2 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+    Test-Throws 'metadata source kind mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'build' | Out-Null
+    }
+    Test-Throws 'metadata source reference mismatch fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' -ExpectedOriginReference 'different' | Out-Null
+    }
+
+    $badTimePath = Join-Path $catalogRoot 'catalog-BADTIME.db'
+    New-CatalogFixture -Path $badTimePath -ServerCode 'BADTIME' -BuiltAtUtc '2026-10-06 01:00:00'
+    Test-Throws 'malformed built_at_utc fails closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-BADTIME.db' -ExpectedServerCode 'BADTIME' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+
+    $multiPath = Join-Path $catalogRoot 'catalog-MULTI.db'
+    New-CatalogFixture -Path $multiPath -ServerCode 'MULTI' -TwoMetaRows
+    Test-Throws 'multiple catalog_meta rows fail closed' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-MULTI.db' -ExpectedServerCode 'MULTI' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+
+    $junctionCatalogRoot = Join-Path $packageRoot 'catalog-link'
+    $outsideCatalogPath = Join-Path $outsideRoot 'catalog-JUNCTION.db'
+    New-CatalogFixture -Path $outsideCatalogPath -ServerCode 'JUNCTION'
+    New-Item -ItemType Junction -Path $junctionCatalogRoot -Target $outsideRoot -Force | Out-Null
+    Test-Throws 'catalog path through junction is rejected' {
+        Open-SisqualRuntimeCatalog -CatalogPath 'catalog-link\catalog-JUNCTION.db' -ExpectedServerCode 'JUNCTION' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool' | Out-Null
+    }
+    Remove-Item -LiteralPath $junctionCatalogRoot -Force
+
+    $parallelPass = $true
+    try {
+        for ($i = 0; $i -lt 20; $i++) {
+            $parallel = Open-SisqualRuntimeCatalog -CatalogPath 'catalog\catalog-DEMO.db' -ExpectedServerCode 'DEMO' -ExpectedSchemaVersion 1 -ExpectedOrigin 'conversion-tool'
+            $openSessions.Add($parallel)
+        }
+        $parallelPass = ($openSessions.Count -eq 20)
+    }
+    catch {
+        $parallelPass = $false
+    }
+    finally {
+        foreach ($parallel in @($openSessions)) {
+            Close-SisqualRuntimeCatalog -Session $parallel
+        }
+        $openSessions.Clear()
+    }
+    Test-Check 'twenty simultaneous read-only sessions open successfully' $parallelPass
+
+    $hashFinal = (Get-FileHash -LiteralPath $validPath -Algorithm SHA256).Hash
+    Test-Check 'catalog stays byte-identical after repeated sessions' ($hashFinal -ceq $hashBefore)
+    $finalSidecars = @(Get-ChildItem -LiteralPath $catalogRoot -File | Where-Object { $_.Name -match '-(wal|shm|journal)$' })
+    Test-Check 'repeated sessions still create no sidecars' ($finalSidecars.Count -eq 0)
+}
+finally {
+    foreach ($session in @($openSessions)) {
+        try { Close-SisqualRuntimeCatalog -Session $session } catch {}
+    }
+    Remove-Module Sisqual.Runtime.Catalog -ErrorAction SilentlyContinue
+    foreach ($path in @($tempRoot, $outsideRoot)) {
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+    }
+}
+
+Write-Host ('{0} passed, {1} failed' -f $script:Passed, $script:Failed)
+
+if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
+    $report = [ordered]@{
+        status = $(if ($script:Failed -eq 0) { 'PASS' } else { 'FAIL' })
+        powerShell = $PSVersionTable.PSVersion.ToString()
+        providerVersion = '10.0.12'
+        nativeSqliteVersion = '3.53.3'
+        sqliteCli = (& $SqliteCli --version | Select-Object -First 1)
+        passed = $script:Passed
+        failed = $script:Failed
+        checks = @($script:Checks)
+    }
+    $json = $report | ConvertTo-Json -Depth 5
+    [IO.File]::WriteAllText([IO.Path]::GetFullPath($ReportPath), $json + "`n", [Text.UTF8Encoding]::new($false))
+}
+
+if ($script:Failed -gt 0) { exit 1 }
