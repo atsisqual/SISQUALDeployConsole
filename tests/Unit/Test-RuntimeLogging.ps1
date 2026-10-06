@@ -54,6 +54,7 @@ Test-Check 'default prefix is stable' ($defaults.Prefix -ceq 'SISQUALDeployConso
 $tempBase = Join-Path ([System.IO.Path]::GetTempPath()) ('sisqual-runtime-approved-' + [guid]::NewGuid().ToString('N'))
 $tempRoot = Join-Path $tempBase 'console'
 $outsideRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('sisqual-runtime-outside-' + [guid]::NewGuid().ToString('N'))
+$junctionTarget = Join-Path ([System.IO.Path]::GetTempPath()) ('sisqual-runtime-junction-target-' + [guid]::NewGuid().ToString('N'))
 try {
     Test-Throws 'log root outside approved root is rejected' {
         Initialize-SisqualRuntimeLog -LogRoot $outsideRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'TestLog' | Out-Null
@@ -61,6 +62,15 @@ try {
     Test-Throws 'UNC approved root is rejected' {
         Initialize-SisqualRuntimeLog -LogRoot '\\server\share\console' -ApprovedRoot '\\server\share' -RetentionDays 3 -Prefix 'TestLog' | Out-Null
     }
+
+    New-Item -ItemType Directory -Path $tempBase, $junctionTarget -Force | Out-Null
+    $junctionPath = Join-Path $tempBase 'junction'
+    New-Item -ItemType Junction -Path $junctionPath -Target $junctionTarget -Force | Out-Null
+    Test-Throws 'log root through a junction is rejected before use' {
+        Initialize-SisqualRuntimeLog -LogRoot (Join-Path $junctionPath 'console') -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'TestLog' | Out-Null
+    }
+    Remove-Item -LiteralPath $junctionPath -Force
+    Test-Check 'junction target was not written by rejected initialization' (-not (Test-Path -LiteralPath (Join-Path $junctionTarget 'console')))
 
     $state = Initialize-SisqualRuntimeLog -LogRoot $tempRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'TestLog'
     Test-Check 'initialize creates configured directory' (Test-Path -LiteralPath $tempRoot -PathType Container)
@@ -124,7 +134,7 @@ try {
 }
 finally {
     Remove-Module Sisqual.Runtime.Logging -ErrorAction SilentlyContinue
-    foreach ($path in @($tempBase, $outsideRoot)) {
+    foreach ($path in @($tempBase, $outsideRoot, $junctionTarget)) {
         if (Test-Path -LiteralPath $path) {
             Remove-Item -LiteralPath $path -Recurse -Force
         }
