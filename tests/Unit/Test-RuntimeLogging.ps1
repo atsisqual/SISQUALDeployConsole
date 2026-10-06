@@ -64,6 +64,15 @@ try {
     }
 
     New-Item -ItemType Directory -Path $tempBase, $junctionTarget -Force | Out-Null
+
+    $caseApproved = Join-Path $tempBase 'CaseBoundary'
+    New-Item -ItemType Directory -Path $caseApproved -Force | Out-Null
+    $caseVariantRoot = Join-Path $tempBase 'caseboundary\logs'
+    Test-Throws 'approved-root containment rejects case-distinct boundary spelling' {
+        Initialize-SisqualRuntimeLog -LogRoot $caseVariantRoot -ApprovedRoot $caseApproved -RetentionDays 3 -Prefix 'CaseLog' | Out-Null
+    }
+    Test-Check 'case-distinct boundary rejection creates no log child' (-not (Test-Path -LiteralPath $caseVariantRoot))
+
     $junctionPath = Join-Path $tempBase 'junction'
     New-Item -ItemType Junction -Path $junctionPath -Target $junctionTarget -Force | Out-Null
     Test-Throws 'log root through a junction is rejected before use' {
@@ -134,6 +143,15 @@ try {
     $bytes = [IO.File]::ReadAllBytes($logPath)
     $hasUtf8Bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     Test-Check 'log is UTF-8 without BOM' (-not $hasUtf8Bom)
+
+    $escapedKeyRoot = Join-Path $tempBase 'escaped-key'
+    Initialize-SisqualRuntimeLog -LogRoot $escapedKeyRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'EscapedKeyLog' | Out-Null
+    $escapedKeyMarker = 'EscapedKey' + 'LeakMarker'
+    $escapedKeyName = 'pass' + '\u0077' + 'ord'
+    $escapedKeyPayload = '{"' + $escapedKeyName + '":"' + $escapedKeyMarker + '"}'
+    $escapedKeyPath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.ESCAPEDKEY' -Message $escapedKeyPayload -TimestampUtc $reference
+    $escapedKeyText = [IO.File]::ReadAllText($escapedKeyPath)
+    Test-Check 'escaped JSON property names are decoded before sensitivity matching' (($escapedKeyText -notmatch [regex]::Escape($escapedKeyMarker)) -and $escapedKeyText -match 'password=\[REDACTED\]')
 
     $multilineRoot = Join-Path $tempBase 'multiline'
     Initialize-SisqualRuntimeLog -LogRoot $multilineRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'MultiLog' | Out-Null
