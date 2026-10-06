@@ -17,16 +17,18 @@ function Protect-SisqualRuntimeLogText {
 
     $text = if ($null -eq $Value) { '' } else { [string]$Value }
 
-    # Header-shaped values are consumed before newline normalization so the complete credential is removed.
-    $headerPattern = '(?im)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*'
+    # Consume a header value plus legacy whitespace-prefixed continuation lines before newline normalization.
+    $headerPattern = '(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]*(?:(?:\r\n|\r|\n)[ \t]+[^\r\n]*)*'
     $text = [regex]::Replace($text, $headerPattern, '$1: [REDACTED]')
 
     # Authentication schemes may also appear in assignment-shaped or free text.
     $text = [regex]::Replace($text, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 [REDACTED]')
 
-    # Accept both plain keys and common serialized forms such as {"password":"value"}.
+    # Accept plain keys and serialized forms. Quoted values consume escaped characters as one unit.
     $sensitiveNamePattern = 'password|passwd|pwd|secret|token|client[_-]?secret|authorization|cookie|api[_-]?key|connection[_-]?string'
-    $assignmentPattern = '(?i)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*("[^"]*"|''[^'']*''|[^\s,;}\]]+)'
+    $doubleQuotedValue = '"(?:\\.|[^"\\])*"'
+    $singleQuotedValue = '''(?:\\.|[^''\\])*'''
+    $assignmentPattern = '(?i)(?:"|'')?(' + $sensitiveNamePattern + ')(?:"|'')?\s*[:=]\s*(' + $doubleQuotedValue + '|' + $singleQuotedValue + '|[^\s,;}\]]+)'
     $text = [regex]::Replace($text, $assignmentPattern, '$1=[REDACTED]')
 
     $text = $text -replace "`r`n|`r|`n", '\n'
@@ -65,6 +67,15 @@ function Assert-SisqualNoReparsePoint {
         }
         $current = $parent.FullName
     }
+}
+
+function Assert-SisqualRuntimeLogRootStillApproved {
+    if ($null -eq $script:LogState) {
+        throw 'Runtime logging has not been initialized.'
+    }
+
+    Assert-SisqualNoReparsePoint -Path $script:LogState.ApprovedRoot -Label 'ApprovedRoot'
+    Assert-SisqualNoReparsePoint -Path $script:LogState.LogRoot -Label 'LogRoot'
 }
 
 function Resolve-SisqualRuntimeLogRoot {
@@ -113,6 +124,8 @@ function Invoke-SisqualRuntimeLogRetentionCore {
         [Parameter(Mandatory)]
         [datetime]$ReferenceUtc
     )
+
+    Assert-SisqualRuntimeLogRootStillApproved
 
     $reference = $ReferenceUtc.ToUniversalTime()
     $todayUtc = [DateOnly]::FromDateTime($reference)
@@ -268,6 +281,7 @@ function Write-SisqualRuntimeLog {
 
     [System.Threading.Monitor]::Enter($script:WriteLock)
     try {
+        Assert-SisqualRuntimeLogRootStillApproved
         if ($null -eq $script:LogState.LastRetentionUtcDate -or $currentUtcDate -gt $script:LogState.LastRetentionUtcDate) {
             Invoke-SisqualRuntimeLogRetentionCore -ReferenceUtc $timestamp | Out-Null
         }
