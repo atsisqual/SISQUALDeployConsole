@@ -62,7 +62,10 @@ function Protect-SisqualRuntimeLogText {
         }
 
         $hasPhysicalNewline = $candidate.Groups['newline'].Length -gt 0
-        $hasWhitespace = $sameLineValue -match '[ \t]'
+        # Match the same whitespace class used by the scalar fallback delimiter. Because `line`
+        # excludes CR/LF, this also catches vertical-tab, form-feed and Unicode whitespace without
+        # conflating them with the separately handled physical-newline case.
+        $hasWhitespace = $sameLineValue -match '\s'
         if ($hasPhysicalNewline -or $hasWhitespace) {
             $text = $text.Substring(0, $candidate.Index) + $candidate.Groups[1].Value + '=[REDACTED]'
             break

@@ -67,6 +67,23 @@ try {
     Check 'safe prefix before single-line whitespace credential remains available' ($singleLineText -match 'safe-prefix')
     Check 'single-line whitespace redaction remains one physical log record' (([IO.File]::ReadAllLines($singleLinePath)).Count -eq 1)
 
+    $extendedWhitespaceCases = @(
+        [pscustomobject]@{ Name = 'vertical-tab'; Separator = [string][char]0x000B },
+        [pscustomobject]@{ Name = 'form-feed'; Separator = [string][char]0x000C },
+        [pscustomobject]@{ Name = 'unicode-nbsp'; Separator = [string][char]0x00A0 }
+    )
+    foreach ($case in $extendedWhitespaceCases) {
+        $caseRoot = Join-Path $tempBase ('extended-whitespace-' + $case.Name)
+        Initialize-SisqualRuntimeLog -LogRoot $caseRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'ExtendedWhitespace' | Out-Null
+        $caseMarker = 'ExtendedWhitespace' + $case.Name.Replace('-', '') + 'LeakMarker'
+        $caseMessage = 'safe-prefix credential=first' + $case.Separator + $caseMarker + ' safe-suffix'
+        $casePath = Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.EXTENDEDWHITESPACE' -Message $caseMessage -TimestampUtc ([datetime]'2026-10-06T08:00:00Z')
+        $caseText = [IO.File]::ReadAllText($casePath)
+        Check ("{0} sensitive whitespace is fail-closed" -f $case.Name) (($caseText -notmatch [regex]::Escape($caseMarker)) -and ($caseText -notmatch 'credential=first') -and ($caseText -match 'credential=\[REDACTED\]'))
+        Check ("{0} preserves safe prefix" -f $case.Name) ($caseText -match 'safe-prefix')
+        Check ("{0} redaction remains one physical log record" -f $case.Name) (([IO.File]::ReadAllLines($casePath)).Count -eq 1)
+    }
+
     $singleBoundaryRoot = Join-Path $tempBase 'single-line-boundary'
     Initialize-SisqualRuntimeLog -LogRoot $singleBoundaryRoot -ApprovedRoot $tempBase -RetentionDays 3 -Prefix 'SingleBoundary' | Out-Null
     $singleBoundaryMarker = 'SingleBoundary' + 'FirstLeakMarker'
