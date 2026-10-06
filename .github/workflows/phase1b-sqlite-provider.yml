@@ -123,13 +123,23 @@ jobs:
             throw 'No resolved NuGet packages were found in packages.lock.json.'
           }
 
-          $globalPackagesOutput = @(dotnet nuget locals global-packages --list)
-          if ($LASTEXITCODE -ne 0 -or $globalPackagesOutput.Count -eq 0) {
-            throw 'Unable to resolve the NuGet global-packages folder.'
+          # Validate the lock file with NuGet itself, using an empty package cache so
+          # this is a real repeatable restore rather than a comparison of unlike hash formats.
+          $isolatedPackages = Join-Path $env:RUNNER_TEMP 'phase1b-locked-packages'
+          if (Test-Path -LiteralPath $isolatedPackages) {
+            Remove-Item -LiteralPath $isolatedPackages -Recurse -Force
           }
-          $globalPackagesRoot = ([string]$globalPackagesOutput[0] -replace '^[^:]+:\s*', '').Trim()
-          if (-not (Test-Path -LiteralPath $globalPackagesRoot -PathType Container)) {
-            throw "NuGet global-packages folder not found: $globalPackagesRoot"
+          New-Item -ItemType Directory -Path $isolatedPackages -Force | Out-Null
+          $previousNugetPackages = $env:NUGET_PACKAGES
+          try {
+            $env:NUGET_PACKAGES = $isolatedPackages
+            dotnet restore .\ProviderProbe.csproj --locked-mode --no-cache --force
+            if ($LASTEXITCODE -ne 0) {
+              throw 'NuGet locked-mode restore failed against packages.lock.json.'
+            }
+          }
+          finally {
+            $env:NUGET_PACKAGES = $previousNugetPackages
           }
 
           $downloadRoot = Join-Path $env:RUNNER_TEMP 'phase1b-nupkgs'
@@ -137,6 +147,10 @@ jobs:
           $rows = @()
 
           foreach ($item in ($resolved.Values | Sort-Object id, version)) {
+            if ([string]::IsNullOrWhiteSpace($item.contentHash)) {
+              throw "Lock-file contentHash is missing for $($item.id) $($item.version)."
+            }
+
             $idLower = $item.id.ToLowerInvariant()
             $versionLower = $item.version.ToLowerInvariant()
             $fileName = "$idLower.$versionLower.nupkg"
@@ -156,26 +170,8 @@ jobs:
             }
             $rawSha512Base64 = [Convert]::ToBase64String($sha512Bytes)
 
-            $cacheHashPath = Join-Path $globalPackagesRoot (Join-Path $idLower (Join-Path $versionLower "$idLower.$versionLower.nupkg.sha512"))
-            if (-not (Test-Path -LiteralPath $cacheHashPath -PathType Leaf)) {
-              throw "NuGet content-hash file was not retained for $($item.id) $($item.version): $cacheHashPath"
-            }
-            $nugetContentHash = (Get-Content -LiteralPath $cacheHashPath -Raw).Trim()
-            $lockHashPresent = -not [string]::IsNullOrWhiteSpace($item.contentHash)
-            $cacheHashPresent = -not [string]::IsNullOrWhiteSpace($nugetContentHash)
-            $lockHashMatch = $lockHashPresent -and $cacheHashPresent -and ($nugetContentHash -ceq $item.contentHash)
-
-            if ([string]::IsNullOrWhiteSpace($sha256)) {
-              throw "SHA-256 was not calculated for $($item.id) $($item.version)."
-            }
-            if (-not $lockHashPresent) {
-              throw "Lock-file contentHash is missing for $($item.id) $($item.version)."
-            }
-            if (-not $cacheHashPresent) {
-              throw "NuGet cached content hash is missing for $($item.id) $($item.version)."
-            }
-            if (-not $lockHashMatch) {
-              throw "NuGet cached content hash does not match packages.lock.json for $($item.id) $($item.version)."
+            if ([string]::IsNullOrWhiteSpace($sha256) -or [string]::IsNullOrWhiteSpace($rawSha512Base64)) {
+              throw "Archive hashes were not calculated for $($item.id) $($item.version)."
             }
 
             $rows += [pscustomobject]@{
@@ -185,9 +181,8 @@ jobs:
               bytes = (Get-Item -LiteralPath $archive).Length
               nupkgSha256 = $sha256
               rawNupkgSha512Base64 = $rawSha512Base64
-              nugetCacheContentHash = $nugetContentHash
               lockContentHash = $item.contentHash
-              lockHashMatch = $lockHashMatch
+              lockedRestoreVerified = $true
             }
           }
 
