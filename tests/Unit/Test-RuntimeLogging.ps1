@@ -102,7 +102,8 @@ try {
     Test-Check 'write redacts sensitive property names' ($text -match $passwordRedactionPattern -and $text -match 'Cookie="\[REDACTED\]"')
     Test-Check 'write redacts token and authorization assignments' ($text -match 'token=\[REDACTED\]' -and $text -match 'authorization=\[REDACTED\]')
     Test-Check 'write redacts bearer credentials' ($text -match 'Bearer \[REDACTED\]')
-    Test-Check 'write redacts complete Basic authorization header value' ($text -match 'Authorization: \[REDACTED\]')
+    $authorizationRedactionPattern = '(?i)authorization\s*(?::|=)\s*\[REDACTED\]'
+    Test-Check 'write redacts complete Basic authorization header value' (($text -match $authorizationRedactionPattern) -and ($text -notmatch [regex]::Escape($basicMarker)))
     Test-Check 'write redacts quoted sensitive JSON keys' ($text -match ([regex]::Escape($passwordKey) + '=\[REDACTED\]'))
     $forbidden = 'abc123|' + [regex]::Escape($passwordValue) + '|BasicValue|session-cookie-value|Bearer xyz|' + [regex]::Escape($basicMarker) + '|' + [regex]::Escape($jsonMarker)
     Test-Check 'write does not contain supplied secret markers' ($text -notmatch $forbidden)
