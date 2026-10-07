@@ -91,7 +91,7 @@ C1/C2 does not change the source-carried catalog schema contract, so on its isol
 5. For C2, a catalog without an enabled general page must have zero directory rows.
 6. The converter's existing secret-like safety scan is applied to the derived directory before it is written; the catalog verifier's existing stored-byte secret checks remain in force.
 7. A dedicated mutation test changes a directory `HostName` and proves that the independent verifier fails.
-8. The existing 62 source-carried tables remain the source whitelist. The directory is derived and is not read as a 63rd SQL Server source table.
+8. The existing source-carried tables (62 when this was designed, 61 after the retirement of `cfg.DatabaseSettingRule`) remain the source whitelist. The directory is derived and is not read as a 63rd SQL Server source table.
 
 [CONFIRMED, PR #57 evidence] The dedicated synthetic unit suite exercises populated and empty directories, C1 `AssignedUserName`, NULL customer fields, disabled instance/server filtering, manifest counts and mutation detection. The common SQL Server/LocalDB integration proves file-source and SQL-source output remain value-identical.
 

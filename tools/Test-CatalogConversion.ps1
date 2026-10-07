@@ -370,6 +370,8 @@ function Invoke-CatalogConversionTest {
     return (New-TestResult -Mode $legacy.Mode -Catalogs $legacy.Catalogs)
 }
 
+. (Join-Path $PSScriptRoot 'Test-CatalogConversion.Cleanup.ps1')
+
 if ($script:C8ShouldExecute) {
     $cli = $script:C8Cli
     $tables = @($script:CarriedTables.Keys)
@@ -377,7 +379,8 @@ if ($script:C8ShouldExecute) {
         $resolved = (Resolve-Path -LiteralPath $cli.SyncFile).Path
         Write-Host ('Reading {0}...' -f (Split-Path -Leaf $resolved))
         $text = [System.IO.File]::ReadAllText($resolved, [System.Text.UTF8Encoding]::new($false))
-        $schema = Read-SyncSchema -Text $text -Tables $tables
+        $readTables = @($tables + $script:CleanupValidationTable)
+        $schema = Read-SyncSchema -Text $text -Tables $readTables
         $source = [pscustomobject]@{ Schema = $schema; Rows = (Read-SyncRows -Text $text -Schema $schema) }
     }
     else {

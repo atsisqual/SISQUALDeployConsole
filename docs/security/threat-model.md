@@ -93,7 +93,7 @@ Status of a control: **[CONFIRMED]** implemented and tested in this repository; 
 |---|---|---|---|---|---|
 | T-CAT-1 | T | a hand edit adds a wrong value, a destructive path or a secret | `Seal-Package` validates (integrity, foreign keys, one meta row, forbidden tables and columns, secret scan), shows what changed, asks to confirm, records the edit [CONFIRMED]; engines check allowed roots [PROPOSED]; who may edit and a second reader [PENDING] | R-047 | ST-11, ST-13 |
 | T-CAT-2 | T | the catalog no longer matches the real servers, or a directory row in another machine's catalog is old | build time and source shown; reconversion and reseal before cutover; change freeze [PENDING] | R-044 | ST-07 |
-| T-CAT-3 | I | secrets in the catalog | whitelist of 62 tables, excluded columns, redaction of the 16 literals, safety-net scan, `Test-CatalogConversion`, seal scan; 0 of 16 values found in the six real catalogs [CONFIRMED] | R-026, R-048 | ST-06, ST-11 |
+| T-CAT-3 | I | secrets in the catalog | whitelist of 61 tables (62 before the retirement of `cfg.DatabaseSettingRule`), excluded columns, redaction of the 16 literals, safety-net scan, `Test-CatalogConversion`, seal scan; 0 of 16 values found in the six real catalogs [CONFIRMED] | R-026, R-048 | ST-06, ST-11 |
 | T-CAT-4 | E | SQL or command text stored as data is executed | never executed (AGENTS.md); a static check over the modules [PENDING] | R-027, R-019 | ST-12 |
 | T-CAT-5 | S | the catalog of another machine is used | `server_code` check as in T-PKG-3 | R-036 | ST-09 |
 | T-CAT-6 | I | cross-machine data in a catalog | only the public instance directory, no secret column, verified by the conversion (design of task 1c) [PROPOSED] | R-044 | ST-11 |

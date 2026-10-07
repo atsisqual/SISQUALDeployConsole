@@ -143,14 +143,68 @@ function New-FixtureRows {
             }
             # Table specific overrides
             switch ($table.table) {
+                'cfg.Application' {
+                    if ($i -eq 3) {
+                        $row['ApplicationCode'] = 'KEYCLOAK'
+                        $row['PhysicalPathTemplate'] = '{INSTANCE_ROOT}\V8\sisqualKeycloak'
+                        $row['IsEnabled'] = $true
+                    }
+                }
+                'cfg.ConfigFile' {
+                    if ($i -eq 3) {
+                        $row['ApplicationCode'] = 'KEYCLOAK'
+                        $row['RelativePath'] = 'conf\keycloak.conf'
+                        $row['FileFormat'] = 'TEXT'
+                        $row['IsRequired'] = $true
+                        $row['IsEnabled'] = $true
+                    }
+                }
                 'cfg.ConfigRule' {
                     if ($i -eq 1) { $row['IsSensitive'] = $true; $row['ExpectedTemplate'] = 'Server={ServerName};Integrated Security=SSPI;' }
                     if ($i -eq 2) { $row['IsSensitive'] = $true; $row['RuleCode'] = 'FX_CLIENT_SECRET'; $row['ExpectedTemplate'] = $markerA }
-                    if ($i -eq 3) { $row['IsSensitive'] = $false }
+                    if ($i -eq 3) {
+                        $row['FileID'] = 3
+                        $row['CountryCode'] = $null
+                        $row['RuleCode'] = 'KEYCLOAK_DB_URL'
+                        $row['Category'] = 'KEYCLOAK'
+                        $row['SelectorType'] = 'TEXT_REGEX'
+                        $row['Selector'] = 'db-url=jdbc:sqlserver://[^\r\n]+'
+                        $row['ExpectedTemplate'] = 'db-url=jdbc:sqlserver://{SQL_INSTANCE_ESCAPED};databaseName=sisqualKeycloak;integratedSecurity=true;multipleActiveResultSets=true;encrypt=true;trustServerCertificate=true;loginTimeout=15;'
+                        $row['ValidationType'] = 'EXACT'
+                        $row['IsRequired'] = $true
+                        $row['AllowEncrypted'] = $false
+                        $row['IsSensitive'] = $false
+                        $row['Severity'] = 'ERROR'
+                        $row['IsEnabled'] = $true
+                        $row['RepairAction'] = 'SET_VALUE'
+                        $row['RepairValueType'] = 'STRING'
+                        $row['RepairGroup'] = 'KEYCLOAK'
+                        $row['RepairOrder'] = 10
+                        $row['CreateIfMissing'] = $false
+                        $row['MissingParentSelector'] = $null
+                        $row['MissingNodeTemplate'] = $null
+                    }
                 }
-                { $_ -in @('cfg.DatabaseObjectSettingRule', 'cfg.DatabaseSettingRule') } {
-                    # A sensitive template is a "secret" for the verification tool: it must be unique, not generic text.
-                    if ($row['IsSensitive'] -eq $true -and $null -ne $row['ExpectedTemplate']) { $row['ExpectedTemplate'] = 'FXRULESECRET-' + ($table.table -replace '[^A-Za-z0-9]', '') + '-' + $i }
+                'cfg.DatabaseSettingRule' {
+                    $row['SettingCode'] = 'FX_DB_RULE_' + $i
+                    $row['Application'] = 'APP'
+                    $row['SettingUser'] = ''
+                    $row['SectionName'] = 'SECTION_' + $i
+                    $row['SettingKey'] = 'KEY_' + $i
+                    $row['TargetTable'] = 'Settings'
+                    $row['ExpectedTemplate'] = $(if ($row['IsSensitive']) { 'FXRULESECRET-DB-' + $i } else { 'FX_DB_VALUE_' + $i })
+                }
+                'cfg.DatabaseObjectSettingRule' {
+                    $row['SettingCode'] = 'FX_DB_RULE_' + $i
+                    $row['TargetDatabaseName'] = 'sisqualWFM'
+                    $row['TargetSchemaName'] = 'dbo'
+                    $row['TargetTableName'] = 'Settings'
+                    $row['TargetColumnName'] = 'Value'
+                    $row['ExpectedTemplate'] = $(if ($row['IsSensitive']) { 'FXRULESECRET-DB-' + $i } else { 'FX_DB_VALUE_' + $i })
+                    $row['FilterClause'] = "Application='APP' AND ISNULL([User],N'')='' AND Section='SECTION_$i' AND [Key]=N'KEY_$i'"
+                    $row['RuleType'] = 'FULL_REPLACE'
+                    $row['CreateIfMissing'] = $true
+                    $row['InsertColumnsJson'] = ('{{"Application":"APP","User":"","Section":"SECTION_{0}","Key":"KEY_{0}"}}' -f $i)
                 }
                 'dbo.ManagedServer' { $row['ServerCode'] = 'FX_SRV' + $i; $row['MachineName'] = 'FX-HOST' + $i }
                 { $_ -in @('cfg.IisServerPolicy', 'cfg.WebAccessPolicy', 'cfg.LinksPagePolicy', 'cfg.DatabaseCopyPolicy') } { $row['ServerCode'] = 'FX_SRV' + $i }
@@ -172,15 +226,45 @@ function New-FixtureRows {
                     }
                 }
                 'cfg.ConfigurationAdapterDefinition' {
-                    $row['ActionCode'] = 'FX_ACTION_' + $i
+                    if ($i -eq 1) { $row['ActionCode'] = 'FULL_DEPLOYMENT' }
+                    elseif ($i -eq 2) { $row['ActionCode'] = 'DATABASE_SETTINGS' }
+                    else { $row['ActionCode'] = 'CONFIG_REPAIR' }
                 }
                 'ops.Action' {
-                    $row['ActionCode'] = 'FX_ACTION_' + $i
-                    $row['EngineCode'] = 'FX_ENGINE_' + $i
+                    if ($i -eq 1) {
+                        $row['ActionCode'] = 'FULL_DEPLOYMENT'
+                        $row['ActionType'] = 'COMPOSITE'
+                        $row['EngineCode'] = $null
+                    }
+                    elseif ($i -eq 2) {
+                        $row['ActionCode'] = 'DATABASE_SETTINGS'
+                        $row['ActionType'] = 'ENGINE'
+                        $row['EngineCode'] = 'DATABASE_CONTENT_SYNC'
+                        $row['ModePolicy'] = 'PREVIEW_APPLY'
+                        $row['RequiresInstanceSelection'] = $true
+                        $row['AllowAllInstances'] = $true
+                        $row['PassInstanceCode'] = $true
+                        $row['PassApply'] = $true
+                        $row['IsEnabled'] = $true
+                    }
+                    else {
+                        $row['ActionCode'] = 'CONFIG_REPAIR'
+                        $row['ActionType'] = 'ENGINE'
+                        $row['EngineCode'] = 'CONFIG_REPAIR'
+                        $row['ModePolicy'] = 'PREVIEW_APPLY'
+                        $row['IsEnabled'] = $true
+                    }
+                }
+                'ops.ActionStep' {
+                    $row['ParentActionCode'] = 'FULL_DEPLOYMENT'
+                    $row['StepOrder'] = @(30, 20, 40)[$i - 1]
+                    $row['ChildActionCode'] = $(if ($i -eq 1) { 'DATABASE_SETTINGS' } else { 'CONFIG_REPAIR' })
+                    $row['IsEnabled'] = $true
                 }
                 'ops.Engine' {
                     $text = "# fixture engine $i`r`nWrite-Host 'it''s $i'`r`n# accent: $eAcute`r`n"
-                    $row['EngineCode'] = 'FX_ENGINE_' + $i
+                    $row['EngineCode'] = $(if ($i -eq 1) { 'DATABASE_CONTENT_SYNC' } elseif ($i -eq 2) { 'CONFIG_REPAIR' } else { 'FX_ENGINE_3' })
+                    if ($i -eq 2) { $row['IsEnabled'] = $true }
                     $row['SourceFileName'] = 'Invoke-Fixture' + $i + '.ps1'
                     $row['ScriptText'] = $text
                     $row['ScriptSha256'] = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::Unicode.GetBytes($text)))

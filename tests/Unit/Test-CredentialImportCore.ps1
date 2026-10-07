@@ -93,9 +93,18 @@ try {
     }
     Assert-That ('parity: the selection and the secret value agree with Protect-RuleRow of the conversion tool ({0} redactions compared)' -f $parityChanged) ($parityOk -and $parityChanged -ge 8)
     $mineTables = & $importModule { $script:RuleTables }
-    $sameTables = (($mineTables.Keys | Sort-Object) -join ',') -ceq (($script:RedactionTables.Keys | Sort-Object) -join ',')
-    foreach ($k in $script:RedactionTables.Keys) { if ($sameTables -and ($mineTables[$k].Id -cne $script:RedactionTables[$k].Id -or $mineTables[$k].Template -cne $script:RedactionTables[$k].Template)) { $sameTables = $false } }
-    Assert-That 'parity: the placeholder pattern and the three rule tables (with their id and template columns) are the same as in the conversion tool' (((& $importModule { $script:PlaceholderPattern }) -ceq $script:PlaceholderPattern) -and $sameTables)
+    $samePortableTables = $true
+    foreach ($k in $script:RedactionTables.Keys) {
+        if (-not $mineTables.Contains($k) -or
+            $mineTables[$k].Id -cne $script:RedactionTables[$k].Id -or
+            $mineTables[$k].Template -cne $script:RedactionTables[$k].Template) {
+            $samePortableTables = $false
+        }
+    }
+    $legacyImportValidationOnly = ($mineTables.Contains('cfg.DatabaseSettingRule') -and
+        -not $script:RedactionTables.Contains('cfg.DatabaseSettingRule') -and
+        -not $script:CarriedTables.Contains('cfg.DatabaseSettingRule'))
+    Assert-That 'parity: portable rule specs match; cfg.DatabaseSettingRule remains import/validation-only after cleanup' (((& $importModule { $script:PlaceholderPattern }) -ceq $script:PlaceholderPattern) -and $samePortableTables -and $legacyImportValidationOnly)
 
     # -----------------------------------------------------------------------
     # B. The plan

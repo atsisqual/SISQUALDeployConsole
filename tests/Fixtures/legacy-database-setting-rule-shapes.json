@@ -1,0 +1,20 @@
+{
+  "description": "Structure-only model for the enabled legacy database-setting replacements. No production literals are stored in this fixture.",
+  "enabledLegacyRuleCount": 14,
+  "filterShape": "Application='v' AND ISNULL([User],N'')='v' AND Section='v' AND [Key]='v'",
+  "termOrder": [
+    "Application",
+    "UserWithNullReplacement",
+    "Section",
+    "Key"
+  ],
+  "legacyMapping": {
+    "Application": "Application",
+    "User": "SettingUser",
+    "Section": "SectionName",
+    "Key": "SettingKey"
+  },
+  "userNullReplacement": "",
+  "settingUserSourceShape": "empty-or-null",
+  "validationStage": "raw-source-before-structured-filter-conversion"
+}

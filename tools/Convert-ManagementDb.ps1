@@ -392,6 +392,13 @@ function Invoke-NewMachineConversion {
     }
 }
 
+. (Join-Path $PSScriptRoot 'Convert-ManagementDb.Cleanup.ps1')
+
+function Read-SyncSchema {
+    param([string]$Text, [string[]]$Tables)
+    return (& $script:CleanupMainReadSyncSchema -Text $Text -Tables $Tables)
+}
+
 if ($script:C7ShouldExecute) {
     $cli = $script:C7Cli
     if ($cli.NewMachine) {
@@ -412,7 +419,8 @@ if ($script:C7ShouldExecute) {
         $item = Get-Item -LiteralPath $resolved
         Write-Host ('Reading {0} ({1} bytes)...' -f $item.Name, $item.Length)
         $text = [System.IO.File]::ReadAllText($resolved, [System.Text.UTF8Encoding]::new($false))
-        $schema = Read-SyncSchema -Text $text -Tables $tables
+        $readTables = @($tables + $script:CleanupValidationTable)
+        $schema = Read-SyncSchema -Text $text -Tables $readTables
         $rows = Read-SyncRows -Text $text -Schema $schema
         $source = [pscustomobject]@{ Schema = $schema; Rows = $rows }
         $info = @{ kind = 'sync-file'; fileName = $item.Name; fileBytes = $item.Length; fileSha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant() }
