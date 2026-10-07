@@ -79,7 +79,7 @@ try {
     $valid = Join-Path $work 'valid.db'
     New-C8Database -Path $valid
     $checks = Invoke-C8Only -Db $valid
-    Assert-That 'C8 tool version is active' ($script:TestToolVersion -eq '0.2.1')
+    Assert-That 'composed verifier version (C8 + C1/C2) is active' ($script:TestToolVersion -eq '0.3.0')
     Assert-That 'valid catalog produces exactly two action-xref checks' ($checks.Count -eq 2 -and @($checks | Where-Object group -ne 'action-xref').Count -eq 0)
     Assert-That 'valid adapter references pass' (@($checks | Where-Object { $_.check -like '*adapter ActionCode*' -and $_.ok }).Count -eq 1)
     Assert-That 'valid action engine references pass' (@($checks | Where-Object { $_.check -like '*EngineCode*' -and $_.ok }).Count -eq 1)

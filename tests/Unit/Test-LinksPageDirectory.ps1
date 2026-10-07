@@ -94,7 +94,7 @@ $source = [pscustomobject]@{
     }
 }
 
-Assert-That 'C1/C2 overlay bumps only the cut-rule version' ($script:SchemaVersion -eq 1 -and $script:CutRuleVersion -eq 2 -and $script:ToolVersion -ceq '0.3.1')
+Assert-That 'C1/C2 on top of C7: the schema version stays 2, the baseline cut rule is 2 (C7) and the tool is 0.5.0' ($script:SchemaVersion -eq 2 -and $script:CutRuleVersion -eq 2 -and $script:ToolVersion -ceq '0.5.0')
 $dirCols = @($schema['cfg.LinksPageDirectory'].Columns | ForEach-Object { $_.Name })
 Assert-That 'directory schema has the seven approved public columns' (($dirCols -join ',') -ceq 'InstanceCode,ServerCode,CountryCode,CustomerCode,CustomerName,HostName,AssignedUserName')
 Assert-That 'directory preserves nullable CustomerCode and CustomerName' (($schema['cfg.LinksPageDirectory'].Columns | Where-Object Name -eq 'CustomerCode').Nullable -and ($schema['cfg.LinksPageDirectory'].Columns | Where-Object Name -eq 'CustomerName').Nullable)
@@ -123,6 +123,8 @@ try {
     $newMachineDirectoryCount = [int](Invoke-Sqlite3 -Exe $sqlite3 -Arguments @('-readonly', $newMachine.Catalog, 'SELECT count(*) FROM cfg_LinksPageDirectory;')).Trim()
     Assert-That 'new-machine C2 directory is empty and recorded as zero' ($newMachineDirectoryCount -eq 0 -and [int]$newMachineEntry.linksPageDirectoryCount -eq 0)
     Assert-That 'new-machine C2 does not report the expected empty directory as a missing policy' (@($newMachineEntry.findings | Where-Object { $_ -like 'cfg_LinksPageDirectory is empty*' }).Count -eq 0)
+    $newMachineMeta = (Invoke-Sqlite3 -Exe $sqlite3 -Arguments @('-readonly', $newMachine.Catalog, 'SELECT schema_version || ''|'' || cut_rule_version FROM catalog_meta;')).Trim()
+    Assert-That 'a catalog with the directory is schema 2 and cut rule 3 (C7 is 2, the directory makes it 3), in the file and in the manifest' ($newMachineMeta -ceq '2|3' -and [int]$newMachineEntry.cutRuleVersion -eq 3)
 
     $result = Invoke-CutConversion -Source $source -SourceInfo @{ kind = 'test' } -Folder $work -Sqlite3 $sqlite3 -Codes @('ALL') -SourceRef 'c1-c2-test' 6>$null
     Assert-That 'cut conversion builds all four catalogs' (@($result.Catalogs).Count -eq 4)
