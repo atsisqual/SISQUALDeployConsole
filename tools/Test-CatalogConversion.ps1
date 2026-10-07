@@ -379,7 +379,8 @@ if ($script:C8ShouldExecute) {
         $resolved = (Resolve-Path -LiteralPath $cli.SyncFile).Path
         Write-Host ('Reading {0}...' -f (Split-Path -Leaf $resolved))
         $text = [System.IO.File]::ReadAllText($resolved, [System.Text.UTF8Encoding]::new($false))
-        $schema = Read-SyncSchema -Text $text -Tables $tables
+        $readTables = @($tables + $script:CleanupValidationTable)
+        $schema = Read-SyncSchema -Text $text -Tables $readTables
         $source = [pscustomobject]@{ Schema = $schema; Rows = (Read-SyncRows -Text $text -Schema $schema) }
     }
     else {
