@@ -1,0 +1,40 @@
+name: apply-enginehost-review-fixes-v3b
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/workflows/apply-enginehost-review-fixes-v3b.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine-host/adr-0008-runtime
+          fetch-depth: 0
+
+      - name: Patch V3 async output and apply proven fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $utf8 = [Text.UTF8Encoding]::new($false)
+          $path = '.github/scripts/Apply-EngineHostReviewFixesV3.ps1'
+          $text = [IO.File]::ReadAllText($path)
+          $old = '$stdinTask.GetAwaiter().GetResult(); $process.StandardInput.Close()'
+          $new = '[void]$stdinTask.GetAwaiter().GetResult(); $process.StandardInput.Close()'
+          $count = ([regex]::Matches($text,[regex]::Escape($old))).Count
+          if ($count -ne 2) { throw ("Expected two stdin GetResult calls, found {0}." -f $count) }
+          $text = $text.Replace($old,$new)
+          $cleanup = "Remove-Item '.github/workflows/apply-enginehost-review-fixes-v3.yml' -Force -ErrorAction SilentlyContinue"
+          if (-not $text.Contains($cleanup,[StringComparison]::Ordinal)) { throw 'V3 cleanup anchor missing.' }
+          $text = $text.Replace($cleanup,$cleanup + "`nRemove-Item '.github/workflows/apply-enginehost-review-fixes-v3b.yml' -Force -ErrorAction SilentlyContinue")
+          [IO.File]::WriteAllText($path,$text,$utf8)
+          & $path
