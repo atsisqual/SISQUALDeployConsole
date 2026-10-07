@@ -1,0 +1,26 @@
+name: apply-enginehost-review-fixes-v3
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/workflows/apply-enginehost-review-fixes-v3.yml'
+      - '.github/scripts/Apply-EngineHostReviewFixesV3.ps1'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine-host/adr-0008-runtime
+          fetch-depth: 0
+      - name: Apply and prove final EngineHost review fixes
+        shell: pwsh
+        run: ./.github/scripts/Apply-EngineHostReviewFixesV3.ps1
