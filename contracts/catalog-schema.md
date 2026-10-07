@@ -1,6 +1,6 @@
 # Per-machine catalog schema
 
-**Status:** [PROPOSED] draft, version `0.1-proposed`. Only the frame is defined here. The table-by-table content is [PENDING] the conversion plan (`docs/migration/catalog-conversion-plan.md`, task 4 step A) and ADR-0007 (accepted 2026-10-05).
+**Status:** [PROPOSED] draft, version `0.2-proposed`. C7 adds the structured database-content predicate contract. The remaining table-by-table content still follows the conversion plan (`docs/migration/catalog-conversion-plan.md`) and ADR-0007.
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 1. What a catalog is
@@ -8,9 +8,9 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 - [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each instance appears in exactly one catalog.
 - [PLANNED, 2026-10-05] Exception for links pages: a catalog that hosts a general links page also carries a read-only directory of the instances of other machines (public columns only), because the general page lists every enabled instance of the same country across all machines (`cfg.GetLinksPageItemPlan`). The directory is a separate table; the rule above is about the full instance rows.
 - [CONFIRMED] Replaces the central database `_sisqualMANAGEMENT`, which ceases to exist. No runtime sync, no connection to any server to obtain configuration.
-- [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts (engines become files). Secret-bearing surfaces never enter a catalog (R-026).
-- [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4, so no managed SQLite provider is needed to build it (the provider is decided in Phase 1B and only has to open files read-only).
-- [PROPOSED] Opened with a read-only URI and `PRAGMA query_only = ON`. The file is listed with its SHA-256 in the signed package manifest (`package-manifest.schema.json`).
+- [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts. Secret-bearing surfaces never enter a catalog (R-026).
+- [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4; the runtime provider only has to open files read-only.
+- [PROPOSED] Opened with a read-only URI and `PRAGMA query_only = ON`. The file is listed with its SHA-256 in the signed package manifest.
 
 ## 2. Mandatory metadata table
 
@@ -24,29 +24,89 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 | `source_kind` | TEXT NOT NULL | `conversion-tool`, `manual-edit-sealed` or `build` |
 | `source_reference` | TEXT NOT NULL | Conversion run id, repository commit or seal note; ASCII, no secrets |
 | `built_at_utc` | TEXT NOT NULL | `YYYY-MM-DDTHH:MM:SSZ`, shown in the UI |
-| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting rules used by the conversion tool |
+| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting/transformation rules |
 
-`schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error and the application refuses to start (except with the logged development flag). `built_at_utc` is the time the catalog content was produced or last sealed after a manual edit; it is not required to equal the manifest's `builtAt` (the time of the last seal of the whole package) [PROPOSED, implemented by `tools/Seal-Package.ps1`].
+Catalog schema version **2** is the first version with C7 structured database filters. `schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error.
 
 ## 3. Conventions for all tables [PROPOSED]
 
-- Text is stored byte-exact: case and line endings are never changed (owner preference of 2026-10-05; some identity-provider links are case-sensitive). All text columns, including the `*Code` columns, compare exactly (SQLite default `BINARY`). The source databases use `Latin1_General_CI_AS`; the conversion tool can declare `*Code` columns `COLLATE NOCASE` only on request (`-CodeCollation NoCase`), and the default does not. Consumers must not rely on case-insensitive matching.
-- `dbo_ManagedServer` has no `ManagementDatabaseName` column (dropped, the central database ceases to exist).
-- Text is UTF-8. Dates and times converted from SQL Server `datetime2` are ISO 8601 text kept exactly as in the source, WITHOUT a time zone: the source values come from `SYSDATETIME()` (server local time), so they are not UTC and must not be treated as UTC. Only values created by the new tools (`built_at_utc`, manifest times) are UTC with a `Z`. See `docs/migration/catalog-conversion-plan.md` section 1.1.
-- Booleans (SQL Server `bit`) are INTEGER 0 or 1 with a `CHECK`.
-- Identity columns keep their source values so that origin and destination rows can be compared by key.
-- Binary content (`varbinary`) is stored as BLOB in every catalog (owner answer of 2026-10-05), together with its SHA-256 column where the source has one; BLOBs are read on demand. Secret-bearing binary content never enters a catalog.
-- Foreign keys are declared and checked at build time (`PRAGMA foreign_key_check` must return no rows).
-- Every table that is cut per machine carries the key it is cut by (`ServerCode` or `InstanceCode`) so completeness of the cut can be tested.
+- Text is stored byte-exact: case and line endings are never changed. All text columns, including `*Code`, compare exactly (`BINARY`) unless the converter is explicitly run with `-CodeCollation NoCase`.
+- `dbo_ManagedServer` has no `ManagementDatabaseName` column.
+- Text is UTF-8. SQL Server local `datetime2` values remain timezone-less ISO text; only values created by new tools and explicitly named UTC carry `Z`.
+- SQL Server `bit` is INTEGER 0 or 1 with a `CHECK`.
+- Identity values are preserved.
+- Binary content is BLOB; secret-bearing binary content never enters a catalog.
+- Foreign keys are checked at build time.
+- Every machine-cut table carries the key used to cut it.
 
-## 4. Global versus cut tables
+## 4. Structured database-content predicates (C7)
 
-[PENDING] The assignment of each source table to "global (identical in every catalog)" or "cut by ServerCode/InstanceCode" is produced by the conversion plan and then copied here as a table. Examples named by the owner as global: applications, rules, policies, action definitions.
+[CONFIRMED, owner decision] Runtime code must never execute the source `cfg.DatabaseObjectSettingRule.FilterClause` as SQL text. Conversion is one-way and fail-closed.
 
-## 5. Open items
+[CONFIRMED] The reference model contains **61** `cfg.DatabaseObjectSettingRule` rows. Their populated filters fall into **seven shapes**: one to four literal equality terms joined by `AND`, plus three lookup-bearing variants. Counted over the 58 populated filters of the current snapshot, 14 use one more form that the first reading of the model missed: `ISNULL(<column>, <literal>) = <value>` for a single column (section 4.1). The test fixture `tests/Fixtures/database-filter-shapes.json` keeps the structural templates of all 58 filters (six after the literals are replaced by placeholders), with no real value, and a test converts every one of them. Three rules are intentionally unfiltered. The number seven therefore describes filter shapes, not source rows.
 
-- [PENDING] Final table list and DDL (conversion plan).
-- [PENDING] Whether the long-term authority for the catalog is a declarative source in this repository compiled by a build tool, or an editor tool (deferred by the owner, ADR-0007 item 1).
-- [CONFIRMED] Machines without policy rows in the server policy tables are cut as they are (empty tables, no template server); see the conversion plan section 2.6.
-- [OBSOLETE, 2026-10-05] Machines that have no local database: no longer applicable. Under ADR-0007 every machine receives its catalog inside the portable package.
-- [PENDING] Whether a package contains one catalog or all catalogs (see the manifest schema).
+For catalog schema version 2:
+
+- source `cfg.DatabaseObjectSettingRule.FilterClause` is **not present** in `cfg_DatabaseObjectSettingRule`;
+- the destination has `FilterPredicateJson TEXT NOT NULL`;
+- an empty/null source filter becomes exactly an explicit `ALL` predicate;
+- a non-empty source filter must parse completely into the restricted grammar below; otherwise conversion stops before a catalog is accepted;
+- the conversion manifest records that raw filter SQL is not carried.
+
+### 4.1 JSON grammar
+
+An unfiltered rule is:
+
+```json
+{"kind":"ALL"}
+```
+
+A filtered rule is:
+
+```json
+{"kind":"AND","terms":[{"column":"ColumnName","operator":"EQ","value":{"kind":"LITERAL","type":"TEXT","value":"value"}}]}
+```
+
+`terms` contains 1 to 16 equality comparisons. `operator` is currently only `EQ`. Literal `type` is `TEXT` or `NUMBER`; numeric values are stored as invariant text so conversion does not silently change precision.
+
+A term whose left side is `ISNULL(<column>, <literal>)` keeps that meaning in an extra member, `nullReplacement`, a literal node of the same kind as `value`:
+
+```json
+{"column":"User","operator":"EQ","value":{"kind":"LITERAL","type":"TEXT","value":""},"nullReplacement":{"kind":"LITERAL","type":"TEXT","value":""}}
+```
+
+It means: read the column, replace NULL by `nullReplacement`, then compare with `value`. The example matches rows where the column is NULL **or** empty. `nullReplacement` is present only on a term written with `ISNULL`; the first argument must be a column and the second a literal, and any other form (a column or an expression as replacement, nested `ISNULL`, `ISNULL` on the value side) is rejected.
+
+A lookup value is:
+
+```json
+{"kind":"LOOKUP","schema":null,"table":"CLIENT","selectColumn":"ID","predicate":{"kind":"AND","terms":[...]}}
+```
+
+`schema` is either `null` or one validated identifier. Lookups may nest to a maximum depth of 4. The converter accepts only the source's restricted `SELECT [TOP (1)] <column> FROM [schema.]<table> WHERE <predicate>` form. A lookup predicate is itself the same equality/`AND` grammar; there is no general SQL node.
+
+### 4.2 Accepted source grammar
+
+C7 supports the seven documented filter families across the 61 source rules: one to four equality comparisons joined by `AND`, including the three lookup-bearing variants represented by the `LOOKUP` node above. Bracketed identifiers and T-SQL `N'...'` string literals are accepted. Doubled single quotes decode to one quote.
+
+The converter rejects, rather than preserves or executes, every construct outside that grammar, including `OR`, `LIKE`, `IN`, functions/expressions (the one exception is `ISNULL(<column>, <literal>)` on the left of an equality, section 4.1), non-equality comparisons, comments, statement terminators, lookup queries without a `WHERE`, `TOP` values other than `TOP (1)`, and trailing SQL. The complete input must be consumed by the parser.
+
+The three intentionally unfiltered rules are represented by `ALL`; this does not make arbitrary empty filters safe at runtime. The future engine must apply its explicit row-count guard before an `ALL` predicate can update rows.
+
+### 4.3 Runtime consumption
+
+The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/column identifiers, including lookup schema/table/select-column identifiers, against database metadata and compile this structure into parameterized SQL. A term with `nullReplacement` must be compiled as `ISNULL(<column>, @replacement) = @value` (or an equivalent that reads a NULL column as the replacement), with both values as parameters; compiling it as a plain `<column> = @value` would stop matching the NULL rows. Literal values must be SQL parameters; JSON text must never be concatenated back into executable SQL. `ALL` means an intentionally unfiltered rule and remains subject to the engine's separate row-count guard.
+
+A `LOOKUP` node is data describing one restricted scalar lookup, not executable SQL text. Runtime compilation must preserve the same depth/term bounds and metadata validation as the conversion contract.
+
+## 5. Global versus cut tables
+
+[PENDING] The assignment of each source table to global or machine-cut is produced by the conversion plan. C7 does not change that assignment; `cfg.DatabaseObjectSettingRule` remains global.
+
+## 6. Open items
+
+- [PENDING] Final table list and DDL for the remaining catalog tables.
+- [PENDING] Whether the long-term authority for the catalog is declarative source in this repository or an editor tool.
+- [CONFIRMED] Machines without policy rows are cut as they are (empty policy tables).
+- [OBSOLETE, 2026-10-05] Machines without a local database are no longer applicable under ADR-0007.
+- [PENDING] Whether a package contains one catalog or all catalogs.

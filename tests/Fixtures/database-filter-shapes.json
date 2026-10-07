@@ -1,0 +1,31 @@
+{
+  "description": "The structural templates of the 58 populated filters of the reference snapshot (cfg.DatabaseObjectSettingRule.FilterClause), with every text literal replaced by 'v' and every number by 0. Shapes only: no real value is kept. 61 rules in all; three have no filter.",
+  "populatedFilters": 58,
+  "unfilteredRules": 3,
+  "shapes": [
+    {
+      "template": "CLIENT_ID='v'",
+      "count": 24
+    },
+    {
+      "template": "Application='v' AND ISNULL([User],'v')='v' AND Section='v' AND [Key]='v'",
+      "count": 14
+    },
+    {
+      "template": "CLIENT_ID=(SELECT ID FROM CLIENT WHERE CLIENT_ID='v')",
+      "count": 8
+    },
+    {
+      "template": "NAME='v' AND CLIENT_ID=(SELECT ID FROM CLIENT WHERE CLIENT_ID='v')",
+      "count": 8
+    },
+    {
+      "template": "Aplicacao='v' AND Seccao='v' AND Chave='v'",
+      "count": 3
+    },
+    {
+      "template": "id='v'",
+      "count": 1
+    }
+  ]
+}

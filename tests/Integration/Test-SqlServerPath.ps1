@@ -87,6 +87,10 @@ function Get-FitText {
 
 function New-CellValue {
     param($Table, $Column, [int]$Index, [bool]$IsKey)
+    if ($Table.table -eq 'cfg.DatabaseObjectSettingRule' -and $Column.name -eq 'FilterClause') {
+        if ($Index -eq 1) { return "[Section] = N'General'" }
+        return "[Section] = N'General' AND [Key] = N'Fixture'"
+    }
     $seed = '{0}|{1}|{2}' -f $Table.table, $Column.name, $Index
     switch ($Column.type) {
         'bit' { return [bool]($Index % 2) }
