@@ -109,7 +109,7 @@ function Test-CleanupApprovedLegacyInsertColumns {
         [string]$SettingKey
     )
     if ([string]::IsNullOrWhiteSpace($InsertColumnsJson)) { return $false }
-    try { $parsed = $InsertColumnsJson | ConvertFrom-Json -ErrorAction Stop }
+    try { $parsed = $InsertColumnsJson | ConvertFrom-Json -DateKind String -ErrorAction Stop }
     catch { return $false }
     if ($null -eq $parsed -or $parsed -is [System.Array]) { return $false }
 
@@ -123,7 +123,11 @@ function Test-CleanupApprovedLegacyInsertColumns {
     if ($properties.Count -ne $expected.Count) { return $false }
     foreach ($name in $expected.Keys) {
         $match = @($properties | Where-Object { $_.Name -ceq $name })
-        if ($match.Count -ne 1 -or [string]$match[0].Value -cne [string]$expected[$name]) { return $false }
+        if ($match.Count -ne 1) { return $false }
+        # The identity must be a JSON text. Casting to [string] would turn null, an empty list and an empty object into the
+        # empty legacy value, and DATABASE_CONTENT_SYNC would then insert SQL NULL where the legacy engine inserted ''.
+        $actual = $match[0].Value
+        if ($actual -isnot [string] -or $actual -cne [string]$expected[$name]) { return $false }
     }
     return $true
 }

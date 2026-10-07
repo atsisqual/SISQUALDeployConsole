@@ -58,7 +58,7 @@ V8 retirement remains conditional on the approved executable `KEYCLOAK_DB_URL` /
 
 The conversion manifest keeps the C7 `structuredDatabaseFilters` metadata and adds:
 
-- `excludedTableCount = 56`;
+- `excludedTableCount = 56` (the conversion plan, section 1.3, records `cfg.DatabaseSettingRule` as Excluded and the totals as 50 global, 7 + 4 cut, 56 excluded, 61 source tables carried; on the real snapshot every catalog holds 61 source tables plus `catalog_meta` and `cfg_LinksPageDirectory`);
 - `retiredCatalogMetadata.version = 1`;
 - excluded source table, removed action/engines/step, and retained `DATABASE_SETTINGS -> DATABASE_CONTENT_SYNC` mapping.
 

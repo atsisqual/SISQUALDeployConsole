@@ -75,7 +75,7 @@ Case and collation [CONFIRMED, owner 2026-10-05]: the owner prefers that NOTHING
 
 ### 1.3 Map of all 117 tables
 
-Class: **Global** = identical in every catalog; **Cut** = only the rows of the machine; **Excluded** = not carried. Row counts are from the INSERT statements of the file. Summary: 51 global, 7 cut by `ServerCode`, 4 cut by `InstanceCode`, 55 excluded (62 tables carried, 1,618 rows carried of 31,959; 30,341 rows of history, plans, audit and state are left behind). SQLite names are `<schema>_<Table>` (SQLite has one namespace per file). Table names of excluded tables are shown for completeness.
+Class: **Global** = identical in every catalog; **Cut** = only the rows of the machine; **Excluded** = not carried. Row counts are from the INSERT statements of the file. Summary: 50 global, 7 cut by `ServerCode`, 4 cut by `InstanceCode`, 56 excluded (61 tables carried, 1,604 rows carried of 31,959; 30,355 rows are not carried: 30,341 of history, plans, audit and state, and the 14 of the retired `cfg.DatabaseSettingRule`). The first reading of the file counted 51 global, 55 excluded and 62 tables carried; the retirement of `cfg.DatabaseSettingRule` (`docs/migration/obsolete-catalog-metadata-cleanup.md`) moved that one table from Global to Excluded. SQLite names are `<schema>_<Table>` (SQLite has one namespace per file). Table names of excluded tables are shown for completeness.
 
 | Source table | Rows | Class | SQLite table | Primary key | Note |
 |---|---:|---|---|---|---|
@@ -134,7 +134,7 @@ Class: **Global** = identical in every catalog; **Cut** = only the rows of the m
 | `cfg.DatabaseCopyPolicy` | 4 | Cut by ServerCode | `cfg_DatabaseCopyPolicy` | `ServerCode` | ServerCode = this machine |
 | `cfg.DatabaseDefinition` | 7 | Global | `cfg_DatabaseDefinition` | `DatabaseCode` | catalog definition |
 | `cfg.DatabaseObjectSettingRule` | 61 | Global | `cfg_DatabaseObjectSettingRule` | `ObjectSettingRuleID` | definitions only; literal secrets in sensitive ExpectedTemplate values are replaced (section 3) |
-| `cfg.DatabaseSettingRule` | 14 | Global | `cfg_DatabaseSettingRule` | `SettingRuleID` | definitions only; literal secrets in sensitive ExpectedTemplate values are replaced (section 3) |
+| `cfg.DatabaseSettingRule` | 14 | Excluded | - | `SettingRuleID` | retired: replaced by `cfg.DatabaseObjectSettingRule`; the 14 enabled rules are checked equivalent before the table is dropped (`docs/migration/obsolete-catalog-metadata-cleanup.md`) |
 | `cfg.EnvironmentCloneDatabasePolicy` | 7 | Global | `cfg_EnvironmentCloneDatabasePolicy` | `PolicyCode` | catalog definition |
 | `cfg.IisApplicationAutoStartDefinition` | 1 | Global | `cfg_IisApplicationAutoStartDefinition` | `IisApplicationCode` | catalog definition |
 | `cfg.IisApplicationDefinition` | 30 | Global | `cfg_IisApplicationDefinition` | `IisApplicationCode` | catalog definition |
@@ -426,7 +426,7 @@ Only on the real servers [V]:
 
 ## 8. Decisions needed from the owner
 
-1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
+1. Approve the table classification (51 global, 7 cut by server, 4 cut by instance, 55 excluded; after the retirement of `cfg.DatabaseSettingRule` by the cleanup: 50 global, 56 excluded) and the redaction of the 16 literal secrets with a new credential kind `RULE_SECRET`.
 2. [DECIDED 2026-10-05] Binary content: BLOB in every catalog (global assets duplicated; per-instance logos in their machine catalog).
 3. [DECIDED 2026-10-05] No template server for policy rows and no built-in defaults: engines stop when the policy row is missing (2.6). Open consequence for the owner: how policy rows for the pilot and for PRESALES and TENDERS are authored (manual edit and seal, ADR-0007 item 7).
 4. Instance directory: decided for links pages on 2026-10-05 (see `docs/roadmap.md` section 5); still open for cross-machine operations (database copy, environment clone, folder copy) and for what a machine's Pulse needs of other hubs.

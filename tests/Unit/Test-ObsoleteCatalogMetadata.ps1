@@ -109,6 +109,11 @@ Assert-That 'cfg.DatabaseSettingRule is validation-only and not a redaction surf
 
 $ruleRows = New-LegacyRuleRows
 Assert-DoesNotThrow 'an enabled legacy database-setting rule with the approved four-term equivalent passes validation' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $ruleRows }
+$dateLike = New-LegacyRuleRows
+$dateLike['cfg.DatabaseSettingRule'][0]['SectionName'] = '2026-01-01T00:00:00Z'
+$dateLike['cfg.DatabaseObjectSettingRule'][0]['FilterClause'] = "Application='APP' AND ISNULL([User],N'')='' AND Section='2026-01-01T00:00:00Z' AND [Key]=N'KEY''ONE'"
+$dateLike['cfg.DatabaseObjectSettingRule'][0]['InsertColumnsJson'] = '{"Application":"APP","User":"","Section":"2026-01-01T00:00:00Z","Key":"KEY''ONE"}'
+Assert-DoesNotThrow 'a section name that looks like a date is compared as text and passes (JSON dates are not converted to DateTime)' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $dateLike }
 $formatVariant = New-LegacyRuleRows
 $formatVariant['cfg.DatabaseObjectSettingRule'][0]['FilterClause'] = " [application] = N'APP'  AnD ISNULL ( [USER] , N'' ) = N'' AnD [section] = N'SECTION_A' AnD [KEY] = N'KEY''ONE' "
 Assert-DoesNotThrow 'harmless filter whitespace, brackets and keyword casing remain equivalent' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $formatVariant }
@@ -130,6 +135,20 @@ Assert-Throws 'legacy replacement must retain create-if-missing semantics' { Ass
 $wrongInsertValue = New-LegacyRuleRows
 $wrongInsertValue['cfg.DatabaseObjectSettingRule'][0]['InsertColumnsJson'] = '{"Application":"APP","User":"OTHER","Section":"SECTION_A","Key":"KEY''ONE"}'
 Assert-Throws 'legacy replacement insert values must match the legacy key identity' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $wrongInsertValue } '*approved replacement (InsertColumnsJson)*'
+foreach ($case in @(
+        @{ Name = 'null'; Json = '{"Application":"APP","User":null,"Section":"SECTION_A","Key":"KEY''ONE"}' },
+        @{ Name = 'an empty list'; Json = '{"Application":"APP","User":[],"Section":"SECTION_A","Key":"KEY''ONE"}' },
+        @{ Name = 'the number 0'; Json = '{"Application":"APP","User":0,"Section":"SECTION_A","Key":"KEY''ONE"}' },
+        @{ Name = 'the boolean false'; Json = '{"Application":"APP","User":false,"Section":"SECTION_A","Key":"KEY''ONE"}' },
+        @{ Name = 'an object'; Json = '{"Application":"APP","User":{},"Section":"SECTION_A","Key":"KEY''ONE"}' }
+    )) {
+    $typed = New-LegacyRuleRows
+    $typed['cfg.DatabaseObjectSettingRule'][0]['InsertColumnsJson'] = $case.Json
+    Assert-Throws ('legacy replacement insert identity must be a JSON text, not ' + $case.Name + ' (no coercion to the empty legacy value)') { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $typed } '*approved replacement (InsertColumnsJson)*'
+}
+$nullApplication = New-LegacyRuleRows
+$nullApplication['cfg.DatabaseObjectSettingRule'][0]['InsertColumnsJson'] = '{"Application":null,"User":"","Section":"SECTION_A","Key":"KEY''ONE"}'
+Assert-Throws 'legacy replacement insert identity cannot have a null Application' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $nullApplication } '*approved replacement (InsertColumnsJson)*'
 $extraInsertColumn = New-LegacyRuleRows
 $extraInsertColumn['cfg.DatabaseObjectSettingRule'][0]['InsertColumnsJson'] = '{"Application":"APP","User":"","Section":"SECTION_A","Key":"KEY''ONE","Extra":"X"}'
 Assert-Throws 'legacy replacement insert configuration cannot add columns' { Assert-LegacyDatabaseSettingRulesEquivalent -Rows $extraInsertColumn } '*approved replacement (InsertColumnsJson)*'
