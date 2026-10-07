@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: engine-host-${{ github.ref }}-${{ matrix.os }}
+  group: engine-host-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
