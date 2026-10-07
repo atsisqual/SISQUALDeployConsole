@@ -148,9 +148,22 @@ function Get-SisqualSecretRepresentations {
 
 function Find-SisqualSecretLeak {
     param([Parameter(Mandatory)][AllowEmptyString()][string[]]$Texts, [System.Collections.IDictionary]$Secrets)
-    foreach ($representation in (Get-SisqualSecretRepresentations $Secrets)) {
-        foreach ($text in $Texts) {
-            if ($null -ne $text -and $text.Contains($representation, [StringComparison]::Ordinal)) { return $true }
+    $representations = Get-SisqualSecretRepresentations $Secrets
+    foreach ($text in $Texts) {
+        if ($null -eq $text) { continue }
+        foreach ($representation in $representations) {
+            if ($text.Contains($representation, [StringComparison]::Ordinal)) { return $true }
+        }
+
+        # URI percent escapes are case-insensitive for their hexadecimal digits. Decode the
+        # complete text once before comparison so equivalent forms such as %2F and %2f cannot
+        # bypass the secret scan while preserving ordinal comparison for the secret itself.
+        $decodedText = $text
+        try { $decodedText = [Uri]::UnescapeDataString($text) } catch { $decodedText = $text }
+        if (-not $decodedText.Equals($text, [StringComparison]::Ordinal)) {
+            foreach ($representation in $representations) {
+                if ($decodedText.Contains($representation, [StringComparison]::Ordinal)) { return $true }
+            }
         }
     }
     return $false
@@ -191,14 +204,17 @@ function Test-SisqualEngineResultObject {
     $allowed = @($required + @('planFingerprint','errorMessage','backup'))
     foreach ($name in $required) { if ($null -eq $Result.PSObject.Properties[$name]) { return $false } }
     foreach ($property in $Result.PSObject.Properties) { if ($allowed -cnotcontains $property.Name) { return $false } }
+    foreach ($name in @('contractVersion','operationId','engineCode','engineVersion','mode','startedAt','completedAt')) {
+        if ($Result.$name -isnot [string]) { return $false }
+    }
     if ([string]$Result.contractVersion -cne $script:EngineHostContractVersion -or [string]$Result.operationId -cne $OperationId -or [string]$Result.engineCode -cne $EngineCode -or [string]$Result.mode -cne $Mode) { return $false }
     if ([string]$Result.operationId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { return $false }
     if ([string]$Result.engineCode -notmatch '^[A-Z][A-Z0-9_]{1,59}$' -or [string]$Result.engineVersion -notmatch '^[A-Za-z0-9._-]{1,40}$') { return $false }
     if ([string]$Result.mode -notin @('PREVIEW','APPLY')) { return $false }
     if ([string]$Result.startedAt -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' -or [string]$Result.completedAt -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { return $false }
     if ($Result.succeeded -isnot [bool] -or ($Result.exitCode -isnot [int] -and $Result.exitCode -isnot [long])) { return $false }
-    if ($null -ne $Result.PSObject.Properties['planFingerprint'] -and [string]$Result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return $false }
-    if ($null -ne $Result.PSObject.Properties['errorMessage'] -and ([string]$Result.errorMessage).Length -gt 2000) { return $false }
+    if ($null -ne $Result.PSObject.Properties['planFingerprint'] -and ($Result.planFingerprint -isnot [string] -or $Result.planFingerprint -notmatch '^[0-9a-f]{64}$')) { return $false }
+    if ($null -ne $Result.PSObject.Properties['errorMessage'] -and ($Result.errorMessage -isnot [string] -or $Result.errorMessage.Length -gt 2000)) { return $false }
 
     $summaryRequired = @('targetCount','succeededTargets','failedTargets','warningCount','errorCount')
     if ($null -eq $Result.summary) { return $false }
@@ -231,10 +247,13 @@ function Test-SisqualEngineResultObject {
         $rowAllowed = @($rowRequired + @('details'))
         foreach ($name in $rowRequired) { if ($null -eq $row.PSObject.Properties[$name]) { return $false } }
         foreach ($property in $row.PSObject.Properties) { if ($rowAllowed -cnotcontains $property.Name) { return $false } }
+        foreach ($name in @('timestamp','instanceCode','operationType','object','status')) {
+            if ($row.$name -isnot [string]) { return $false }
+        }
         if ([string]$row.timestamp -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { return $false }
         if (([string]$row.instanceCode).Length -gt 60 -or ([string]$row.object).Length -gt 400) { return $false }
         if ([string]$row.operationType -notmatch '^[A-Z][A-Z0-9_]{1,59}$' -or [string]$row.status -notmatch '^[A-Za-z][A-Za-z0-9_]{1,59}$') { return $false }
-        if ($null -ne $row.PSObject.Properties['details'] -and ([string]$row.details).Length -gt 2000) { return $false }
+        if ($null -ne $row.PSObject.Properties['details'] -and ($row.details -isnot [string] -or $row.details.Length -gt 2000)) { return $false }
     }
     return $true
 }

@@ -105,6 +105,13 @@ switch ($scenario) {
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
+    'SECRET_URL_LOWERHEX' {
+        $encoded = [Uri]::EscapeDataString($secretValue)
+        $encoded = [regex]::Replace($encoded, '%[0-9A-F]{2}', { param($match) $match.Value.ToLowerInvariant() })
+        [Console]::Error.WriteLine($encoded)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
     'SECRET_RESULT_ALT_ESCAPE' {
         if ($secretValue -cne 'pass') { exit 2 }
         $result = New-Result -Request $request -Succeeded $true -Details $secretValue
@@ -116,6 +123,22 @@ switch ($scenario) {
     'INVALID_BACKUP_TYPES' {
         $result = New-Result -Request $request -Succeeded $true
         $result.backup = [ordered]@{ created = $true; name = 42; location = $true; restoreHint = @{} }
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'INVALID_TOP_STRING_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.engineVersion = 42
+        $result.errorMessage = 42
+        $result.planFingerprint = 42
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'INVALID_ROW_STRING_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.results[0].timestamp = 42
+        $result.results[0].object = 42
+        $result.results[0].details = 42
         Write-ResultFile $request $result
         exit 0
     }

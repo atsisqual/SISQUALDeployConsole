@@ -59,7 +59,7 @@ try {
     $ctx = New-Ctx; $ctx.Manifest += [pscustomobject]@{ path = 'engines/FakeEngine.ps1'; sha256 = $ctx.Manifest[0].sha256 }
     Check 'mutation: duplicate manifest engine entry is rejected' (Throws-Code { Run $ctx } 'ENGINE_MANIFEST_ENTRY_INVALID')
 
-    foreach ($scenario in @('INVALID_SHAPE','INVALID_BACKUP','INVALID_BACKUP_TYPES')) {
+    foreach ($scenario in @('INVALID_SHAPE','INVALID_BACKUP','INVALID_BACKUP_TYPES','INVALID_TOP_STRING_TYPES','INVALID_ROW_STRING_TYPES')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx
         Check ("mutation: malformed result rejected ({0})" -f $scenario) ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
     }
@@ -77,7 +77,7 @@ try {
     Check 'mutation: stdout above 1 MiB is bounded' ($result.errorMessage -ceq 'ENGINE_STREAM_LIMIT')
 
     $canary = 'canary value/+with?encoding=1'
-    foreach ($scenario in @('SECRET_BASE64','SECRET_URL')) {
+    foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
         Check ("mutation: encoded secret detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
     }
