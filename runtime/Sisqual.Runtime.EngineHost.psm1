@@ -113,7 +113,7 @@ function Get-SisqualSecretRepresentations {
 }
 
 function Find-SisqualSecretLeak {
-    param([Parameter(Mandatory)][string[]]$Texts, [System.Collections.IDictionary]$Secrets)
+    param([Parameter(Mandatory)][AllowEmptyString()][string[]]$Texts, [System.Collections.IDictionary]$Secrets)
     foreach ($representation in (Get-SisqualSecretRepresentations $Secrets)) {
         foreach ($text in $Texts) {
             if ($null -ne $text -and $text.Contains($representation, [StringComparison]::Ordinal)) { return $true }
