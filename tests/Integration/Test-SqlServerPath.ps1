@@ -240,6 +240,11 @@ function New-FixtureRows {
                         $row['ActionCode'] = 'DATABASE_SETTINGS'
                         $row['ActionType'] = 'ENGINE'
                         $row['EngineCode'] = 'DATABASE_CONTENT_SYNC'
+                        $row['ModePolicy'] = 'PREVIEW_APPLY'
+                        $row['RequiresInstanceSelection'] = $true
+                        $row['AllowAllInstances'] = $true
+                        $row['PassInstanceCode'] = $true
+                        $row['PassApply'] = $true
                         $row['IsEnabled'] = $true
                     }
                     else {
