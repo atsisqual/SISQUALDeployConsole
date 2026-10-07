@@ -69,7 +69,9 @@ Recording each run, the state between runs and the per-run plan and snapshot rea
 
 ## 13. Open questions
 
-1. [PENDING] Sequential checks cannot finish in the worst case (section 8). Recommendation: bounded parallelism (for example 16) with an overall deadline shorter than the interval.
-2. [PENDING] Certificate validation of the HTTPS checks (self-signed or private authority). Recommendation: validate by default and make an exception an explicit catalog setting.
-3. [PENDING] Which scheduler interface to use if `ScheduledTasks` does not load under PowerShell 7 (recommend the COM interface).
-4. [PENDING] The branding assets are global files written into every hub's website root: confirm they are part of this engine and not of `MANAGED_ASSETS`. Recommendation: keep them here, as today.
+1. [DECIDED 2026-10-07] Sequential checks cannot finish in the worst case (section 8). Recommendation: bounded parallelism (for example 16) with an overall deadline shorter than the interval.
+2. [DECIDED 2026-10-07] Certificate validation of the HTTPS checks (self-signed or private authority). Recommendation: validate by default and make an exception an explicit catalog setting.
+3. [DECIDED 2026-10-07] Which scheduler interface to use if `ScheduledTasks` does not load under PowerShell 7 (recommend the COM interface).
+4. [DECIDED 2026-10-07] The branding assets are global files written into every hub's website root: confirm they are part of this engine and not of `MANAGED_ASSETS`. Recommendation: keep them here, as today.
+
+The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026-10-07, covering this engine and the other wave 1 engine); see `docs/decisions-log.md`.

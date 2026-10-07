@@ -81,7 +81,9 @@ Not applicable (read-only).
 
 ## 13. Open questions
 
-1. [PENDING] Does a missing credential package make the services check an `ERROR` or a `WARNING`? Recommendation: `ERROR`, because the services engine cannot run without it.
-2. [PENDING] Should `FULL_DEPLOYMENT` also stop on `WARNING`? Recommendation: no, as today.
-3. [PENDING] Are the four reviews whose codes were not extracted all needed? Recommendation: port all 12 and list their codes in the first port PR.
-4. [PENDING] Add a check that the catalog build time is not older than a limit (risk R-044)? Recommendation: report it as `INFO` with the date, no limit.
+1. [DECIDED 2026-10-07] Does a missing credential package make the services check an `ERROR` or a `WARNING`? Recommendation: `ERROR`, because the services engine cannot run without it.
+2. [DECIDED 2026-10-07] Should `FULL_DEPLOYMENT` also stop on `WARNING`? Recommendation: no, as today.
+3. [DECIDED 2026-10-07] Are the four reviews whose codes were not extracted all needed? Recommendation: port all 12 and list their codes in the first port PR.
+4. [DECIDED 2026-10-07] Add a check that the catalog build time is not older than a limit (risk R-044)? Recommendation: report it as `INFO` with the date, no limit.
+
+The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026-10-07, covering this engine and the other wave 1 engine); see `docs/decisions-log.md`.
