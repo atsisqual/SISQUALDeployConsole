@@ -4,106 +4,92 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Import-Module (Join-Path $repoRoot 'runtime\Sisqual.Runtime.EngineHost.psm1') -Force
-
 $script:Passed = 0
 $script:Failed = 0
 $script:Roots = [Collections.Generic.List[string]]::new()
 
-function Check {
-    param([string]$Name, [bool]$Condition)
-    if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) }
-    else { $script:Failed++; Write-Host ('FAIL  ' + $Name) }
+function Check([string]$Name, [bool]$Condition) {
+    if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) } else { $script:Failed++; Write-Host ('FAIL  ' + $Name) }
 }
-
-function Throws-Code {
-    param([scriptblock]$Script, [string]$Code)
-    try { & $Script | Out-Null; return $false }
-    catch { return $_.Exception.Message -ceq $Code }
+function Throws-Code([scriptblock]$Script, [string]$Code) {
+    try { & $Script | Out-Null; return $false } catch { return $_.Exception.Message -ceq $Code }
 }
-
-function New-Ctx {
-    param([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE')
+function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     $root = Join-Path ([IO.Path]::GetTempPath()) ('sisqual-enginehost-mutation-' + [guid]::NewGuid().ToString('N'))
-    [void][IO.Directory]::CreateDirectory((Join-Path $root 'engines'))
-    $script:Roots.Add($root)
-    $leaf = 'FakeEngine.ps1'
-    $path = Join-Path (Join-Path $root 'engines') $leaf
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'engines')); $script:Roots.Add($root)
+    $leaf = 'FakeEngine.ps1'; $path = Join-Path (Join-Path $root 'engines') $leaf
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FakeEngine.ps1') -Destination $path
-    $catalog = Join-Path $root 'catalog.sqlite'
-    Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
+    $catalog = Join-Path $root 'catalog.sqlite'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     return [pscustomobject]@{
-        Root = $root
-        Catalog = $catalog
+        Root = $root; Catalog = $catalog; Scenario = $Scenario
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
         Action = [pscustomobject]@{ ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
         Manifest = @([pscustomobject]@{ path = ('engines/' + $leaf); sha256 = $hash })
-        Scenario = $Scenario
     }
 }
-
 function Run {
     param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$MachineName = $env:COMPUTERNAME, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY')
-    return Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogMachineName $MachineName -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -CancellationGraceSeconds 1
+    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogMachineName $MachineName -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -CancellationGraceSeconds 1
 }
 
 try {
-    $ctx = New-Ctx
-    $ctx.Engine.IsEnabled = 0
+    $ctx = New-Ctx; $ctx.Engine.IsEnabled = 0
     Check 'mutation: disabled engine is rejected' (Throws-Code { Run $ctx } 'ENGINE_DISABLED')
 
-    $ctx = New-Ctx
-    $ctx.Engine.MinimumPowerShell = '99.0'
+    $ctx = New-Ctx; $ctx.Engine.MinimumPowerShell = '99.0'
     Check 'mutation: unsupported minimum PowerShell is rejected' (Throws-Code { Run $ctx } 'POWERSHELL_VERSION_UNAVAILABLE')
 
     $ctx = New-Ctx
     Check 'mutation: foreign catalog machine is rejected' (Throws-Code { Run $ctx -MachineName 'NOT-THIS-MACHINE' } 'CATALOG_MACHINE_MISMATCH')
 
-    $ctx = New-Ctx
-    $ctx.Engine.SourceFileName = '..\FakeEngine.ps1'
+    $ctx = New-Ctx; $ctx.Engine.SourceFileName = '..\FakeEngine.ps1'
     Check 'mutation: path traversal SourceFileName is rejected' (Throws-Code { Run $ctx } 'ENGINE_SOURCE_FILENAME_INVALID')
 
-    $ctx = New-Ctx
-    $ctx.Manifest[0].sha256 = ('0' * 64)
+    $ctx = New-Ctx; $ctx.Manifest[0].sha256 = ('0' * 64)
     Check 'mutation: tampered engine hash is rejected' (Throws-Code { Run $ctx } 'ENGINE_HASH_MISMATCH')
 
-    $ctx = New-Ctx
-    $ctx.Manifest += [pscustomobject]@{ path = 'engines/FakeEngine.ps1'; sha256 = $ctx.Manifest[0].sha256 }
+    $ctx = New-Ctx; $ctx.Manifest += [pscustomobject]@{ path = 'engines/FakeEngine.ps1'; sha256 = $ctx.Manifest[0].sha256 }
     Check 'mutation: duplicate manifest engine entry is rejected' (Throws-Code { Run $ctx } 'ENGINE_MANIFEST_ENTRY_INVALID')
 
-    $ctx = New-Ctx -Scenario 'INVALID_SHAPE'
-    $result = Run $ctx
-    Check 'mutation: missing required result member becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
+    foreach ($scenario in @('INVALID_SHAPE','INVALID_BACKUP')) {
+        $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx
+        Check ("mutation: malformed result rejected ({0})" -f $scenario) ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
+    }
 
-    $ctx = New-Ctx -Scenario 'NO_RESULT'
-    $result = Run $ctx
+    $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
     Check 'mutation: successful exit without result becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT')
 
-    $ctx = New-Ctx -Scenario 'STREAM_LIMIT'
-    $result = Run $ctx
+    $ctx = New-Ctx -Scenario 'UNEXPECTED_EXIT'; $result = Run $ctx
+    Check 'mutation: undocumented process exit code becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $result.succeeded)
+
+    $ctx = New-Ctx -Scenario 'STREAM_LIMIT'; $result = Run $ctx
     Check 'mutation: stdout above 1 MiB is bounded' ($result.errorMessage -ceq 'ENGINE_STREAM_LIMIT')
 
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL')) {
-        $ctx = New-Ctx -Scenario $scenario
-        $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
-        Check ("mutation: encoded secret is detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
+        $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
+        Check ("mutation: encoded secret detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
     }
 
-    $ctx = New-Ctx -ModePolicy 'PREVIEW_APPLY'
-    $preview = Run $ctx -Class MUTATING
-    Check 'mutation setup: preview fingerprint exists' ([string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
+    $jsonCanary = 'p"ass\word'
+    $ctx = New-Ctx -Scenario 'SECRET_RESULT'; $result = Run $ctx -Secrets @{ TEST_SECRET = $jsonCanary }
+    Check 'mutation: JSON-escaped secret in result is detected' ($result.errorMessage -ceq 'SECRET_LEAK')
+
+    $ctx = New-Ctx -ModePolicy 'PREVIEW_APPLY'; $preview = Run $ctx -Class MUTATING
+    Check 'mutation setup: successful preview fingerprint exists' ([string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
     Check 'mutation: APPLY requires exact confirmation text' (Throws-Code { Run $ctx -Class MUTATING -Mode APPLY -PlanFingerprint ([string]$preview.planFingerprint) -Confirmation 'WRONG' } 'CONFIRMATION_REQUIRED')
 
-    $ctx = New-Ctx
-    $ctx.Action.RequiresInstanceSelection = 1
+    $failedPreview = New-Ctx -Scenario 'FAILED_PREVIEW' -ModePolicy 'PREVIEW_APPLY'; $preview = Run $failedPreview -Class MUTATING
+    Check 'mutation setup: failed preview carries fingerprint but remains failed' (-not $preview.succeeded -and [string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
+    Check 'mutation: failed preview fingerprint is not cached for APPLY' (Throws-Code { Run $failedPreview -Class MUTATING -Mode APPLY -PlanFingerprint ([string]$preview.planFingerprint) -Confirmation 'CONFIRM' } 'PLAN_CHANGED')
+
+    $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1
     Check 'mutation: required instance cannot be omitted' (Throws-Code {
         Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
 }
-finally {
-    foreach ($root in $script:Roots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
-}
+finally { foreach ($root in $script:Roots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue } }
 
 Write-Host ("EngineHost mutation matrix: {0} passed / {1} failed" -f $script:Passed, $script:Failed)
 if ($script:Failed -ne 0) { exit 1 }
