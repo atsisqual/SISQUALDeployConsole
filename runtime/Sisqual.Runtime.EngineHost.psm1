@@ -16,8 +16,8 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 namespace Sisqual.Runtime.EngineHost {
-    internal static class BoundedReader {
-        internal static async Task<string> ReadAsync(StreamReader reader, int maxBytes) {
+    public static class BoundedReader {
+        public static async Task<string> ReadAsync(StreamReader reader, int maxBytes) {
             var buffer = new char[4096];
             var builder = new StringBuilder();
             var utf8 = new UTF8Encoding(false, true);
