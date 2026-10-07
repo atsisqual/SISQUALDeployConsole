@@ -4,6 +4,13 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Import-Module (Join-Path $repoRoot 'runtime\Sisqual.Runtime.EngineHost.psm1') -Force
+$env:SISQUAL_ENGINEHOST_TEST_LOG = Join-Path ([IO.Path]::GetTempPath()) ('sisqual-enginehost-log-' + [guid]::NewGuid().ToString('N') + '.jsonl')
+function global:Write-SisqualRuntimeLog {
+    param([string]$Level,[string]$EventCode,[string]$Message,[hashtable]$Properties)
+    $entry = [ordered]@{ level = $Level; eventCode = $EventCode; message = $Message; properties = $Properties }
+    Add-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Value ($entry | ConvertTo-Json -Compress -Depth 10) -Encoding utf8
+    return $env:SISQUAL_ENGINEHOST_TEST_LOG
+}
 $script:Passed = 0
 $script:Failed = 0
 $script:Roots = [Collections.Generic.List[string]]::new()
@@ -52,13 +59,16 @@ try {
     $ctx = New-Ctx; $ctx.Manifest += [pscustomobject]@{ path = 'engines/FakeEngine.ps1'; sha256 = $ctx.Manifest[0].sha256 }
     Check 'mutation: duplicate manifest engine entry is rejected' (Throws-Code { Run $ctx } 'ENGINE_MANIFEST_ENTRY_INVALID')
 
-    foreach ($scenario in @('INVALID_SHAPE','INVALID_BACKUP')) {
+    foreach ($scenario in @('INVALID_SHAPE','INVALID_BACKUP','INVALID_BACKUP_TYPES')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx
         Check ("mutation: malformed result rejected ({0})" -f $scenario) ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
     }
 
+    if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { Remove-Item -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Force }
     $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
     Check 'mutation: successful exit without result becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT')
+    $failureLog = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { [IO.File]::ReadAllText($env:SISQUAL_ENGINEHOST_TEST_LOG) } else { '' }
+    Check 'mutation: failed completion is audit logged' ($failureLog.Contains('ENGINE.FAIL',[StringComparison]::Ordinal) -and $failureLog.Contains('operationId',[StringComparison]::Ordinal) -and $failureLog.Contains('ENGINE_NO_RESULT',[StringComparison]::Ordinal))
 
     $ctx = New-Ctx -Scenario 'UNEXPECTED_EXIT'; $result = Run $ctx
     Check 'mutation: undocumented process exit code becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $result.succeeded)
@@ -71,6 +81,9 @@ try {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
         Check ("mutation: encoded secret detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
     }
+
+    $ctx = New-Ctx -Scenario 'SECRET_RESULT_ALT_ESCAPE'; $result = Run $ctx -Secrets @{ TEST_SECRET = 'pass' }
+    Check 'mutation: decoded alternate Unicode escape secret in result is detected' ($result.errorMessage -ceq 'SECRET_LEAK')
 
     $jsonCanary = 'p"ass\word'
     $ctx = New-Ctx -Scenario 'SECRET_RESULT'; $result = Run $ctx -Secrets @{ TEST_SECRET = $jsonCanary }
@@ -89,7 +102,12 @@ try {
         Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
 }
-finally { foreach ($root in $script:Roots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue } }
+finally {
+    foreach ($root in $script:Roots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-SisqualRuntimeLog -Force -ErrorAction SilentlyContinue
+    Remove-Item Env:\SISQUAL_ENGINEHOST_TEST_LOG -ErrorAction SilentlyContinue
+}
 
 Write-Host ("EngineHost mutation matrix: {0} passed / {1} failed" -f $script:Passed, $script:Failed)
 if ($script:Failed -ne 0) { exit 1 }

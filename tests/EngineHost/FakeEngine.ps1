@@ -105,6 +105,20 @@ switch ($scenario) {
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
+    'SECRET_RESULT_ALT_ESCAPE' {
+        if ($secretValue -cne 'pass') { exit 2 }
+        $result = New-Result -Request $request -Succeeded $true -Details $secretValue
+        $json = $result | ConvertTo-Json -Compress -Depth 30
+        $json = $json.Replace('"details":"pass"', '"details":"p\u0061ss"')
+        [IO.File]::WriteAllText([string]$request.resultPath, $json, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
+    'INVALID_BACKUP_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.backup = [ordered]@{ created = $true; name = 42; location = $true; restoreHint = @{} }
+        Write-ResultFile $request $result
+        exit 0
+    }
     'INVALID_ARITHMETIC' {
         Write-ResultFile $request (New-Result -Request $request -Succeeded $true -InvalidArithmetic)
         exit 0

@@ -19,6 +19,13 @@ $fingerprintA = Get-SisqualPlanFingerprint -Plan $planA
 $fingerprintB = Get-SisqualPlanFingerprint -Plan $planB
 Check 'canonical plan fingerprint ignores map insertion order' ($fingerprintA -ceq $fingerprintB)
 
+$emptyArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @() })
+$nullValue = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = $null })
+$singleArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @('x') })
+$scalarValue = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = 'x' })
+Check 'mutation: empty array fingerprint differs from null' ($emptyArray -cne $nullValue)
+Check 'mutation: singleton array fingerprint differs from scalar' ($singleArray -cne $scalarValue)
+
 $children = @(
     [pscustomobject]@{ step = 30; engineCode = 'C_ENGINE'; instanceCode = 'C'; planFingerprint = ('c' * 64) },
     [pscustomobject]@{ step = 10; engineCode = 'A_ENGINE'; instanceCode = 'A'; planFingerprint = ('a' * 64) },

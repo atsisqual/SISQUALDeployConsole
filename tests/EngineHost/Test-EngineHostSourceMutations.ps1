@@ -16,7 +16,10 @@ $anchors = @(
     [pscustomobject]@{ Name = 'PowerShell 7 ACL extension'; Text = '[System.IO.FileSystemAclExtensions]::SetAccessControl' },
     [pscustomobject]@{ Name = 'JSON escaped secret representation'; Text = '$jsonLiteral = ConvertTo-Json -InputObject $value -Compress' },
     [pscustomobject]@{ Name = 'backup schema validation'; Text = '$backupAllowed = @(''created'',''name'',''location'',''sha256'',''restoreHint'')' },
-    [pscustomobject]@{ Name = 'result timestamp strings preserved'; Text = 'ConvertFrom-Json -Depth 50 -DateKind String' }
+    [pscustomobject]@{ Name = 'result timestamp strings preserved'; Text = 'ConvertFrom-Json -Depth 50 -DateKind String' },
+    [pscustomobject]@{ Name = 'Seal-Package canonical serializer reused'; Text = 'function ConvertTo-SisqualCanonicalJson' },
+    [pscustomobject]@{ Name = 'decoded result secret scan'; Text = 'Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets' },
+    [pscustomobject]@{ Name = 'failed completion audit helper'; Text = 'function New-SisqualLoggedEngineFailureResult' }
 )
 
 $passed = 0

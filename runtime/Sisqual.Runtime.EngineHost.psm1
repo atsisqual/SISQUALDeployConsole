@@ -56,29 +56,63 @@ function Get-SisqualSha256Hex {
     finally { $stream.Dispose() }
 }
 
-function ConvertTo-SisqualCanonicalNode {
-    param([AllowNull()][object]$Value)
-    if ($null -eq $Value) { return $null }
-    if ($Value -is [string] -or $Value -is [bool] -or $Value -is [byte] -or $Value -is [int16] -or $Value -is [int32] -or $Value -is [int64] -or $Value -is [uint16] -or $Value -is [uint32] -or $Value -is [uint64] -or $Value -is [single] -or $Value -is [double] -or $Value -is [decimal]) { return $Value }
-    if ($Value -is [System.Collections.IDictionary]) {
-        $ordered = [ordered]@{}
-        foreach ($key in @($Value.Keys | ForEach-Object { [string]$_ } | Sort-Object -CaseSensitive)) { $ordered[$key] = ConvertTo-SisqualCanonicalNode $Value[$key] }
-        return $ordered
+function ConvertTo-SisqualCanonicalString {
+    param([string]$Text)
+    $sb = [Text.StringBuilder]::new()
+    [void]$sb.Append('"')
+    foreach ($ch in $Text.ToCharArray()) {
+        $code = [int]$ch
+        switch ($code) {
+            34 { [void]$sb.Append('\"') }
+            92 { [void]$sb.Append('\\') }
+            8 { [void]$sb.Append('\b') }
+            9 { [void]$sb.Append('\t') }
+            10 { [void]$sb.Append('\n') }
+            12 { [void]$sb.Append('\f') }
+            13 { [void]$sb.Append('\r') }
+            default {
+                if ($code -lt 32 -or $code -gt 126) { [void]$sb.Append(('\u{0:x4}' -f $code)) }
+                else { [void]$sb.Append($ch) }
+            }
+        }
     }
-    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { return @($Value | ForEach-Object { ConvertTo-SisqualCanonicalNode $_ }) }
-    $orderedObject = [ordered]@{}
-    foreach ($property in @($Value.PSObject.Properties | Sort-Object Name -CaseSensitive)) { $orderedObject[$property.Name] = ConvertTo-SisqualCanonicalNode $property.Value }
-    return $orderedObject
+    [void]$sb.Append('"')
+    return $sb.ToString()
+}
+
+function ConvertTo-SisqualCanonicalJson {
+    param($Value)
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [string]) { return (ConvertTo-SisqualCanonicalString $Value) }
+    if ($Value -is [bool]) { return $(if ($Value) { 'true' } else { 'false' }) }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [int16] -or $Value -is [byte] -or $Value -is [uint32] -or $Value -is [uint64]) {
+        return ([long]$Value).ToString([Globalization.CultureInfo]::InvariantCulture)
+    }
+    if ($Value -is [Collections.IDictionary]) {
+        [string[]]$keys = @($Value.Keys | ForEach-Object { [string]$_ })
+        [Array]::Sort($keys, [StringComparer]::Ordinal)
+        $parts = foreach ($key in $keys) { (ConvertTo-SisqualCanonicalString $key) + ':' + (ConvertTo-SisqualCanonicalJson $Value[$key]) }
+        return '{' + ($parts -join ',') + '}'
+    }
+    if ($Value -is [Management.Automation.PSCustomObject]) {
+        $table = [ordered]@{}
+        foreach ($property in $Value.PSObject.Properties) { $table[$property.Name] = $property.Value }
+        return (ConvertTo-SisqualCanonicalJson $table)
+    }
+    if ($Value -is [Collections.IEnumerable]) {
+        $items = foreach ($item in $Value) { ConvertTo-SisqualCanonicalJson $item }
+        return '[' + (@($items) -join ',') + ']'
+    }
+    throw ('Value of type {0} cannot be written in canonical form.' -f $Value.GetType().FullName)
 }
 
 function Get-SisqualPlanFingerprint {
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Plan)
-    $json = (ConvertTo-SisqualCanonicalNode $Plan) | ConvertTo-Json -Compress -Depth 100
+    $json = ConvertTo-SisqualCanonicalJson $Plan
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
     return ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))).ToLowerInvariant()
 }
-
 function Get-SisqualCompositePlanFingerprint {
     [CmdletBinding()]
     param([Parameter(Mandatory)][object[]]$Children)
@@ -118,6 +152,24 @@ function Find-SisqualSecretLeak {
         foreach ($text in $Texts) {
             if ($null -ne $text -and $text.Contains($representation, [StringComparison]::Ordinal)) { return $true }
         }
+    }
+    return $false
+}
+
+function Find-SisqualDecodedSecretLeak {
+    param([AllowNull()][object]$Value, [System.Collections.IDictionary]$Secrets)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) { return (Find-SisqualSecretLeak -Texts @([string]$Value) -Secrets $Secrets) }
+    if ($Value -is [System.Collections.IDictionary]) {
+        foreach ($item in $Value.Values) { if (Find-SisqualDecodedSecretLeak -Value $item -Secrets $Secrets) { return $true } }
+        return $false
+    }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        foreach ($item in $Value) { if (Find-SisqualDecodedSecretLeak -Value $item -Secrets $Secrets) { return $true } }
+        return $false
+    }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($property in $Value.PSObject.Properties) { if (Find-SisqualDecodedSecretLeak -Value $property.Value -Secrets $Secrets) { return $true } }
     }
     return $false
 }
@@ -167,10 +219,10 @@ function Test-SisqualEngineResultObject {
         if ($null -eq $backup -or $null -eq $backup.PSObject.Properties['created'] -or $backup.created -isnot [bool]) { return $false }
         $backupAllowed = @('created','name','location','sha256','restoreHint')
         foreach ($property in $backup.PSObject.Properties) { if ($backupAllowed -cnotcontains $property.Name) { return $false } }
-        if ($null -ne $backup.PSObject.Properties['name'] -and ([string]$backup.name).Length -gt 200) { return $false }
-        if ($null -ne $backup.PSObject.Properties['location'] -and ([string]$backup.location).Length -gt 260) { return $false }
-        if ($null -ne $backup.PSObject.Properties['sha256'] -and [string]$backup.sha256 -notmatch '^[0-9a-f]{64}$') { return $false }
-        if ($null -ne $backup.PSObject.Properties['restoreHint'] -and ([string]$backup.restoreHint).Length -gt 500) { return $false }
+        if ($null -ne $backup.PSObject.Properties['name'] -and ($backup.name -isnot [string] -or $backup.name.Length -gt 200)) { return $false }
+        if ($null -ne $backup.PSObject.Properties['location'] -and ($backup.location -isnot [string] -or $backup.location.Length -gt 260)) { return $false }
+        if ($null -ne $backup.PSObject.Properties['sha256'] -and ($backup.sha256 -isnot [string] -or $backup.sha256 -notmatch '^[0-9a-f]{64}$')) { return $false }
+        if ($null -ne $backup.PSObject.Properties['restoreHint'] -and ($backup.restoreHint -isnot [string] -or $backup.restoreHint.Length -gt 500)) { return $false }
     }
 
     if ($Result.results -isnot [System.Collections.IEnumerable] -or $Result.results -is [string]) { return $false }
@@ -229,6 +281,26 @@ function Write-SisqualEngineHostLog {
     foreach ($key in @($Properties.Keys)) { $pieces += ('{0}={1}' -f $key, $Properties[$key]) }
     if (Find-SisqualSecretLeak -Texts $pieces -Secrets $Secrets) { throw 'SECRET_LEAK' }
     if ($null -ne (Get-Command Write-SisqualRuntimeLog -ErrorAction SilentlyContinue)) { [void](Write-SisqualRuntimeLog -Level INFO -EventCode $EventCode -Message $Message -Properties $Properties) }
+}
+
+function New-SisqualLoggedEngineFailureResult {
+    param(
+        [string]$OperationId,
+        [string]$EngineCode,
+        [ValidateSet('PREVIEW','APPLY')][string]$Mode,
+        [string]$ErrorCode,
+        [string]$EngineVersion = 'host',
+        [int]$ExitCode = 1,
+        [datetime]$StartedAt = ([DateTime]::UtcNow),
+        [System.Collections.IDictionary]$Secrets = @{}
+    )
+    $result = New-SisqualEngineFailureResult $OperationId $EngineCode $Mode $ErrorCode $EngineVersion $ExitCode
+    Write-SisqualEngineHostLog -EventCode 'ENGINE.FAIL' -Message 'Engine run failed.' -Properties @{
+        operationId = $OperationId; engine = $EngineCode; mode = $Mode
+        durationMs = [int]([DateTime]::UtcNow - $StartedAt).TotalMilliseconds
+        exitCode = $ExitCode; succeeded = $false; error = $ErrorCode
+    } -Secrets $Secrets
+    return $result
 }
 
 function Invoke-SisqualEngineHost {
@@ -325,7 +397,7 @@ function Invoke-SisqualEngineHost {
                 if ($EngineClass -ceq 'MUTATING') {
                     $keepRunDirectory = $true
                     $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; RunDirectory = $runDirectory; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
-                    return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'TIMED_OUT_RUNNING' $engineVersion 1
+                    return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets
                 }
                 $process.Kill($true); $process.WaitForExit()
             }
@@ -335,19 +407,20 @@ function Invoke-SisqualEngineHost {
         $rawResultText = ''
         if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
             $resultInfo = Get-Item -LiteralPath $resultPath
-            if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_RESULT_LIMIT' $engineVersion $exitCode }
+            if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_RESULT_LIMIT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
             $rawResultText = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false, $true))
         }
-        if (Find-SisqualSecretLeak -Texts @($rawResultText,$stdout,$stderr) -Secrets $Secrets) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'SECRET_LEAK' $engineVersion 1 }
-        if ($exitCode -notin @(0,1,2,3)) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_NO_RESULT' $engineVersion $exitCode }
-        if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_NO_RESULT' $engineVersion $exitCode }
+        if (Find-SisqualSecretLeak -Texts @($rawResultText,$stdout,$stderr) -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets }
+        if ($exitCode -notin @(0,1,2,3)) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
+        if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
 
         try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String }
-        catch { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_INVALID_RESULT' $engineVersion $exitCode }
-        if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_INVALID_RESULT' $engineVersion $exitCode }
+        catch { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
+        if (Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets }
+        if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
 
         if ($Mode -ceq 'PREVIEW' -and $modePolicy -ceq 'PREVIEW_APPLY') {
-            if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_INVALID_RESULT' $engineVersion $exitCode }
+            if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets }
             if ([bool]$result.succeeded) {
                 $previewKey = '{0}|{1}' -f $engineCode, [string]$InstanceCode
                 $script:PreviewFingerprints[$previewKey] = [string]$result.planFingerprint
@@ -359,7 +432,7 @@ function Invoke-SisqualEngineHost {
     }
     catch [IO.InvalidDataException] {
         try { if (-not $process.HasExited) { $process.Kill($true) } } catch { }
-        return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_STREAM_LIMIT' $engineVersion 1
+        return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_STREAM_LIMIT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets
     }
     finally {
         if (-not $keepRunDirectory) {
