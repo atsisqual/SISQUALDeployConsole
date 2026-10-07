@@ -43,7 +43,7 @@ Catalog schema version **2** is the first version with C7 structured database fi
 
 [CONFIRMED, owner decision] Runtime code must never execute the source `cfg.DatabaseObjectSettingRule.FilterClause` as SQL text. Conversion is one-way and fail-closed.
 
-[CONFIRMED] The reference model contains **61** `cfg.DatabaseObjectSettingRule` rows. Their populated filters fall into **seven shapes**: one to four literal equality terms joined by `AND`, plus three lookup-bearing variants. Three rules are intentionally unfiltered. The number seven therefore describes filter shapes, not source rows.
+[CONFIRMED] The reference model contains **61** `cfg.DatabaseObjectSettingRule` rows. Their populated filters fall into **seven shapes**: one to four literal equality terms joined by `AND`, plus three lookup-bearing variants. Counted over the 58 populated filters of the current snapshot, 14 use one more form that the first reading of the model missed: `ISNULL(<column>, <literal>) = <value>` for a single column (section 4.1). The test fixture `tests/Fixtures/database-filter-shapes.json` keeps the structural templates of all 58 filters (six after the literals are replaced by placeholders), with no real value, and a test converts every one of them. Three rules are intentionally unfiltered. The number seven therefore describes filter shapes, not source rows.
 
 For catalog schema version 2:
 
@@ -69,6 +69,14 @@ A filtered rule is:
 
 `terms` contains 1 to 16 equality comparisons. `operator` is currently only `EQ`. Literal `type` is `TEXT` or `NUMBER`; numeric values are stored as invariant text so conversion does not silently change precision.
 
+A term whose left side is `ISNULL(<column>, <literal>)` keeps that meaning in an extra member, `nullReplacement`, a literal node of the same kind as `value`:
+
+```json
+{"column":"User","operator":"EQ","value":{"kind":"LITERAL","type":"TEXT","value":""},"nullReplacement":{"kind":"LITERAL","type":"TEXT","value":""}}
+```
+
+It means: read the column, replace NULL by `nullReplacement`, then compare with `value`. The example matches rows where the column is NULL **or** empty. `nullReplacement` is present only on a term written with `ISNULL`; the first argument must be a column and the second a literal, and any other form (a column or an expression as replacement, nested `ISNULL`, `ISNULL` on the value side) is rejected.
+
 A lookup value is:
 
 ```json
@@ -81,13 +89,13 @@ A lookup value is:
 
 C7 supports the seven documented filter families across the 61 source rules: one to four equality comparisons joined by `AND`, including the three lookup-bearing variants represented by the `LOOKUP` node above. Bracketed identifiers and T-SQL `N'...'` string literals are accepted. Doubled single quotes decode to one quote.
 
-The converter rejects, rather than preserves or executes, every construct outside that grammar, including `OR`, `LIKE`, `IN`, functions/expressions, non-equality comparisons, comments, statement terminators, lookup queries without a `WHERE`, `TOP` values other than `TOP (1)`, and trailing SQL. The complete input must be consumed by the parser.
+The converter rejects, rather than preserves or executes, every construct outside that grammar, including `OR`, `LIKE`, `IN`, functions/expressions (the one exception is `ISNULL(<column>, <literal>)` on the left of an equality, section 4.1), non-equality comparisons, comments, statement terminators, lookup queries without a `WHERE`, `TOP` values other than `TOP (1)`, and trailing SQL. The complete input must be consumed by the parser.
 
 The three intentionally unfiltered rules are represented by `ALL`; this does not make arbitrary empty filters safe at runtime. The future engine must apply its explicit row-count guard before an `ALL` predicate can update rows.
 
 ### 4.3 Runtime consumption
 
-The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/column identifiers, including lookup schema/table/select-column identifiers, against database metadata and compile this structure into parameterized SQL. Literal values must be SQL parameters; JSON text must never be concatenated back into executable SQL. `ALL` means an intentionally unfiltered rule and remains subject to the engine's separate row-count guard.
+The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/column identifiers, including lookup schema/table/select-column identifiers, against database metadata and compile this structure into parameterized SQL. A term with `nullReplacement` must be compiled as `ISNULL(<column>, @replacement) = @value` (or an equivalent that reads a NULL column as the replacement), with both values as parameters; compiling it as a plain `<column> = @value` would stop matching the NULL rows. Literal values must be SQL parameters; JSON text must never be concatenated back into executable SQL. `ALL` means an intentionally unfiltered rule and remains subject to the engine's separate row-count guard.
 
 A `LOOKUP` node is data describing one restricted scalar lookup, not executable SQL text. Runtime compilation must preserve the same depth/term bounds and metadata validation as the conversion contract.
 

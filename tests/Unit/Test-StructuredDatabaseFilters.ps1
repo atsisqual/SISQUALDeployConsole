@@ -142,6 +142,59 @@ Assert-That '61-row batch retains structured lookups' (@($batch['cfg.DatabaseObj
 $excluded = @(Get-ExcludedColumnList)
 Assert-That 'manifest exclusion list records raw filter removal' ($excluded -contains 'cfg.DatabaseObjectSettingRule.FilterClause')
 
+# ---------------------------------------------------------------------------
+# The null-replacing equality: ISNULL(<column>, <literal>) = <value>. 14 of the 58 real filters use it.
+# ---------------------------------------------------------------------------
+$isn = Get-Object "Application='WFM' AND ISNULL([User],N'')='' AND Section='SISQUAL' AND [Key]='MobileAppAccessToken'"
+Assert-That 'ISNULL: the real shape converts to four terms' ($isn.kind -ceq 'AND' -and $isn.terms.Count -eq 4)
+Assert-That 'ISNULL: the column is the inner column and the comparison is still EQ' ($isn.terms[1].column -ceq 'User' -and $isn.terms[1].operator -ceq 'EQ' -and $isn.terms[1].value.type -ceq 'TEXT' -and $isn.terms[1].value.value -ceq '')
+Assert-That 'ISNULL: the replacement is kept as a literal node (NULL is read as the empty string)' ($isn.terms[1].nullReplacement.kind -ceq 'LITERAL' -and $isn.terms[1].nullReplacement.type -ceq 'TEXT' -and $isn.terms[1].nullReplacement.value -ceq '')
+Assert-That 'ISNULL: the other terms carry no nullReplacement' (-not $isn.terms[0].ContainsKey('nullReplacement') -and -not $isn.terms[2].ContainsKey('nullReplacement') -and -not $isn.terms[3].ContainsKey('nullReplacement'))
+Assert-That 'ISNULL: the stored JSON holds the replacement' ((ConvertTo-StructuredDatabaseFilterJson -FilterClause "ISNULL([User],N'')=''" -RuleCode 'T') -clike '*"nullReplacement":{"kind":"LITERAL","type":"TEXT","value":""}*')
+function Test-TermMatches {
+    # A model of the contract for the future engine: a NULL column is read as the replacement before the comparison.
+    param($Term, $RowValue)
+    $effective = $RowValue
+    if ($null -eq $RowValue -and $Term.ContainsKey('nullReplacement')) { $effective = $Term.nullReplacement.value }
+    if ($null -eq $effective) { return $false }
+    return ([string]$effective -ceq [string]$Term.value.value)
+}
+Assert-That 'ISNULL meaning: a NULL row matches (the whole point of keeping the replacement)' (Test-TermMatches $isn.terms[1] $null)
+Assert-That 'ISNULL meaning: an empty row matches' (Test-TermMatches $isn.terms[1] '')
+Assert-That 'ISNULL meaning: a row with a value does not match' (-not (Test-TermMatches $isn.terms[1] 'someone'))
+$plainEq = Get-Object "[User]=''"
+Assert-That 'ISNULL meaning: without ISNULL a NULL row does not match (the probe rewrite would have changed this)' (-not (Test-TermMatches $plainEq.terms[0] $null))
+$spaced = Get-Object "isnull ( [User] , N'' ) = ''"
+Assert-That 'ISNULL: case-insensitive keyword and free whitespace' ($spaced.terms[0].column -ceq 'User' -and $spaced.terms[0].nullReplacement.value -ceq '')
+$num = Get-Object 'ISNULL(Qty, 0) = 0'
+Assert-That 'ISNULL: a numeric replacement is kept as invariant text' ($num.terms[0].nullReplacement.type -ceq 'NUMBER' -and $num.terms[0].nullReplacement.value -ceq '0')
+$nonEmpty = Get-Object "ISNULL([User],N'none')='none'"
+Assert-That 'ISNULL: a non-empty replacement is kept as written' ($nonEmpty.terms[0].nullReplacement.value -ceq 'none' -and (Test-TermMatches $nonEmpty.terms[0] $null))
+$inLookup = Get-Object "A=(SELECT ID FROM T WHERE ISNULL(B,'')='x')"
+Assert-That 'ISNULL: accepted inside a lookup predicate too' ($inLookup.terms[0].value.kind -ceq 'LOOKUP' -and $inLookup.terms[0].value.predicate.terms[0].nullReplacement.value -ceq '')
+$named = Get-Object "ISNULL='x'"
+Assert-That 'ISNULL: a column that is itself called ISNULL still works (the function form needs a parenthesis)' ($named.terms[0].column -ceq 'ISNULL' -and -not $named.terms[0].ContainsKey('nullReplacement'))
+Assert-Throws 'ISNULL: one argument is rejected' { Get-Object "ISNULL([User])=''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: three arguments are rejected' { Get-Object "ISNULL([User],'a','b')=''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: a column as replacement is rejected (only a literal)' { Get-Object "ISNULL([User],Other)=''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: nested ISNULL is rejected' { Get-Object "ISNULL(ISNULL(A,''),'')=''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: without a comparison is rejected' { Get-Object "ISNULL([User],'')" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: a non-equality comparison is rejected' { Get-Object "ISNULL([User],'')<>''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: truncated is rejected' { Get-Object "ISNULL(" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: a missing comma between the arguments is rejected' { Get-Object "ISNULL([User] '')=''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: a missing closing parenthesis is rejected' { Get-Object "ISNULL([User],'' = ''" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: on the value side is rejected' { Get-Object "A=ISNULL(B,'')" | Out-Null } '*cannot be converted safely*'
+Assert-Throws 'ISNULL: another function is still rejected' { Get-Object "COALESCE([User],'')=''" | Out-Null } '*cannot be converted safely*'
+
+# Every structural shape of the real snapshot converts (shapes only: the fixture keeps no real value).
+$fx = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' 'Fixtures' 'database-filter-shapes.json') -Raw | ConvertFrom-Json
+$shapeFail = @()
+foreach ($s in $fx.shapes) { try { [void](ConvertTo-StructuredDatabaseFilter -FilterClause $s.template -RuleCode 'SHAPE') } catch { $shapeFail += $s.template } }
+Assert-That ('real shapes: all {0} structural templates of the snapshot convert' -f @($fx.shapes).Count) ($shapeFail.Count -eq 0 -and @($fx.shapes).Count -ge 6)
+Assert-That 'real shapes: the templates cover the 58 populated filters and the three unfiltered rules make 61' (([int](@($fx.shapes | Measure-Object -Property count -Sum).Sum)) -eq 58 -and $fx.populatedFilters -eq 58 -and $fx.unfilteredRules -eq 3)
+Assert-That 'real shapes: the ISNULL template is in the fixture (14 filters)' (@($fx.shapes | Where-Object { $_.template -like '*ISNULL*' -and $_.count -eq 14 }).Count -eq 1)
+Assert-That 'real shapes: the fixture holds no real value (every text literal is v and every number is 0)' (@($fx.shapes | Where-Object { (($_.template -replace "N?'v'", '') -match "'") -or ($_.template -match '[1-9]') }).Count -eq 0)
+
 Write-Host ('Structured filter tests: {0} passed, {1} failed.' -f $script:Passed, $script:Failures)
 if ($script:Failures -gt 0) { exit 1 }
 exit 0

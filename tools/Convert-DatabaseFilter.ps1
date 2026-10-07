@@ -83,6 +83,14 @@ function Read-DatabaseFilterNumberLiteral {
     return [ordered]@{ kind = 'LITERAL'; type = 'NUMBER'; value = $match.Value }
 }
 
+function Test-DatabaseFilterStringLiteralStart {
+    param([Parameter(Mandatory)]$State)
+    if ($State.Position -ge $State.Text.Length) { return $false }
+    $c = $State.Text[$State.Position]
+    if ($c -eq "'") { return $true }
+    return (($c -eq 'N' -or $c -eq 'n') -and $State.Position + 1 -lt $State.Text.Length -and $State.Text[$State.Position + 1] -eq "'")
+}
+
 function Read-DatabaseFilterPredicate {
     param([Parameter(Mandatory)]$State, [Parameter(Mandatory)][int]$Depth, [char]$StopCharacter = [char]0)
     if ($Depth -gt $script:DatabaseFilterMaxDepth) { throw 'Database filter lookup nesting is too deep.' }
@@ -94,7 +102,28 @@ function Read-DatabaseFilterPredicate {
             $probe = [pscustomobject]@{ Text = $State.Text; Position = $State.Position + 1 }
             if (-not (Test-DatabaseFilterKeywordAt -State $probe -Keyword 'SELECT')) { $wrapped = $true; $State.Position++ }
         }
-        $column = Read-DatabaseFilterIdentifier -State $State
+        $column = $null
+        $nullReplacement = $null
+        $probe = [pscustomobject]@{ Text = $State.Text; Position = $State.Position }
+        if (Test-DatabaseFilterKeywordAt -State $probe -Keyword 'ISNULL') {
+            $probe.Position += 'ISNULL'.Length
+            Skip-DatabaseFilterWhitespace -State $probe
+            if ($probe.Position -lt $probe.Text.Length -and $probe.Text[$probe.Position] -eq '(') {
+                # ISNULL(<column>, <literal>) = <value>: an equality that reads a NULL column as the literal (the one function the grammar accepts).
+                $State.Position = $probe.Position + 1
+                $column = Read-DatabaseFilterIdentifier -State $State
+                Skip-DatabaseFilterWhitespace -State $State
+                if ($State.Position -ge $State.Text.Length -or $State.Text[$State.Position] -ne ',') { throw 'ISNULL takes exactly two arguments: a column and a literal.' }
+                $State.Position++
+                Skip-DatabaseFilterWhitespace -State $State
+                if (Test-DatabaseFilterStringLiteralStart -State $State) { $nullReplacement = Read-DatabaseFilterStringLiteral -State $State }
+                else { $nullReplacement = Read-DatabaseFilterNumberLiteral -State $State }
+                Skip-DatabaseFilterWhitespace -State $State
+                if ($State.Position -ge $State.Text.Length -or $State.Text[$State.Position] -ne ')') { throw 'ISNULL takes exactly two arguments: a column and a literal.' }
+                $State.Position++
+            }
+        }
+        if ($null -eq $column) { $column = Read-DatabaseFilterIdentifier -State $State }
         Skip-DatabaseFilterWhitespace -State $State
         if ($State.Position -ge $State.Text.Length -or $State.Text[$State.Position] -ne '=') { throw ('Only equality comparisons are supported; expected = after {0}.' -f $column) }
         $State.Position++
@@ -106,7 +135,9 @@ function Read-DatabaseFilterPredicate {
             $value = Read-DatabaseFilterStringLiteral -State $State
         }
         else { $value = Read-DatabaseFilterNumberLiteral -State $State }
-        $terms.Add([ordered]@{ column = $column; operator = 'EQ'; value = $value })
+        $term = [ordered]@{ column = $column; operator = 'EQ'; value = $value }
+        if ($null -ne $nullReplacement) { $term['nullReplacement'] = $nullReplacement }
+        $terms.Add($term)
         if ($terms.Count -gt $script:DatabaseFilterMaxTerms) { throw 'Database filter contains too many comparisons.' }
         Skip-DatabaseFilterWhitespace -State $State
         if ($wrapped) {
