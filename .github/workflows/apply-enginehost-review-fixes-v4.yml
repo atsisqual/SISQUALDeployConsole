@@ -1,0 +1,29 @@
+name: apply-enginehost-review-fixes-v4
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/scripts/Apply-EngineHostReviewFixesV4.ps1'
+      - '.github/workflows/apply-enginehost-review-fixes-v4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Apply and prove final EngineHost review fixes
+        shell: pwsh
+        run: ./.github/scripts/Apply-EngineHostReviewFixesV4.ps1
