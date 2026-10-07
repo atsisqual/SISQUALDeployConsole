@@ -342,7 +342,7 @@ function Invoke-SisqualEngineHost {
         if ($exitCode -notin @(0,1,2,3)) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_NO_RESULT' $engineVersion $exitCode }
         if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_NO_RESULT' $engineVersion $exitCode }
 
-        try { $result = $rawResultText | ConvertFrom-Json -Depth 50 }
+        try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String }
         catch { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_INVALID_RESULT' $engineVersion $exitCode }
         if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualEngineFailureResult $OperationId $engineCode $Mode 'ENGINE_INVALID_RESULT' $engineVersion $exitCode }
 
