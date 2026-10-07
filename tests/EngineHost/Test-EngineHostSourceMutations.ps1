@@ -15,7 +15,8 @@ $anchors = @(
     [pscustomobject]@{ Name = 'successful preview cache gate'; Text = 'if ([bool]$result.succeeded) {' },
     [pscustomobject]@{ Name = 'PowerShell 7 ACL extension'; Text = '[System.IO.FileSystemAclExtensions]::SetAccessControl' },
     [pscustomobject]@{ Name = 'JSON escaped secret representation'; Text = '$jsonLiteral = ConvertTo-Json -InputObject $value -Compress' },
-    [pscustomobject]@{ Name = 'backup schema validation'; Text = "$backupAllowed = @('created','name','location','sha256','restoreHint')" }
+    [pscustomobject]@{ Name = 'backup schema validation'; Text = '$backupAllowed = @(''created'',''name'',''location'',''sha256'',''restoreHint'')' },
+    [pscustomobject]@{ Name = 'result timestamp strings preserved'; Text = 'ConvertFrom-Json -Depth 50 -DateKind String' }
 )
 
 $passed = 0
