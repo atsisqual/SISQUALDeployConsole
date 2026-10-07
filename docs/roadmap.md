@@ -8,11 +8,15 @@ Tags: [CONFIRMED] demonstrated, [PROPOSED] recommended, [PENDING] undecided, [V]
 
 Integrated in `main`:
 - Phase 0 inventory; Phase 1A (portable runtime) and 1A-2 (IIS write path); ADR-0001 accepted and ADR-0006 accepted with four conditions.
+- Phase 1B evidence for the non-exportable machine identity and the managed SQLite provider; the product runtime catalog now uses the accepted `Microsoft.Data.Sqlite` provider.
+- Phase 1C local web-security and operation-coordinator spikes, validated on disposable Windows runners.
 - Phase 2: README, AGENTS.md, CLAUDE.md, contracts (draft), skill skeletons, CI, and the audit of the guidance against ADR-0007.
 - ADR-0007 accepted: no central database, no runtime sync, one read-only SQLite catalog per machine, signed manifest, credentials outside the portable, text logs.
 - Conversion chain B1 to B5: `Export-ManagementEngines`, `Convert-ManagementDb` (new-machine and cut modes), a LocalDB integration test, `Test-CatalogConversion` and `Seal-Package`; `Microsoft.Data.SqlClient` 7.1.1 pinned.
+- Credential tooling B6.1 through B6.3b: package crypto/contract implementation, encrypted vault and issuer signing, vault secret model, and the one-time credential importer with DryRun/Import/Verify and LocalDB integration coverage.
+- Phase 3 runtime foundations: bootstrap, read-only runtime catalog factory and hardened text logging.
 
-Not started: the portable application itself, the credential tool, machine identity, local web security and the engines.
+The complete portable application is not finished: machine identity and Phase 1C controls are validated but still need final product integration, B6.4 per-machine credential-package issue remains, and the production engine ports plus `FULL_DEPLOYMENT` orchestration remain to be implemented.
 
 ## 2. Remaining phases
 
@@ -56,9 +60,9 @@ The order of the seven engines that were outside the earlier plan was chosen by 
 ## 5. Open items
 
 - [DECIDED 2026-10-05] Links pages stay as today: the general page on the main instance, an individual page in each IIS site under `links`. From the source, the general page lists every enabled instance of the same country across all machines, so a catalog that hosts a general page carries a read-only instance directory. [PENDING] Exact columns and which catalogs carry it; [PROPOSED] only catalogs of machines with an instance whose `LinksIncludeAllInstances` is 1, public columns only (codes, names, host name), in a table separate from the instance rows. Tool change needed before wave 5.
-- [PENDING] Pulse: whether a machine's Pulse needs the hub or the instances of other machines (conversion plan section 2). Decide before wave 1 (`PULSE_STATUS`).
+- [DECIDED 2026-10-06] Pulse keeps today's scope: same server and same country. The collector runs from the portable `pwsh.exe` at its current path and apply re-registers the task; the task keeps the hub instance's IIS identity in V1 and apply is run again after a new `IIS_IDENTITY` credential; a machine without a Pulse profile reports "not applicable" and does not fail. See `docs/migration/analysis-pulse.md` section 9 and the four owner decisions in `docs/decisions-log.md`.
 - [DECIDED 2026-10-05] The 25 `Microsoft.Data.SqlClient` files go inside the portable and are covered by the manifest.
-- [PENDING adoption] `Microsoft.Data.Sqlite` 10.0.12 is technically demonstrated (PR #36, run 37392036026, 9 of 9 gates on windows-2022 and windows-2025, original and copied folder, locked restore). Adding it as a runtime dependency still needs the integration decision. Owner preference: accept both versions by function and register them in the manifest, the provider and runtime at SQLite 3.53.3 and the CLI and tooling at 3.53.4.
+- [CONFIRMED] 2026-10-06 `Microsoft.Data.Sqlite` 10.0.12 is adopted by the runtime catalog. The managed provider/runtime uses native SQLite 3.53.3 and the separate CLI/tooling uses SQLite 3.53.4. Phase 1B provider evidence is run 37392036026; product integration and accepted runtime evidence are recorded in `docs/phase3/sqlite-runtime-adoption.md` and `docs/phase3/runtime-catalog.md`. The remaining package-manifest work is to record the two SQLite roles semantically in addition to hashing the shipped provider files.
 - [CLOSED 2026-10-06] `DATABASE_SETTINGS` has no separate port (see section 4).
 - [DECIDED 2026-10-06] Installers come from an operator-provided folder with fixed versions, and every artifact is verified by SHA-256 before use. Keycloak requires exactly JDK 23, pinned and verified by SHA-256: no LTS substitution, no dynamic selection, no "latest".
 - [CLOSED 2026-10-05] Machines without a local database: obsolete under ADR-0007.
