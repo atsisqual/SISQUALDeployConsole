@@ -137,7 +137,10 @@ switch ($scenario) {
     'INVALID_ROW_STRING_TYPES' {
         $result = New-Result -Request $request -Succeeded $true
         $result.results[0].timestamp = 42
+        $result.results[0].instanceCode = 42
+        $result.results[0].operationType = 42
         $result.results[0].object = 42
+        $result.results[0].status = 42
         $result.results[0].details = 42
         Write-ResultFile $request $result
         exit 0
