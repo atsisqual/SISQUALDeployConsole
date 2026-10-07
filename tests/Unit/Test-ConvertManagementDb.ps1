@@ -178,8 +178,8 @@ try {
     $r = Invoke-NewMachineConversion -Source $source -SourceInfo $info -Folder $out -Sqlite3 $sqlite3 -Code 'NEW_SRV' -Machine 'NEW-HOST' -Services 'C:\Services' -BackupRoot 'C:\Backups' -SourceRef 'unit test'
     $db = $r.Catalog
     Assert-That 'catalog and manifest are written, no temp files left' ((Test-Path $db) -and (Test-Path $r.Manifest) -and -not (Get-ChildItem $out -Filter '*.tmp') -and -not (Get-ChildItem $out -Filter '*.build.sql'))
-    Assert-That 'integrity check and user_version' ((Invoke-Query $db 'PRAGMA integrity_check;') -eq 'ok' -and (Invoke-Query $db 'PRAGMA user_version;') -eq '1')
-    Assert-That 'catalog_meta has the one expected row' ((Invoke-Query $db 'SELECT schema_version, server_code, source_kind, source_reference, cut_rule_version FROM catalog_meta;') -eq '1|NEW_SRV|conversion-tool|unit test|1')
+    Assert-That 'integrity check and user_version' ((Invoke-Query $db 'PRAGMA integrity_check;') -eq 'ok' -and (Invoke-Query $db 'PRAGMA user_version;') -eq '2')
+    Assert-That 'catalog_meta has the one expected row' ((Invoke-Query $db 'SELECT schema_version, server_code, source_kind, source_reference, cut_rule_version FROM catalog_meta;') -eq '2|NEW_SRV|conversion-tool|unit test|2')
     Assert-That 'all tables are STRICT' ((Invoke-Query $db "SELECT count(*) FROM pragma_table_list WHERE schema='main' AND strict=0 AND name NOT LIKE 'sqlite_%';") -eq '0')
 
     # 3. What does and does not enter ---------------------------------------------

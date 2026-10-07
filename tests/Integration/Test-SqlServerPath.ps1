@@ -87,6 +87,10 @@ function Get-FitText {
 
 function New-CellValue {
     param($Table, $Column, [int]$Index, [bool]$IsKey)
+    if ($Table.table -eq 'cfg.DatabaseObjectSettingRule' -and $Column.name -eq 'FilterClause') {
+        if ($Index -eq 1) { return "[Section] = N'General'" }
+        return "[Section] = N'General' AND [Key] = N'Fixture'"
+    }
     $seed = '{0}|{1}|{2}' -f $Table.table, $Column.name, $Index
     switch ($Column.type) {
         'bit' { return [bool]($Index % 2) }
@@ -166,6 +170,13 @@ function New-FixtureRows {
                         if ($i -eq 1) { $row[$secretCol] = $markerB }
                         elseif ($i -eq 2) { $row[$secretCol] = 'FXSECRET-' + $secretCol + '-' + $i }
                     }
+                }
+                'cfg.ConfigurationAdapterDefinition' {
+                    $row['ActionCode'] = 'FX_ACTION_' + $i
+                }
+                'ops.Action' {
+                    $row['ActionCode'] = 'FX_ACTION_' + $i
+                    $row['EngineCode'] = 'FX_ENGINE_' + $i
                 }
                 'ops.Engine' {
                     $text = "# fixture engine $i`r`nWrite-Host 'it''s $i'`r`n# accent: $eAcute`r`n"

@@ -29,6 +29,9 @@ $script:AadLabel = 'SISQUAL-CRED-AAD-v1'
 $script:HkdfInfoText = 'SISQUAL credential entry v1'
 $script:MaxSecretBytes = 8192
 $script:P256Oid = '1.2.840.10045.3.1.7'
+$script:IssuerKeyBegin = '-----BEGIN SISQUAL ISSUER KEY-----'
+$script:IssuerKeyEnd = '-----END SISQUAL ISSUER KEY-----'
+$script:IssuerKeyAlgorithm = 'ECDSA-P256'
 
 # ---------------------------------------------------------------------------
 # Canonical JSON: the same algorithm as tools/Seal-Package.ps1 (a unit test compares both).
@@ -713,6 +716,74 @@ function Get-PackageEntrySecret {
     catch { throw 'DECRYPT' }
 }
 
+
+# ---------------------------------------------------------------------------
+# Issuer public key text (B6.2b): what the operator pins on a machine after comparing the fingerprint
+# ---------------------------------------------------------------------------
+
+function Test-EcdsaPublicKeySpki {
+    param([byte[]]$Spki)
+    try {
+        $key = [System.Security.Cryptography.ECDsa]::Create()
+        try {
+            $read = 0
+            $key.ImportSubjectPublicKeyInfo($Spki, [ref]$read)
+            return ($read -eq $Spki.Length -and (Test-P256Key $key))
+        }
+        finally { $key.Dispose() }
+    }
+    catch { return $false }
+}
+
+function New-IssuerPublicKeyText {
+    param([Parameter(Mandatory)][byte[]]$PublicKeySpki)
+    if (-not (Test-EcdsaPublicKeySpki $PublicKeySpki)) { throw 'The public key is not an ECDSA P-256 key.' }
+    $lines = @(
+        $script:IssuerKeyBegin,
+        ('Contract: ' + $script:ContractVersion),
+        ('KeyId: ' + (Get-PublicKeyFingerprint -PublicKeySpki $PublicKeySpki)),
+        ('KeyAlgorithm: ' + $script:IssuerKeyAlgorithm),
+        ('PublicKey: ' + [Convert]::ToBase64String($PublicKeySpki)),
+        $script:IssuerKeyEnd
+    )
+    return (($lines -join "`n") + "`n")
+}
+
+function ConvertFrom-IssuerPublicKeyText {
+    # Strict parser. Any problem is the same generic error: the text comes from outside.
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+    try {
+        if ($Text.Length -eq 0 -or $Text.Length -gt 2048 -or $Text -cmatch '[^\x0A\x0D\x20-\x7E]') { throw 'x' }
+        $normalized = $Text.Replace("`r`n", "`n")
+        if ($normalized.Contains("`r")) { throw 'x' }
+        $lines = [System.Collections.Generic.List[string]]::new($normalized.Split("`n"))
+        if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Length -eq 0) { $lines.RemoveAt($lines.Count - 1) }
+        if ($lines.Count -ne 6 -or $lines[0] -cne $script:IssuerKeyBegin -or $lines[5] -cne $script:IssuerKeyEnd) { throw 'x' }
+        $names = @('Contract', 'KeyId', 'KeyAlgorithm', 'PublicKey')
+        $values = @{}
+        for ($i = 0; $i -lt 4; $i++) {
+            $prefix = $names[$i] + ': '
+            if (-not $lines[$i + 1].StartsWith($prefix, [System.StringComparison]::Ordinal)) { throw 'x' }
+            $values[$names[$i]] = $lines[$i + 1].Substring($prefix.Length)
+        }
+        if ($values['Contract'] -cnotin $script:SupportedContractVersions) { throw 'x' }
+        if ($values['KeyAlgorithm'] -cne $script:IssuerKeyAlgorithm) { throw 'x' }
+        [byte[]]$spki = ConvertFrom-StrictBase64 -Text $values['PublicKey']
+        if (-not (Test-EcdsaPublicKeySpki $spki)) { throw 'x' }
+        if ($values['KeyId'] -cne (Get-PublicKeyFingerprint -PublicKeySpki $spki)) { throw 'x' }
+        return [ordered]@{ KeyId = $values['KeyId']; PublicKeySpki = $spki }
+    }
+    catch { throw 'Invalid issuer key text.' }
+}
+
+function Format-KeyFingerprint {
+    # 64 lower-case hex -> 16 groups of 4 in upper case, for reading aloud and comparing on two screens.
+    param([Parameter(Mandatory)][string]$Fingerprint)
+    if ($Fingerprint -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid fingerprint.' }
+    $up = $Fingerprint.ToUpperInvariant()
+    return ((0..15 | ForEach-Object { $up.Substring($_ * 4, 4) }) -join ' ')
+}
+
 Export-ModuleMember -Function @(
     'ConvertTo-CanonicalString', 'ConvertTo-CanonicalJson', 'Get-CanonicalBytes',
     'Get-Sha256Hex', 'Get-PublicKeyFingerprint', 'ConvertFrom-StrictBase64',
@@ -720,5 +791,6 @@ Export-ModuleMember -Function @(
     'New-IssuerSignature', 'Test-IssuerSignature',
     'Get-EntryAad', 'Protect-CredentialEntry', 'Unprotect-CredentialEntry',
     'New-MachineIdentityText', 'ConvertFrom-MachineIdentityText',
-    'New-CredentialPackage', 'Test-CredentialPackage', 'Get-PackageEntrySecret'
+    'New-CredentialPackage', 'Test-CredentialPackage', 'Get-PackageEntrySecret',
+    'New-IssuerPublicKeyText', 'ConvertFrom-IssuerPublicKeyText', 'Format-KeyFingerprint'
 )

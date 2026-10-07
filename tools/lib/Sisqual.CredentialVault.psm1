@@ -19,7 +19,9 @@
 
     Failures are plain codes with no detail: VAULT_FORMAT (the text is not a vault), VAULT_OPEN (wrong
     passphrase or altered file, deliberately indistinguishable), VAULT_WEAK_KDF, VAULT_EXISTS, VAULT_CHANGED,
-    VAULT_IN_REPOSITORY, VAULT_PASSPHRASE, VAULT_CLOSED, VAULT_ACL, ISSUER_EXISTS, ISSUER_MISSING.
+    VAULT_IN_REPOSITORY, VAULT_PASSPHRASE, VAULT_PASSPHRASE_INPUT, VAULT_PASSPHRASE_MISMATCH, VAULT_PATH,
+    VAULT_CLOSED, VAULT_ACL, ISSUER_EXISTS, ISSUER_MISSING, and for the secrets SECRET_KIND, SECRET_CODE,
+    SECRET_VALUE, SECRET_SOURCE, SECRET_EXISTS, SECRET_MISSING, SECRETS_LIMIT.
 #>
 Set-StrictMode -Version Latest
 
@@ -37,6 +39,10 @@ $script:MaxIterations = 100000000
 $script:MinPassphraseLength = 14
 $script:MinPassphraseDistinct = 6
 $script:MaxVaultChars = 8388608
+$script:SecretKinds = @('IIS_IDENTITY', 'WEB_ACCESS', 'MOBILE_APP_TOKEN', 'RULE_SECRET')
+$script:MaxSecretValueBytes = 8192
+$script:MaxSecrets = 5000
+$script:MaxAccessLog = 10000
 
 function Stop-Vault {
     param([string]$Code)
@@ -377,8 +383,183 @@ function Restore-CredentialVault {
     return $info
 }
 
+
+function Get-DefaultVaultPath {
+    # SISQUAL_VAULT_PATH wins; otherwise the folder decided in ADR-0007 on Windows. Nothing is guessed elsewhere.
+    $fromEnv = [Environment]::GetEnvironmentVariable('SISQUAL_VAULT_PATH')
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if ($IsWindows) { return 'C:\SISQUALWFM\WFM.Files\SISQUALDeployManagement\credential-vault.sisqual' }
+    Stop-Vault 'VAULT_PATH'
+}
+
+function Read-VaultPassphrase {
+    # Interactive prompt, never echoed. The environment route exists only for tests and unattended runs: it needs
+    # SISQUAL_VAULT_PASSPHRASE together with the explicit opt-in SISQUAL_ALLOW_ENV_PASSPHRASE=1, and the variable
+    # is removed from this process as soon as it has been read. A redirected input never waits for a prompt.
+    param([string]$Prompt = 'Vault passphrase', [switch]$Twice)
+    $fromEnv = [Environment]::GetEnvironmentVariable('SISQUAL_VAULT_PASSPHRASE')
+    if (-not [string]::IsNullOrEmpty($fromEnv)) {
+        if ([Environment]::GetEnvironmentVariable('SISQUAL_ALLOW_ENV_PASSPHRASE') -cne '1') { Stop-Vault 'VAULT_PASSPHRASE_INPUT' }
+        $secure = ConvertTo-SecureString -String $fromEnv -AsPlainText -Force
+        [Environment]::SetEnvironmentVariable('SISQUAL_VAULT_PASSPHRASE', $null)
+        return $secure
+    }
+    if ([Console]::IsInputRedirected) { Stop-Vault 'VAULT_PASSPHRASE_INPUT' }
+    $first = Read-Host -Prompt $Prompt -AsSecureString
+    if ($Twice) {
+        $second = Read-Host -Prompt 'Repeat the passphrase' -AsSecureString
+        [byte[]]$a = Get-PassphraseBytes -Passphrase $first
+        [byte[]]$b = Get-PassphraseBytes -Passphrase $second
+        try { $same = ($a.Length -eq $b.Length) -and [System.Security.Cryptography.CryptographicOperations]::FixedTimeEquals($a, $b) }
+        finally { [Array]::Clear($a, 0, $a.Length); [Array]::Clear($b, 0, $b.Length) }
+        if (-not $same) { Stop-Vault 'VAULT_PASSPHRASE_MISMATCH' }
+    }
+    return $first
+}
+
+
+# ---------------------------------------------------------------------------
+# Secrets inside the vault (B6.3a). Plan 4.2 and 4.3 of docs/migration/catalog-conversion-plan.md:
+# an entry has the reference, the kind, the code, the value, the time, the source and a salted SHA-256
+# fingerprint of the value (the salt lives in the vault); an access log keeps metadata only.
+# ---------------------------------------------------------------------------
+
+function Get-CredentialRef {
+    # The reference is derived, never typed: <KIND>.<CODE>. The code is an instance code, or a rule code for RULE_SECRET.
+    param([Parameter(Mandatory)][string]$Kind, [Parameter(Mandatory)][string]$Code)
+    if ($Kind -cnotin $script:SecretKinds) { Stop-Vault 'SECRET_KIND' }
+    if ($Code -cnotmatch '^[A-Z0-9_-]{1,60}$') { Stop-Vault 'SECRET_CODE' }
+    return ($Kind + '.' + $Code)
+}
+
+function Add-VaultAccessLog {
+    param($Vault, [string]$Action, [string]$CredentialRef)
+    if ($null -eq $Vault.Data['accessLog'] -or $Vault.Data['accessLog'] -isnot [System.Collections.IEnumerable]) { $Vault.Data['accessLog'] = @() }
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($e in @($Vault.Data['accessLog'])) { $entries.Add($e) }
+    $entries.Add([ordered]@{ at = (Get-UtcNowText); action = $Action; credentialRef = $CredentialRef })
+    while ($entries.Count -gt $script:MaxAccessLog) { $entries.RemoveAt(0) }
+    $Vault.Data['accessLog'] = $entries.ToArray()
+}
+
+function Get-VaultFingerprintSalt {
+    param($Vault)
+    if ([string]::IsNullOrEmpty([string]$Vault.Data['fingerprintSalt'])) {
+        $Vault.Data['fingerprintSalt'] = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(16))
+    }
+    [byte[]]$salt = [Convert]::FromBase64String([string]$Vault.Data['fingerprintSalt'])
+    return , $salt
+}
+
+function Get-SecretFingerprint {
+    param($Vault, [byte[]]$Value)
+    [byte[]]$salt = Get-VaultFingerprintSalt -Vault $Vault
+    [byte[]]$joined = Join-Bytes $salt $Value
+    try { return [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($joined)).ToLowerInvariant() }
+    finally { [Array]::Clear($joined, 0, $joined.Length) }
+}
+
+function Join-Bytes {
+    param([byte[]]$First, [byte[]]$Second)
+    [byte[]]$out = [byte[]]::new($First.Length + $Second.Length)
+    [Array]::Copy($First, 0, $out, 0, $First.Length)
+    [Array]::Copy($Second, 0, $out, $First.Length, $Second.Length)
+    return , $out
+}
+
+function Find-VaultSecretIndex {
+    param($Vault, [string]$CredentialRef)
+    $list = @($Vault.Data['secrets'])
+    for ($i = 0; $i -lt $list.Count; $i++) { if ([string]$list[$i]['credentialRef'] -ceq $CredentialRef) { return $i } }
+    return -1
+}
+
+function Add-VaultSecret {
+    # In memory; call Save-CredentialVault to persist. An existing reference is never replaced unless -Replace.
+    param(
+        [Parameter(Mandatory)]$Vault, [Parameter(Mandatory)][string]$Kind, [Parameter(Mandatory)][string]$Code,
+        [Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Value, [string]$Source = '', [switch]$Replace
+    )
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    $ref = Get-CredentialRef -Kind $Kind -Code $Code
+    if ($Value.Length -lt 1 -or $Value.Length -gt $script:MaxSecretValueBytes) { Stop-Vault 'SECRET_VALUE' }
+    if ($Source -cnotmatch '^[A-Za-z0-9_.:/ #-]{0,100}$') { Stop-Vault 'SECRET_SOURCE' }
+    if ($null -eq $Vault.Data['secrets'] -or $Vault.Data['secrets'] -isnot [System.Collections.IEnumerable]) { $Vault.Data['secrets'] = @() }
+    $index = Find-VaultSecretIndex -Vault $Vault -CredentialRef $ref
+    if ($index -ge 0 -and -not $Replace) { Stop-Vault 'SECRET_EXISTS' }
+    if ($index -lt 0 -and @($Vault.Data['secrets']).Count -ge $script:MaxSecrets) { Stop-Vault 'SECRETS_LIMIT' }
+    $entry = [ordered]@{
+        credentialRef = $ref
+        kind          = $Kind
+        code          = $Code
+        value         = [Convert]::ToBase64String($Value)
+        fingerprint   = (Get-SecretFingerprint -Vault $Vault -Value $Value)
+        importedAt    = (Get-UtcNowText)
+        source        = $Source
+    }
+    $list = [System.Collections.Generic.List[object]]::new()
+    foreach ($e in @($Vault.Data['secrets'])) { $list.Add($e) }
+    if ($index -ge 0) { $list[$index] = $entry; Add-VaultAccessLog -Vault $Vault -Action 'REPLACE' -CredentialRef $ref }
+    else { $list.Add($entry); Add-VaultAccessLog -Vault $Vault -Action 'ADD' -CredentialRef $ref }
+    $Vault.Data['secrets'] = $list.ToArray()
+    return [pscustomobject]@{ CredentialRef = $ref; Fingerprint = $entry['fingerprint'] }
+}
+
+function Get-VaultSecretList {
+    # Metadata only. The value is never part of this output.
+    param([Parameter(Mandatory)]$Vault)
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    return @(@($Vault.Data['secrets']) | ForEach-Object {
+            [pscustomobject]@{ CredentialRef = [string]$_['credentialRef']; Kind = [string]$_['kind']; Code = [string]$_['code']; ImportedAt = [string]$_['importedAt']; Source = [string]$_['source']; Fingerprint = [string]$_['fingerprint'] }
+        } | Sort-Object -Property CredentialRef -CaseSensitive)
+}
+
+function Get-VaultSecretValue {
+    # A copy of the value for the caller, who must clear it. The read is recorded in the access log (metadata only).
+    param([Parameter(Mandatory)]$Vault, [Parameter(Mandatory)][string]$CredentialRef)
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    if ($CredentialRef -cnotmatch '^[A-Z0-9_.:-]{1,120}$') { Stop-Vault 'SECRET_MISSING' }
+    $index = Find-VaultSecretIndex -Vault $Vault -CredentialRef $CredentialRef
+    if ($index -lt 0) { Stop-Vault 'SECRET_MISSING' }
+    [byte[]]$value = [Convert]::FromBase64String([string]@($Vault.Data['secrets'])[$index]['value'])
+    Add-VaultAccessLog -Vault $Vault -Action 'READ' -CredentialRef $CredentialRef
+    return , $value
+}
+
+function Test-VaultSecretFingerprint {
+    # True when the value matches the stored salted fingerprint (the later comparison with a re-read of the source).
+    param([Parameter(Mandatory)]$Vault, [Parameter(Mandatory)][string]$CredentialRef, [Parameter(Mandatory)][byte[]]$Value)
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    $index = Find-VaultSecretIndex -Vault $Vault -CredentialRef $CredentialRef
+    if ($index -lt 0) { Stop-Vault 'SECRET_MISSING' }
+    [byte[]]$expected = [System.Text.Encoding]::ASCII.GetBytes([string]@($Vault.Data['secrets'])[$index]['fingerprint'])
+    [byte[]]$actual = [System.Text.Encoding]::ASCII.GetBytes((Get-SecretFingerprint -Vault $Vault -Value $Value))
+    return ($expected.Length -eq $actual.Length -and [System.Security.Cryptography.CryptographicOperations]::FixedTimeEquals($expected, $actual))
+}
+
+function Remove-VaultSecret {
+    param([Parameter(Mandatory)]$Vault, [Parameter(Mandatory)][string]$CredentialRef)
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    $index = Find-VaultSecretIndex -Vault $Vault -CredentialRef $CredentialRef
+    if ($index -lt 0) { Stop-Vault 'SECRET_MISSING' }
+    $list = [System.Collections.Generic.List[object]]::new()
+    foreach ($e in @($Vault.Data['secrets'])) { $list.Add($e) }
+    $list.RemoveAt($index)
+    $Vault.Data['secrets'] = $list.ToArray()
+    Add-VaultAccessLog -Vault $Vault -Action 'REMOVE' -CredentialRef $CredentialRef
+}
+
+function Get-VaultAccessLog {
+    param([Parameter(Mandatory)]$Vault)
+    if ($Vault.Closed) { Stop-Vault 'VAULT_CLOSED' }
+    return @(@($Vault.Data['accessLog']) | ForEach-Object { [pscustomobject]@{ At = [string]$_['at']; Action = [string]$_['action']; CredentialRef = [string]$_['credentialRef'] } })
+}
+
 Export-ModuleMember -Function @(
     'New-CredentialVault', 'Open-CredentialVault', 'Save-CredentialVault', 'Close-CredentialVault',
     'New-VaultIssuerKey', 'Get-VaultIssuerInfo', 'Invoke-VaultIssuerSign',
-    'Backup-CredentialVault', 'Restore-CredentialVault'
+    'Backup-CredentialVault', 'Restore-CredentialVault',
+    'Get-DefaultVaultPath', 'Read-VaultPassphrase',
+    'Get-CredentialRef', 'Add-VaultSecret', 'Get-VaultSecretList', 'Get-VaultSecretValue', 'Test-VaultSecretFingerprint',
+    'Remove-VaultSecret', 'Get-VaultAccessLog'
 )

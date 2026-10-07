@@ -1,12 +1,18 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Verifies catalog conversion including the C1/C2 Links instance directory.
+    Verifies catalogs written by Convert-ManagementDb.ps1, including C8 action cross-references.
 
 .DESCRIPTION
-    Keeps the proven B4 verifier in Test-CatalogConversion.Core.ps1. The legacy checks run
-    unchanged against the 62 source-carried tables, while this overlay independently recomputes
-    and verifies the derived cfg_LinksPageDirectory table in every catalog.
+    Keeps the proven B4 verifier in Test-CatalogConversion.Core.ps1 and adds the C8 / R-043
+    fail-closed cross-reference checks without changing the existing value, cut, secret or hash checks.
+
+    C8 validates, with exact BINARY/ordinal semantics:
+      cfg_ConfigurationAdapterDefinition.ActionCode -> ops_Action.ActionCode
+      ops_Action.EngineCode -> ops_Engine.EngineCode
+
+    NULL or blank adapter ActionCode and NULL or blank action EngineCode are intentionally allowed.
+    Identifier mismatches are reported by code only; no configuration values or secrets are printed.
 #>
 [CmdletBinding(DefaultParameterSetName = 'Sync')]
 param(
@@ -24,8 +30,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:C1C2VerifierShouldExecute = ($MyInvocation.InvocationName -ne '.')
-$script:C1C2VerifierCli = [ordered]@{
+$script:C8ShouldExecute = ($MyInvocation.InvocationName -ne '.')
+$script:C8Cli = [ordered]@{
     ParameterSet = $PSCmdlet.ParameterSetName
     SyncFile = $SyncFile
     SqlInstance = $SqlInstance
@@ -41,10 +47,128 @@ $script:C1C2VerifierCli = [ordered]@{
 $corePath = Join-Path $PSScriptRoot 'Test-CatalogConversion.Core.ps1'
 . $corePath -SyncFile 'unused' -CatalogFolder 'unused' -Sqlite3Path 'unused'
 
+$script:C8LegacyInvokeCatalogConversionTest = ${function:Invoke-CatalogConversionTest}
+$script:TestToolVersion = '0.3.0'
+
+function Get-C8QueryLines {
+    param(
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [Parameter(Mandatory)][string]$DatabasePath,
+        [Parameter(Mandatory)][string]$Sql
+    )
+    $out = Invoke-Sqlite3 -Exe $Sqlite3 -Arguments @('-readonly', $DatabasePath, $Sql)
+    return @($out -split "`n" | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_.Length -gt 0 })
+}
+
+function Get-C8NonBlankSqlPredicate {
+    param([Parameter(Mandatory)][string]$ColumnExpression)
+
+    # SQLite trim(X) removes ASCII space only. Optional catalog references use the
+    # Unicode White_Space set instead, matching the documented "whitespace-only"
+    # contract and PowerShell/.NET IsNullOrWhiteSpace semantics for these code fields.
+    $whiteSpaceChars = @(
+        9, 10, 11, 12, 13, 32, 133, 160, 5760,
+        8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+        8232, 8233, 8239, 8287, 12288
+    )
+    $trimSet = (($whiteSpaceChars | ForEach-Object { 'char({0})' -f $_ }) -join ' || ')
+    return ('length(trim({0}, {1})) > 0' -f $ColumnExpression, $trimSet)
+}
+
+function Test-C8CatalogHasTables {
+    param(
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [Parameter(Mandatory)][string]$DatabasePath
+    )
+    $required = @('cfg_ConfigurationAdapterDefinition', 'ops_Action', 'ops_Engine')
+    $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('cfg_ConfigurationAdapterDefinition','ops_Action','ops_Engine') ORDER BY name;"
+    $actual = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $DatabasePath -Sql $sql)
+    return (@($required | Where-Object { $actual -notcontains $_ }).Count -eq 0)
+}
+
+function Add-C8ActionCrossReferenceChecks {
+    param(
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [Parameter(Mandatory)]$Entries
+    )
+
+    $adapterNonBlank = Get-C8NonBlankSqlPredicate -ColumnExpression 'a.ActionCode'
+    $engineNonBlank = Get-C8NonBlankSqlPredicate -ColumnExpression 'a.EngineCode'
+
+    foreach ($entry in @($Entries)) {
+        $code = [string]$entry.serverCode
+        $databasePath = Join-Path $Folder ([string]$entry.file)
+        if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf)) { continue }
+        if (-not (Test-C8CatalogHasTables -Sqlite3 $Sqlite3 -DatabasePath $databasePath)) { continue }
+
+        $adapterSql = @"
+SELECT a.AdapterCode || '->' || a.ActionCode
+FROM cfg_ConfigurationAdapterDefinition AS a
+LEFT JOIN ops_Action AS x
+  ON x.ActionCode COLLATE BINARY = a.ActionCode COLLATE BINARY
+WHERE a.ActionCode IS NOT NULL
+  AND $adapterNonBlank
+  AND x.ActionCode IS NULL
+ORDER BY a.AdapterCode;
+"@
+        $adapterMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $databasePath -Sql $adapterSql)
+        $adapterDetail = ''
+        if ($adapterMissing.Count -gt 0) {
+            $adapterDetail = (($adapterMissing | Select-Object -First 5) -join ', ')
+            if ($adapterMissing.Count -gt 5) { $adapterDetail += ' ...' }
+        }
+        Add-Check 'action-xref' ('{0}: every non-empty adapter ActionCode resolves exactly to ops_Action' -f $code) ($adapterMissing.Count -eq 0) $adapterDetail
+
+        $engineSql = @"
+SELECT a.ActionCode || '->' || a.EngineCode
+FROM ops_Action AS a
+LEFT JOIN ops_Engine AS e
+  ON e.EngineCode COLLATE BINARY = a.EngineCode COLLATE BINARY
+WHERE a.EngineCode IS NOT NULL
+  AND $engineNonBlank
+  AND e.EngineCode IS NULL
+ORDER BY a.ActionCode;
+"@
+        $engineMissing = @(Get-C8QueryLines -Sqlite3 $Sqlite3 -DatabasePath $databasePath -Sql $engineSql)
+        $engineDetail = ''
+        if ($engineMissing.Count -gt 0) {
+            $engineDetail = (($engineMissing | Select-Object -First 5) -join ', ')
+            if ($engineMissing.Count -gt 5) { $engineDetail += ' ...' }
+        }
+        Add-Check 'action-xref' ('{0}: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine' -f $code) ($engineMissing.Count -eq 0) $engineDetail
+    }
+}
+
+function Invoke-CatalogConversionTest {
+    param(
+        [Parameter(Mandatory)]$Source,
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [string[]]$ExtraNeedles = @()
+    )
+
+    $legacy = & $script:C8LegacyInvokeCatalogConversionTest -Source $Source -Folder $Folder -Sqlite3 $Sqlite3 -ExtraNeedles $ExtraNeedles
+    if ($legacy.Catalogs -le 0 -or [string]::IsNullOrWhiteSpace([string]$legacy.Mode)) { return $legacy }
+
+    $manifestPath = Join-Path $Folder 'conversion-manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $legacy }
+    try {
+        $manifest = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($manifestPath)) | ConvertFrom-Json
+        Add-C8ActionCrossReferenceChecks -Folder $Folder -Sqlite3 $Sqlite3 -Entries @($manifest.catalogs)
+    }
+    catch {
+        Add-Check 'action-xref' 'C8 action cross-reference check completed without an internal error' $false $_.Exception.Message
+    }
+
+    return (New-TestResult -Mode $legacy.Mode -Catalogs $legacy.Catalogs)
+}
+
+# --- C1/C2: verification of the derived Links instance directory. Defined after C8 on purpose: it captures the
+# C8-wrapped Invoke-CatalogConversionTest, so it runs on top of the C8 checks.
 $script:C1C2CoreInvokeCatalogConversionTest = ${function:Invoke-CatalogConversionTest}
 $script:C1C2CoreGetCatalogColumns = ${function:Get-CatalogColumns}
 $script:C1C2HideDirectoryForCore = $false
-$script:TestToolVersion = '0.2.0'
 
 function Get-CatalogColumns {
     param([string]$Sqlite3, [string]$Db)
@@ -246,8 +370,8 @@ function Invoke-CatalogConversionTest {
     return (New-TestResult -Mode $legacy.Mode -Catalogs $legacy.Catalogs)
 }
 
-if ($script:C1C2VerifierShouldExecute) {
-    $cli = $script:C1C2VerifierCli
+if ($script:C8ShouldExecute) {
+    $cli = $script:C8Cli
     $tables = @($script:CarriedTables.Keys)
     if ($cli.ParameterSet -eq 'Sync') {
         $resolved = (Resolve-Path -LiteralPath $cli.SyncFile).Path
