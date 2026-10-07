@@ -39,7 +39,7 @@ The owner does not want a master server, and `_sisqualMANAGEMENT` ceases to exis
 
 ## Open items
 
-[PENDING] SQLite managed provider (Phase 1B, read-only open only). [PENDING] Vault format and protection. [PENDING] Per-table slicing rules for the per-machine catalogs (the conversion plan). [DEFERRED] Long-term catalog authority.
+[DECIDED 2026-10-07] SQLite managed provider (Phase 1B, read-only open only): see ADR-0009. [PENDING] Vault format and protection. [PENDING] Per-table slicing rules for the per-machine catalogs (the conversion plan). [DEFERRED] Long-term catalog authority.
 
 ## Reopen conditions
 

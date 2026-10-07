@@ -161,7 +161,7 @@ This conclusion is limited to the tested scope. It does not by itself approve a 
 
 [PENDING] Owner/reviewer approval of the runtime dependency.
 
-[PENDING] Native SQLite patch-version policy (3.53.3 provider versus 3.53.4 CLI).
+[DECIDED 2026-10-07] Native SQLite patch-version policy (3.53.3 provider versus 3.53.4 CLI): both are accepted by role, see ADR-0009.
 
 [V] Open one converted SISQUAL catalog read-only on the intended target/sandbox Windows environment before production acceptance.
 
