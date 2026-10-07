@@ -1,16 +1,16 @@
 # Per-machine catalog schema
 
-**Status:** [PROPOSED] draft, version `0.2-proposed`. C7 adds the structured database-content predicate contract. The remaining table-by-table content still follows the conversion plan (`docs/migration/catalog-conversion-plan.md`) and ADR-0007.
+**Status:** [PROPOSED] draft, version `0.3-proposed`. C7 adds the structured database-content predicate contract and C1/C2 the derived Links instance directory. The remaining table-by-table content still follows the conversion plan (`docs/migration/catalog-conversion-plan.md`) and ADR-0007.
 Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 
 ## 1. What a catalog is
 
-- [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each instance appears in exactly one catalog.
-- [PLANNED, 2026-10-05] Exception for links pages: a catalog that hosts a general links page also carries a read-only directory of the instances of other machines (public columns only), because the general page lists every enabled instance of the same country across all machines (`cfg.GetLinksPageItemPlan`). The directory is a separate table; the rule above is about the full instance rows.
+- [CONFIRMED] A SQLite file, read-only for the application, one file per existing machine (`ServerCode`), named `catalog-<ServerCode>.db`. Each complete instance row appears in exactly one catalog.
+- [CONFIRMED, C1/C2, 2026-10-06] A catalog whose machine hosts an enabled general Links page also carries a read-only directory of enabled instances of the same country on other enabled machines. A machine without a general page carries an empty directory. The directory is derived public data and never replaces the complete local instance row.
 - [CONFIRMED] Replaces the central database `_sisqualMANAGEMENT`, which ceases to exist. No runtime sync, no connection to any server to obtain configuration.
 - [CONFIRMED] No secrets, no job history, no housekeeping artifacts, no stored engine scripts. Secret-bearing surfaces never enter a catalog (R-026).
 - [PROPOSED] Created with the pinned `sqlite3.exe` 3.53.4; the runtime provider only has to open files read-only.
-- [PROPOSED] Opened with a read-only URI and `PRAGMA query_only = ON`. The file is listed with its SHA-256 in the signed package manifest.
+- [PROPOSED] Opened with a read-only URI and `PRAGMA query_only = ON`. The file is listed with its SHA-256 in the signed package manifest (`package-manifest.schema.json`).
 
 ## 2. Mandatory metadata table
 
@@ -24,9 +24,12 @@ Tags: [CONFIRMED] owner decision; [PROPOSED] draft; [PENDING] open decision.
 | `source_kind` | TEXT NOT NULL | `conversion-tool`, `manual-edit-sealed` or `build` |
 | `source_reference` | TEXT NOT NULL | Conversion run id, repository commit or seal note; ASCII, no secrets |
 | `built_at_utc` | TEXT NOT NULL | `YYYY-MM-DDTHH:MM:SSZ`, shown in the UI |
-| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting/transformation rules |
+| `cut_rule_version` | INTEGER NOT NULL | Version of the per-machine cutting, transformation and derived-table rules |
 
-Catalog schema version **2** is the first version with C7 structured database filters. `schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error.
+Catalog schema version **2** is the first version with C7 structured database filters. `schema_version` and `server_code` must agree with the package manifest, and `source_kind` must equal the manifest's `catalog.origin`; any difference is an integrity error. `built_at_utc` is the time the catalog content was produced or last sealed after a manual edit; it is not required to equal the manifest's `builtAt`.
+
+`cut_rule_version` identifies the rule set that produced the catalog: **1** is the original cut, **2** adds the C7 structured filters, and **3** adds the C1/C2 derived Links directory (section 5) on top of C7. C1/C2 is additive to the table set and does not change `schema_version`; a catalog written without the directory keeps `cut_rule_version = 2`.
+
 
 ## 3. Conventions for all tables [PROPOSED]
 
@@ -99,11 +102,41 @@ The future `DATABASE_CONTENT_SYNC` engine must validate target database/table/co
 
 A `LOOKUP` node is data describing one restricted scalar lookup, not executable SQL text. Runtime compilation must preserve the same depth/term bounds and metadata validation as the conversion contract.
 
-## 5. Global versus cut tables
+## 5. Derived Links instance directory (C1/C2)
 
-[PENDING] The assignment of each source table to global or machine-cut is produced by the conversion plan. C7 does not change that assignment; `cfg.DatabaseObjectSettingRule` remains global.
+[CONFIRMED, owner Q9, 2026-10-06] The derived table is `cfg_LinksPageDirectory`. It is present in every catalog but is empty when that machine has no enabled instance with `LinksIncludeAllInstances = 1` (C2).
 
-## 6. Open items
+For a catalog of machine M, the directory contains exactly the enabled instances that:
+
+- belong to an enabled machine other than M;
+- have `CountryCode` equal, under the source database's case-insensitive comparison, to the country of at least one enabled general-page instance of M;
+- are not complete local instance rows of M.
+
+Only public data used by the general Links page is copied. C1 explicitly includes `LinksAssignedUserName`, because the current public page already prints it. Tokens, passwords, database names, ports, paths, SQL configuration and other private instance data never enter this table.
+
+`cfg_LinksPageDirectory` is `STRICT`, has no foreign key to `dbo_ManagedInstance`, and has these columns in this order:
+
+| Column | Type source | Nullability | Rule |
+|---|---|---|---|
+| `InstanceCode` | `dbo.ManagedInstance.InstanceCode` | NOT NULL, PRIMARY KEY | remote instance code |
+| `ServerCode` | `dbo.ManagedInstance.ServerCode` | NOT NULL | provenance; never equals `catalog_meta.server_code` |
+| `CountryCode` | `dbo.ManagedInstance.CountryCode` | NOT NULL | exactly two characters |
+| `CustomerCode` | `dbo.ManagedInstance.CustomerCode` | NULL | preserved; general-page ordering already handles NULL last |
+| `CustomerName` | `dbo.ManagedInstance.CustomerName` | NULL | preserved; the page falls back to `InstanceCode` when absent |
+| `HostName` | `dbo.ManagedInstance.HostName` | NOT NULL | non-empty; used to build links |
+| `AssignedUserName` | `dbo.ManagedInstance.LinksAssignedUserName` | NULL | public display value accepted by C1 |
+
+The nullable `CustomerCode` and `CustomerName` definitions deliberately follow the real SQL schema and the existing page behavior; the earlier design draft that marked them NOT NULL was too strict.
+
+The conversion manifest records `linksPageDirectoryCount` per catalog. `Test-CatalogConversion` independently recomputes the expected rows and values from the source, requires the exact seven-column shape, verifies no row is local or from the catalog's own server, and requires an empty table for C2 machines without a general page.
+
+The directory is the only derived cross-machine instance table. `cfg.Application.LinksHubInstanceCode` remains a global code string and is not resolved through this directory.
+
+## 6. Global versus cut tables
+
+[PENDING] The assignment of each source table to global or machine-cut is produced by the conversion plan. C7 does not change that assignment; `cfg.DatabaseObjectSettingRule` remains global. The Links directory (section 5) is not a source table: it is derived during the cut from `dbo.ManagedServer` and `dbo.ManagedInstance`.
+
+## 7. Open items
 
 - [PENDING] Final table list and DDL for the remaining catalog tables.
 - [PENDING] Whether the long-term authority for the catalog is declarative source in this repository or an editor tool.

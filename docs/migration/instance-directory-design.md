@@ -1,50 +1,54 @@
 # Design: the instance directory for the general links page
 
-**Status:** [PROPOSED] design for review. It settles the "[PENDING] exact columns and which catalogs carry it" of `docs/roadmap.md` section 5 and the decision of 2026-10-05 recorded in `docs/decisions-log.md` (a catalog that hosts a general links page carries a read-only directory of the instances of other machines). No product code and no change to the contracts in this PR.
-**Date:** 2026-10-05
+**Status:** [CONFIRMED] C1/C2 contract implemented in PR #57. The source analysis remains the design basis; exact real-snapshot counts remain evidence, not a runtime invariant.
+**Date:** 2026-10-05; implementation update 2026-10-06.
 **Sources (read only):** `database/sync/ManagementSync.sql` of `atsisqual/SISQUALManagementConsole` (29,516,382 bytes, blob `9401e2c3cb2517ca88848f902ff4d3786583e888`, head `9756ba956842884fabcf25b82c4fbf1d11cf56bd`); the `LINKS_PAGES` engine exported from `ops.Engine` (`Invoke-LinksPageDeployment.ps1`). Script text is not copied; objects are cited by name.
-Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs a decision; [V] needs a real server.
+Tags: [CONFIRMED] source or owner decision; [IMPLEMENTED] portable tooling; [PENDING] later work; [V] real-server validation.
 
 ## 1. Summary
 
-1. [CONFIRMED] Only a page with `LinksIncludeAllInstances` = 1 (a "general" page) lists instances of other machines: it lists every enabled instance of the same country on every enabled machine (`cfg.GetLinksPageItemPlan`). An individual page lists only its own instance.
-2. [CONFIRMED] All six machines have such a page, so all six catalogs need a directory. Over the six catalogs the directory has **36 rows** (largest: PRESALES with 17), about 1.4 KB of text at most per catalog.
-3. [PROPOSED] The directory is one table, `cfg_LinksPageDirectory`, with 6 columns, public data only. No secret, no token, no SQL, port or path data travels in it.
-4. [CONFIRMED] `LinksHubInstanceCode` is not a cross-machine reference. It limits an application to the page of its own hub instance, so other catalogs need nothing about that instance (section 8). This also corrects a statement of `analysis-pulse.md` (PR #27).
-5. [PROPOSED] The conversion tools build the directory, and `Test-CatalogConversion` checks it against the source (section 6). The directory is the only cross-machine data in a catalog.
+1. [CONFIRMED] Only a page with `LinksIncludeAllInstances = 1` (a "general" page) lists instances of other machines: it lists every enabled instance of the same country on every enabled machine (`cfg.GetLinksPageItemPlan`). An individual page lists only its own instance.
+2. [CONFIRMED] In the 2026-10-05 reference snapshot all six machines have such a page, so all six catalogs need directory rows. Over those six catalogs the directory has 36 rows (largest: PRESALES with 17), about 1.4 KB of text at most per catalog.
+3. [CONFIRMED, C1] The directory is `cfg_LinksPageDirectory` with seven public columns, including `AssignedUserName` from `LinksAssignedUserName`. The owner accepted C1 in Q9 on 2026-10-06 because the current public page already displays it.
+4. [CONFIRMED, C2] Every catalog has the derived table. A machine without an enabled general page gets an empty table, so no remote instance data is carried for that machine. This is the implemented representation of the owner C2 decision.
+5. [CONFIRMED] No secret, token, SQL configuration, port or path data travels in the directory.
+6. [CONFIRMED] `LinksHubInstanceCode` is not a cross-machine directory reference. It limits an application to the page of its own hub instance, so other catalogs need nothing about that instance.
+7. [IMPLEMENTED] `Convert-ManagementDb.ps1` derives the table during the cut; `Test-CatalogConversion.ps1` recomputes it independently and validates it.
 
 ## 2. What the general page needs
 
 `cfg.GetLinksPageItemPlan` takes the page instance and returns one row per target instance and published application:
 
-- Target instances: if the page instance has `LinksIncludeAllInstances` = 1, every enabled instance (of an enabled server) whose `CountryCode` equals the page instance's, on any machine; otherwise only the page instance.
-- Applications: every enabled `cfg.Application` with `PublishInLinks` = 1 (12 of 36), crossed with the targets. The URL is the application's `LinksUrlTemplate` expanded by `cfg.ExpandTemplate`, or `https://` + host name + the application's `IisPath`.
-- Visibility layers (instance override in `cfg.LinksPageInstanceApplication`, then profile in `cfg.LinksProfileInstance` and `cfg.LinksProfileApplication`, then the application's default) apply **only to individual pages**. On a general page all published applications show for every target.
-- Order: country, customer code (null last), customer code, instance code, application sort order.
+- Target instances: if the page instance has `LinksIncludeAllInstances = 1`, every enabled instance of an enabled server whose `CountryCode` equals the page instance's, on any machine; otherwise only the page instance.
+- Applications: every enabled `cfg.Application` with `PublishInLinks = 1` (12 of 36 in the reference snapshot), crossed with the targets. The URL is the application's `LinksUrlTemplate` expanded by `cfg.ExpandTemplate`, or `https://` + host name + the application's `IisPath`.
+- Visibility layers (instance override in `cfg.LinksPageInstanceApplication`, then profile in `cfg.LinksProfileInstance` and `cfg.LinksProfileApplication`, then the application's default) apply only to individual pages. On a general page all published applications show for every target.
+- Order: country, customer code (NULL last), customer code, instance code, application sort order.
 
-[CONFIRMED] The six general pages (instances with `LinksIncludeAllInstances` = 1): DEMOBR (BR_DEMO, BR), DEMOES (ES_DEMO, ES), DEMOPT (PT_DEMO, PT), PRESALESMAIN (PRESALES, PT), SANDBOXMAIN (SANDBOX_HUB, US), TENDERMAIN (TENDERS, US). Two machines build a Portuguese page and two build a US page, each listing all instances of the country.
+[CONFIRMED] The six general pages in the reference snapshot are: DEMOBR (BR_DEMO, BR), DEMOES (ES_DEMO, ES), DEMOPT (PT_DEMO, PT), PRESALESMAIN (PRESALES, PT), SANDBOXMAIN (SANDBOX_HUB, US), TENDERMAIN (TENDERS, US). Two machines build a Portuguese page and two build a US page, each listing all enabled instances of that country.
 
 ## 3. Exact columns
 
-| Plan column | Source column of `dbo.ManagedInstance` | Used for | In the directory |
+| Directory column | Source column of `dbo.ManagedInstance` | Used for | Nullability |
 |---|---|---|---|
-| `TargetInstanceCode` | `InstanceCode` | key, ordering, QR asset lookup | yes |
-| `TargetCountryCode` | `CountryCode` | selection and grouping of the page | yes |
-| `TargetCustomerCode` | `CustomerCode` | ordering and the QR asset (`QR_CHANNEL_<code>` in `cfg.LinksPageAsset`, global) | yes |
-| `TargetCustomerName` | `CustomerName` | card title (falls back to the instance code) | yes |
-| `TargetHostName` | `HostName` | every link: all 12 `LinksUrlTemplate` values use only the host name placeholder, and the default URL uses the host name | yes |
-| `TargetAssignedUserName` | `LinksAssignedUserName` | shown on the card (10 non-empty values, none with an at sign) | [PENDING] see section 9 |
-| `TargetServerCode` | `ServerCode` | not used by the engine | yes, as provenance and for the checks |
-| `TargetCultureCode` | `CultureCode` | not used by the engine | no |
-| (not selected) | `SqlInstanceName`, `DatabaseName`, `ChannelID`, Keycloak ports, credentials, `MOBILE_APP_TOKEN` | other `ExpandTemplate` tokens | no, never |
+| `InstanceCode` | `InstanceCode` | key, ordering, QR asset lookup | NOT NULL, primary key |
+| `ServerCode` | `ServerCode` | provenance and verifier checks | NOT NULL |
+| `CountryCode` | `CountryCode` | selection and grouping | NOT NULL, two characters |
+| `CustomerCode` | `CustomerCode` | ordering and QR asset (`QR_CHANNEL_<code>` in global `cfg.LinksPageAsset`) | NULL allowed |
+| `CustomerName` | `CustomerName` | card title; page falls back to instance code | NULL allowed |
+| `HostName` | `HostName` | link construction | NOT NULL, non-empty |
+| `AssignedUserName` | `LinksAssignedUserName` | displayed on the public card | NULL allowed; C1 accepted |
 
-[CONFIRMED] No link or page template mentions `MOBILE_APP_TOKEN`, and the engine never reads a token. The QR images are fixed assets keyed by customer code.
+[CONFIRMED] The real source schema permits NULL for `CustomerCode` and `CustomerName`, and the existing page logic already handles those cases. The earlier draft that marked both columns NOT NULL was too strict; PR #57 preserves the source NULLs rather than inventing values.
 
-Only enabled instances of enabled machines are in the directory, so no `IsEnabled` column is needed.
+[CONFIRMED] No link or page template mentions `MOBILE_APP_TOKEN`, and the engine never reads a token. The directory also excludes `SqlInstanceName`, `DatabaseName`, `ChannelID`, Keycloak ports, credentials and path configuration.
 
-## 4. Which catalogs carry it, and how many rows
+Only enabled instances of enabled machines are selected, so no `IsEnabled` column is needed.
 
-Rule [PROPOSED]: the directory of the catalog of machine M holds the enabled instances of **other** machines whose country equals the country of a general-page instance of M. Rows are listed once even if two pages need them.
+## 4. Which catalogs carry rows, and how many
+
+Rule [CONFIRMED]: the directory of catalog M contains enabled instances of enabled **other** machines whose country equals the country of at least one enabled general-page instance of M. A row is present once even if more than one local page needs it. The table is empty when M has no enabled general page or when M itself is disabled.
+
+Reference snapshot evidence:
 
 | Catalog | Countries of its general pages | Local instances in the page | Directory rows | Coming from |
 |---|---|---:|---:|---|
@@ -56,59 +60,67 @@ Rule [PROPOSED]: the directory of the catalog of machine M holds the enabled ins
 | TENDERS | US | 6 | 2 | SANDBOX_HUB |
 | **Total** | | | **36** | |
 
-The 3 MX instances on ES_DEMO and the other-country sandbox instances have no general page, so they appear only on their own individual pages. A catalog of a new machine (the pilot) has no instances and no general page unless the owner adds one; then the rule gives its directory.
+The three MX instances on ES_DEMO and other-country sandbox instances have no matching general page and therefore do not become remote directory rows. A new-machine catalog has no local general page and receives an empty directory until such a page exists.
 
-## 5. Table design [PROPOSED]
+The 36-row reference count is a snapshot regression target, not a hard-coded product rule. [V] Re-run the real-snapshot reconciliation before cutover.
 
-Table `cfg_LinksPageDirectory`, `STRICT`, no foreign key to `dbo_ManagedInstance` (the rows are by definition not local).
+## 5. Table design [IMPLEMENTED]
 
-| Column | Type | Rule |
-|---|---|---|
-| `InstanceCode` | TEXT, primary key | not in `dbo_ManagedInstance` of the same catalog |
-| `ServerCode` | TEXT, not null | different from `catalog_meta.server_code` |
-| `CountryCode` | TEXT, not null, 2 characters | equals the country of a general-page instance of this catalog |
-| `CustomerCode` | INTEGER, not null | |
-| `CustomerName` | TEXT, not null | |
-| `HostName` | TEXT, not null | non-empty |
-| `AssignedUserName` | TEXT, null | only if section 9 item 1 is accepted |
+`cfg_LinksPageDirectory` is a derived `STRICT` table with no foreign key to `dbo_ManagedInstance`, because its rows are by definition remote. Its schema is built from the real `dbo.ManagedInstance` source column metadata, with `AssignedUserName` mapped from `LinksAssignedUserName`.
 
-Text is byte for byte as in the source and compared exactly, like every other table. The table is empty, not absent, when the machine has no general page. [PROPOSED] bump `cut_rule_version`.
+The exact destination column order is:
 
-## 6. Verification in the conversion
+1. `InstanceCode`
+2. `ServerCode`
+3. `CountryCode`
+4. `CustomerCode`
+5. `CustomerName`
+6. `HostName`
+7. `AssignedUserName`
 
-[PROPOSED] additions to `Convert-ManagementDb` (cut and new-machine modes) and `Test-CatalogConversion`; the tools are not changed in this PR.
+Text is preserved byte for byte as in the source. `ServerCode` is never the catalog's own server. The table is empty, not absent, for a machine without an enabled general page.
 
-1. The converter builds the directory from the source with the rule of section 4 and reports the count per catalog in the manifest.
-2. The verifier recomputes the expected set from the source independently and requires an exact match (rows and values), per catalog.
-3. No row repeats a local instance; no row has the catalog's own `ServerCode`; every row's country belongs to a general page of the catalog; each general page instance exists in `dbo_ManagedInstance` of the catalog.
-4. The only tables that carry an instance code of another machine are `cfg_LinksPageDirectory` and the global `cfg_Application.LinksHubInstanceCode`; a scan fails on any other.
-5. The directory has no column outside section 5, and the secret scan covers it.
-6. Counts equal the table of section 4 on the 2026-10-05 snapshot (a regression test on the real data, kept out of the repository).
+C1/C2 does not change the source-carried catalog schema contract, so on its isolated branch it keeps `schema_version = 1` and bumps `cut_rule_version` to 2. The later C7 schema-v2 change is reconciled when the PRs are integrated.
+
+## 6. Verification in the conversion [IMPLEMENTED]
+
+1. The converter builds the directory from the complete source model and records `linksPageDirectoryCount` per catalog in `conversion-manifest.json`.
+2. The verifier recomputes the expected rows independently from `dbo.ManagedServer` and `dbo.ManagedInstance`; it does not call the converter's directory-row function.
+3. The verifier requires the exact seven-column public shape and exact row/value equality.
+4. It requires no local `InstanceCode`, no row with the catalog's own `ServerCode`, and every directory country to be served by an enabled local general page.
+5. For C2, a catalog without an enabled general page must have zero directory rows.
+6. The converter's existing secret-like safety scan is applied to the derived directory before it is written; the catalog verifier's existing stored-byte secret checks remain in force.
+7. A dedicated mutation test changes a directory `HostName` and proves that the independent verifier fails.
+8. The existing 62 source-carried tables remain the source whitelist. The directory is derived and is not read as a 63rd SQL Server source table.
+
+[CONFIRMED, PR #57 evidence] The dedicated synthetic unit suite exercises populated and empty directories, C1 `AssignedUserName`, NULL customer fields, disabled instance/server filtering, manifest counts and mutation detection. The common SQL Server/LocalDB integration proves file-source and SQL-source output remain value-identical.
 
 ## 7. Size and freshness
 
-About 36 rows in total, at most 1.4 KB of text per catalog: negligible next to the 7 MB catalogs. The real cost is **freshness**: when an instance on one machine is renamed, moved or disabled, every catalog that carries it must change. [PROPOSED] the conversion run is repeated for all machines and the catalogs are sealed again; the manifest already shows the catalog's build time, and a preview of `LINKS_PAGES` lists the directory rows and the catalog date. This is registered as a risk in the risk register update (task 2).
+The reference snapshot contains about 36 directory rows in total, so the storage cost is negligible. The real concern is freshness: when a remote instance is renamed, moved or disabled, every catalog that carries it can become stale.
+
+[CONFIRMED, owner C3, Q6 on 2026-10-06] Propagation is by reconverting all machines and resealing; there is no partial hand edit of the directory. The manifest exposes catalog build provenance for operator review before cutover.
 
 ## 8. `LinksHubInstanceCode`
 
-[CONFIRMED] In `cfg.GetLinksPageItemPlan` an application with a hub code appears only on the page of that hub instance and only for the hub instance itself. The only such application is `PULSE_STATUS` ("System Pulse", hub `DEMOPT`); it appears on the DEMOPT page and nowhere else, even though 17 profile rows mention it.
+[CONFIRMED] In `cfg.GetLinksPageItemPlan`, an application with a hub code appears only on the page of that hub instance and only for the hub instance itself. In the reference snapshot the only such application is `PULSE_STATUS` ("System Pulse", hub `DEMOPT`).
 
 Consequences:
-- [PROPOSED] Keep it as a plain code in the global `cfg_Application`, with no foreign key and no resolution. The check is a string comparison with the page instance code when the plan is built.
-- Other catalogs need nothing about DEMOPT. The directory is not involved.
-- [PROPOSED] The finding that `Convert-ManagementDb` raises ("refers to an instance of another machine") is noise and can be dropped in a later tool change.
-- Correction: `analysis-pulse.md` (PR #27) said that other machines' links pages show the Pulse card pointing to the PT hub. That was wrong; it is corrected there.
+- keep `LinksHubInstanceCode` as a plain code in global `cfg_Application`, with no foreign key and no resolution through `cfg_LinksPageDirectory`;
+- other catalogs need nothing about DEMOPT for this purpose;
+- the directory is not involved in Pulse hub selection.
 
-## 9. [PENDING] decisions
+## 9. Decisions
 
-1. `LinksAssignedUserName` is printed on the public general page, so putting it in the directory adds no exposure, but it may be a person's name. Is it meant to be public? Recommendation: include it (the page already shows it) and say so.
-2. Should a catalog of a machine without a general page still carry a directory? Recommendation: no, as in section 4.
-3. How are other machines' instance changes propagated (section 7)? Recommendation: repeat the conversion for all machines and reseal; no partial editing of the directory by hand.
-4. The old console also had a "published links manager" (`ui.PublishedEnvironmentLink`, 55 rows, procedures `ui.GetPublishedEnvironmentLinks` and `ui.GetPublishedLinksManager`) behind an anonymous catalogue route; it lists published instances of all machines, is not part of the `LINKS_PAGES` engine, and is not in the 19 engines. Recommendation: not in V1; the pages written by `LINKS_PAGES` replace it.
-5. The engine also called `cfg.SyncLinksPageInstanceApplications`, which inserts default visibility rows for instances without a profile or override into the central table; the catalog is read-only. Recommendation: compute the default (the application's `LinksDefaultForIndividualPages`) in memory when the plan is built, without writing. To be written in the `LINKS_PAGES` spec.
+1. **C1 - `LinksAssignedUserName`: [CONFIRMED] accepted Q9, 2026-10-06.** Include it as `AssignedUserName`; the public page already displays it.
+2. **C2 - machine without a general page: [CONFIRMED] accepted Q9, 2026-10-06.** Carry no remote directory data; implementation keeps the derived table present but empty for a stable catalog shape.
+3. **C3 - remote instance changes: [CONFIRMED] accepted Q6, 2026-10-06.** Reconvert all machines and reseal; no partial directory edit.
+4. The old published-links manager (`ui.PublishedEnvironmentLink`, `ui.GetPublishedEnvironmentLinks`, `ui.GetPublishedLinksManager`) is outside the `LINKS_PAGES` engine. Its V1 retirement/replacement is tracked separately from C1/C2.
+5. The old `cfg.SyncLinksPageInstanceApplications` central write is also outside C1/C2. The read-only portable `LINKS_PAGES` behavior is specified separately.
 
-## 10. Follow-ups outside this PR
+## 10. Follow-ups outside C1/C2
 
-- Update `contracts/catalog-schema.md` with the table and the rule (roadmap: before wave 5).
-- Extend the two tools and their tests as in section 6, with a LocalDB integration case.
-- Register the freshness risk and the cross-machine data in the risk register (task 2) and the threat model (task 4).
+- [V] Reconcile the six real catalogs against the reference snapshot counts before cutover.
+- Integrate this cut-rule change with C7/C8 after their isolated PRs are accepted; do not duplicate the derived table as a source-carried table.
+- C9 covers catalog-change/reseal tooling for Links visibility and is not part of this PR.
+- Runtime consumption belongs to the later `LINKS_PAGES` engine wave.

@@ -28,7 +28,7 @@ function Assert-TextTerm {
     Assert-That $Name ($Term.column -ceq $Column -and $Term.operator -ceq 'EQ' -and $Term.value.kind -ceq 'LITERAL' -and $Term.value.type -ceq 'TEXT' -and $Term.value.value -ceq $Value)
 }
 
-Assert-That 'C7 tool version is active' ($script:ToolVersion -ceq '0.4.0' -and $script:SchemaVersion -eq 2 -and $script:CutRuleVersion -eq 2)
+Assert-That 'composed converter (C7 + C1/C2) is active: tool 0.5.0, schema 2, baseline cut rule 2' ($script:ToolVersion -ceq '0.5.0' -and $script:SchemaVersion -eq 2 -and $script:CutRuleVersion -eq 2)
 
 # The approved source model has 61 cfg.DatabaseObjectSettingRule rows and seven filter shapes.
 # Three sisqualVIEW rules are intentionally unfiltered.

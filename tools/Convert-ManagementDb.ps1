@@ -66,7 +66,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigBackupRoot)) { $coreArgs['ConfigBac
 . (Join-Path $PSScriptRoot 'Convert-DatabaseFilter.ps1')
 
 # Catalog schema v2 removes executable FilterClause SQL and replaces it with deterministic JSON.
-$script:ToolVersion = '0.4.0'
+$script:ToolVersion = '0.5.0'
 $script:SchemaVersion = 2
 $script:CutRuleVersion = 2
 $script:CatalogExcludedColumns = @{
@@ -148,6 +148,248 @@ function Write-ConversionManifest {
     $path = Join-Path $Folder 'conversion-manifest.json'
     [System.IO.File]::WriteAllBytes($path, [System.Text.UTF8Encoding]::new($false).GetBytes($json))
     return $path
+}
+
+# --- C1/C2: derived Links instance directory (cfg_LinksPageDirectory). Defined after C7 on purpose: it captures the
+# C7-wrapped Read-SqlServerSource, so the two layers chain instead of replacing each other.
+$script:LinksPageDirectoryTable = 'cfg.LinksPageDirectory'
+$script:CarriedTables[$script:LinksPageDirectoryTable] = 'D'
+
+$script:C1C2CoreReadSyncSchema = ${function:Read-SyncSchema}
+$script:C1C2CoreReadSqlServerSource = ${function:Read-SqlServerSource}
+$script:C1C2CoreNewCatalogFile = ${function:New-CatalogFile}
+$script:C1C2CoreNewCatalogManifestEntry = ${function:New-CatalogManifestEntry}
+$script:C1C2CoreInvokeCutConversion = ${function:Invoke-CutConversion}
+$script:C1C2CoreInvokeNewMachineConversion = ${function:Invoke-NewMachineConversion}
+$script:C1C2Source = $null
+
+function Copy-C1C2ColumnInfo {
+    param(
+        [Parameter(Mandatory)]$SourceColumn,
+        [Parameter(Mandatory)][string]$Name
+    )
+    return [pscustomobject]@{
+        Name = $Name
+        Type = [string]$SourceColumn.Type
+        Length = [int]$SourceColumn.Length
+        Precision = [int]$SourceColumn.Precision
+        Scale = [int]$SourceColumn.Scale
+        Identity = $false
+        Nullable = [bool]$SourceColumn.Nullable
+    }
+}
+
+function Get-LinksPageDirectorySchema {
+    param([Parameter(Mandatory)]$ManagedInstanceSchema)
+    $map = [ordered]@{
+        InstanceCode = 'InstanceCode'
+        ServerCode = 'ServerCode'
+        CountryCode = 'CountryCode'
+        CustomerCode = 'CustomerCode'
+        CustomerName = 'CustomerName'
+        HostName = 'HostName'
+        AssignedUserName = 'LinksAssignedUserName'
+    }
+    $columns = [System.Collections.Generic.List[object]]::new()
+    foreach ($destination in $map.Keys) {
+        $sourceName = $map[$destination]
+        $sourceColumn = @($ManagedInstanceSchema.Columns | Where-Object { $_.Name -ceq $sourceName } | Select-Object -First 1)
+        if ($sourceColumn.Count -ne 1) { throw ('dbo.ManagedInstance is missing required Links directory source column {0}.' -f $sourceName) }
+        $columns.Add((Copy-C1C2ColumnInfo -SourceColumn $sourceColumn[0] -Name $destination))
+    }
+    return [pscustomobject]@{
+        Table = $script:LinksPageDirectoryTable
+        Columns = $columns.ToArray()
+        PrimaryKey = @('InstanceCode')
+    }
+}
+
+function Add-LinksPageDirectorySchema {
+    param([Parameter(Mandatory)][hashtable]$Schema)
+    if (-not $script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { return $Schema }
+    if (-not $Schema.ContainsKey('dbo.ManagedInstance')) { throw 'dbo.ManagedInstance schema is required for the Links page directory.' }
+    $Schema[$script:LinksPageDirectoryTable] = Get-LinksPageDirectorySchema -ManagedInstanceSchema $Schema['dbo.ManagedInstance']
+    return $Schema
+}
+
+function Read-SyncSchema {
+    param([string]$Text, [string[]]$Tables)
+    $sourceTables = @($Tables | Where-Object { $_ -cne $script:LinksPageDirectoryTable })
+    $schema = & $script:C1C2CoreReadSyncSchema -Text $Text -Tables $sourceTables
+    return (Add-LinksPageDirectorySchema -Schema $schema)
+}
+
+function Read-SqlServerSource {
+    param([string]$Instance, [string]$DatabaseName, [string]$ClientPath, [string[]]$Tables, [switch]$TrustCertificate)
+    $sourceTables = @($Tables | Where-Object { $_ -cne $script:LinksPageDirectoryTable })
+    $source = & $script:C1C2CoreReadSqlServerSource -Instance $Instance -DatabaseName $DatabaseName -ClientPath $ClientPath -Tables $sourceTables -TrustCertificate:$TrustCertificate
+    if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) {
+        [void](Add-LinksPageDirectorySchema -Schema $source.Schema)
+        $source.Rows[$script:LinksPageDirectoryTable] = [System.Collections.Generic.List[object]]::new()
+    }
+    return $source
+}
+
+function Test-C1C2EnabledRow {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Row)
+    return ($Row.Contains('IsEnabled') -and $null -ne $Row['IsEnabled'] -and [int]$Row['IsEnabled'] -eq 1)
+}
+
+function Get-LinksPageDirectoryRows {
+    param(
+        [Parameter(Mandatory)]$Source,
+        [Parameter(Mandatory)][string]$CatalogServerCode
+    )
+    $result = [System.Collections.Generic.List[object]]::new()
+    if (-not $script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { return $result.ToArray() }
+
+    $localServer = @($Source.Rows['dbo.ManagedServer'] | Where-Object { [string]$_['ServerCode'] -ieq $CatalogServerCode })
+    if ($localServer.Count -eq 0) { return $result.ToArray() }
+    if ($localServer.Count -ne 1) { throw ('ServerCode {0} is ambiguous while building the Links page directory.' -f $CatalogServerCode) }
+    if (-not (Test-C1C2EnabledRow -Row $localServer[0])) { return $result.ToArray() }
+
+    $generalCountries = @{}
+    foreach ($instance in $Source.Rows['dbo.ManagedInstance']) {
+        if ([string]$instance['ServerCode'] -ine $CatalogServerCode) { continue }
+        if (-not (Test-C1C2EnabledRow -Row $instance)) { continue }
+        if (-not $instance.Contains('LinksIncludeAllInstances') -or [int]$instance['LinksIncludeAllInstances'] -ne 1) { continue }
+        $country = [string]$instance['CountryCode']
+        if ([string]::IsNullOrWhiteSpace($country) -or $country.Length -ne 2) { throw ('General Links page instance {0} has an invalid CountryCode.' -f $instance['InstanceCode']) }
+        $generalCountries[$country.ToLowerInvariant()] = $true
+    }
+    if ($generalCountries.Count -eq 0) { return $result.ToArray() }
+
+    $enabledServers = @{}
+    foreach ($server in $Source.Rows['dbo.ManagedServer']) {
+        if (-not (Test-C1C2EnabledRow -Row $server)) { continue }
+        $serverCode = [string]$server['ServerCode']
+        if (-not [string]::IsNullOrWhiteSpace($serverCode)) { $enabledServers[$serverCode.ToLowerInvariant()] = $true }
+    }
+
+    foreach ($instance in $Source.Rows['dbo.ManagedInstance']) {
+        $targetServer = [string]$instance['ServerCode']
+        if ([string]::IsNullOrWhiteSpace($targetServer) -or $targetServer -ieq $CatalogServerCode) { continue }
+        if (-not $enabledServers.ContainsKey($targetServer.ToLowerInvariant())) { continue }
+        if (-not (Test-C1C2EnabledRow -Row $instance)) { continue }
+        $country = [string]$instance['CountryCode']
+        if ([string]::IsNullOrWhiteSpace($country) -or -not $generalCountries.ContainsKey($country.ToLowerInvariant())) { continue }
+
+        $instanceCode = [string]$instance['InstanceCode']
+        $hostName = [string]$instance['HostName']
+        if ([string]::IsNullOrWhiteSpace($instanceCode)) { throw 'An enabled remote Links target has an empty InstanceCode.' }
+        if ($country.Length -ne 2) { throw ('Remote Links target {0} has an invalid CountryCode.' -f $instanceCode) }
+        if ([string]::IsNullOrWhiteSpace($hostName)) { throw ('Remote Links target {0} has an empty HostName.' -f $instanceCode) }
+
+        $customerCode = $null
+        if ($instance.Contains('CustomerCode')) { $customerCode = $instance['CustomerCode'] }
+        $customerName = $null
+        if ($instance.Contains('CustomerName')) { $customerName = $instance['CustomerName'] }
+        $assignedUserName = $null
+        if ($instance.Contains('LinksAssignedUserName')) { $assignedUserName = $instance['LinksAssignedUserName'] }
+        $result.Add([ordered]@{
+            InstanceCode = $instanceCode
+            ServerCode = $targetServer
+            CountryCode = $country
+            CustomerCode = $customerCode
+            CustomerName = $customerName
+            HostName = $hostName
+            AssignedUserName = $assignedUserName
+        })
+    }
+
+    return @($result | Sort-Object `
+        @{ Expression = { [string]$_['CountryCode'] } }, `
+        @{ Expression = { if ($null -eq $_['CustomerCode']) { [long]::MaxValue } else { [long]$_['CustomerCode'] } } }, `
+        @{ Expression = { [string]$_['InstanceCode'] } })
+}
+
+function New-CatalogFile {
+    param(
+        [Parameter(Mandatory)][string]$Code,
+        [Parameter(Mandatory)][hashtable]$Schema,
+        [Parameter(Mandatory)][hashtable]$Rows,
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [Parameter(Mandatory)][string]$SourceKind,
+        [string]$SourceRef,
+        [bool]$UseCodeCollation
+    )
+    if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) {
+        if (-not $Schema.ContainsKey($script:LinksPageDirectoryTable)) { [void](Add-LinksPageDirectorySchema -Schema $Schema) }
+        $directory = [System.Collections.Generic.List[object]]::new()
+        if ($null -ne $script:C1C2Source) {
+            foreach ($row in @(Get-LinksPageDirectoryRows -Source $script:C1C2Source -CatalogServerCode $Code)) { $directory.Add($row) }
+        }
+        $Rows[$script:LinksPageDirectoryTable] = $directory
+        Assert-NoSecretLiterals -Rows @{ $script:LinksPageDirectoryTable = $directory }
+    }
+    return (& $script:C1C2CoreNewCatalogFile @PSBoundParameters)
+}
+
+function New-CatalogManifestEntry {
+    param([string]$Code, $Catalog, $Redacted, $Findings, [hashtable]$Extra = @{})
+    $entry = & $script:C1C2CoreNewCatalogManifestEntry @PSBoundParameters
+    if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) {
+        $row = @($Catalog.Tables | Where-Object { $_.table -ceq 'cfg_LinksPageDirectory' })
+        $count = 0
+        if ($row.Count -eq 1) { $count = [int]$row[0].destinationRows }
+        $entry['linksPageDirectoryCount'] = $count
+    }
+    return $entry
+}
+
+function Invoke-CutConversion {
+    param(
+        [Parameter(Mandatory)]$Source,
+        [Parameter(Mandatory)][hashtable]$SourceInfo,
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [string[]]$Codes = @('ALL'),
+        [string]$SourceRef,
+        [bool]$UseCodeCollation = $false
+    )
+    $script:C1C2Source = $Source
+    $previousCutRuleVersion = $script:CutRuleVersion
+    $script:CutRuleVersion = $(if ($script:CarriedTables.Contains($script:LinksPageDirectoryTable)) { 3 } else { 2 })
+    try { return (& $script:C1C2CoreInvokeCutConversion @PSBoundParameters) }
+    finally {
+        $script:CutRuleVersion = $previousCutRuleVersion
+        $script:C1C2Source = $null
+    }
+}
+
+function Invoke-NewMachineConversion {
+    param(
+        [Parameter(Mandatory)]$Source,
+        [Parameter(Mandatory)][hashtable]$SourceInfo,
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][string]$Sqlite3,
+        [Parameter(Mandatory)][string]$Code,
+        [Parameter(Mandatory)][string]$Machine,
+        [Parameter(Mandatory)][string]$Services,
+        [Parameter(Mandatory)][string]$BackupRoot,
+        [string]$SourceRef,
+        [bool]$UseCodeCollation = $false
+    )
+    $script:C1C2Source = $Source
+    $previousCutRuleVersion = $script:CutRuleVersion
+    $hasDirectory = $script:CarriedTables.Contains($script:LinksPageDirectoryTable)
+    $previousDirectoryClass = $null
+    if ($hasDirectory) {
+        $previousDirectoryClass = $script:CarriedTables[$script:LinksPageDirectoryTable]
+        # The legacy new-machine path treats every non-global table as a missing cut/policy
+        # surface and emits a policy-missing finding. The derived directory is expected to be
+        # empty on a new machine with no general page, so classify it as global only while the
+        # core builds this catalog; New-CatalogFile still derives and overwrites its rows.
+        $script:CarriedTables[$script:LinksPageDirectoryTable] = 'G'
+    }
+    $script:CutRuleVersion = $(if ($hasDirectory) { 3 } else { 2 })
+    try { return (& $script:C1C2CoreInvokeNewMachineConversion @PSBoundParameters) }
+    finally {
+        if ($hasDirectory) { $script:CarriedTables[$script:LinksPageDirectoryTable] = $previousDirectoryClass }
+        $script:CutRuleVersion = $previousCutRuleVersion
+        $script:C1C2Source = $null
+    }
 }
 
 if ($script:C7ShouldExecute) {
