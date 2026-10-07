@@ -1,0 +1,469 @@
+#requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$script:EngineHostContractVersion = '0.1-proposed'
+$script:RequestLimitBytes = 1MB
+$script:ResultLimitBytes = 4MB
+$script:StreamLimitBytes = 1MB
+$script:PreviewFingerprints = @{}
+$script:TimedOutProcesses = @{}
+
+if ($null -eq ('Sisqual.Runtime.EngineHost.BoundedReader' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Sisqual.Runtime.EngineHost {
+    internal static class BoundedReader {
+        internal static async Task<string> ReadAsync(StreamReader reader, int maxBytes) {
+            var buffer = new char[4096];
+            var builder = new StringBuilder();
+            var utf8 = new UTF8Encoding(false, true);
+            var bytes = 0;
+            while (true) {
+                var read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                if (read == 0) break;
+                bytes += utf8.GetByteCount(buffer, 0, read);
+                if (bytes > maxBytes) throw new InvalidDataException("ENGINE_STREAM_LIMIT");
+                builder.Append(buffer, 0, read);
+            }
+            return builder.ToString();
+        }
+    }
+}
+'@
+}
+
+function Get-SisqualMemberValue {
+    param([Parameter(Mandatory)][object]$Object, [Parameter(Mandatory)][string]$Name, [object]$Default = $null)
+    if ($Object -is [System.Collections.IDictionary]) {
+        foreach ($key in $Object.Keys) {
+            if ([string]::Equals([string]$key, $Name, [StringComparison]::OrdinalIgnoreCase)) { return $Object[$key] }
+        }
+        return $Default
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $Default }
+    return $property.Value
+}
+
+function Get-SisqualSha256Hex {
+    param([Parameter(Mandatory)][string]$Path)
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $hash = [Security.Cryptography.SHA256]::HashData($stream)
+        return ([Convert]::ToHexString($hash)).ToLowerInvariant()
+    }
+    finally { $stream.Dispose() }
+}
+
+function ConvertTo-SisqualCanonicalNode {
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string] -or $Value -is [bool] -or $Value -is [byte] -or $Value -is [int16] -or $Value -is [int32] -or $Value -is [int64] -or $Value -is [uint16] -or $Value -is [uint32] -or $Value -is [uint64] -or $Value -is [single] -or $Value -is [double] -or $Value -is [decimal]) { return $Value }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $ordered = [ordered]@{}
+        foreach ($key in @($Value.Keys | ForEach-Object { [string]$_ } | Sort-Object -CaseSensitive)) {
+            $ordered[$key] = ConvertTo-SisqualCanonicalNode -Value $Value[$key]
+        }
+        return $ordered
+    }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return @($Value | ForEach-Object { ConvertTo-SisqualCanonicalNode -Value $_ })
+    }
+    $orderedObject = [ordered]@{}
+    foreach ($property in @($Value.PSObject.Properties | Sort-Object Name -CaseSensitive)) {
+        $orderedObject[$property.Name] = ConvertTo-SisqualCanonicalNode -Value $property.Value
+    }
+    return $orderedObject
+}
+
+function Get-SisqualPlanFingerprint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Plan)
+    $canonical = ConvertTo-SisqualCanonicalNode -Value $Plan
+    $json = $canonical | ConvertTo-Json -Compress -Depth 100
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+    return ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))).ToLowerInvariant()
+}
+
+function Get-SisqualCompositePlanFingerprint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object[]]$Children)
+    $ordered = @($Children | Sort-Object @{ Expression = { [int](Get-SisqualMemberValue $_ 'step' 0) } }, @{ Expression = { [string](Get-SisqualMemberValue $_ 'engineCode' '') } }, @{ Expression = { [string](Get-SisqualMemberValue $_ 'instanceCode' '') } })
+    $shape = foreach ($child in $ordered) {
+        [ordered]@{
+            step = [int](Get-SisqualMemberValue $child 'step' 0)
+            engineCode = [string](Get-SisqualMemberValue $child 'engineCode' '')
+            instanceCode = [string](Get-SisqualMemberValue $child 'instanceCode' '')
+            planFingerprint = [string](Get-SisqualMemberValue $child 'planFingerprint' '')
+        }
+    }
+    return Get-SisqualPlanFingerprint -Plan @($shape)
+}
+
+function Get-SisqualSecretRepresentations {
+    param([System.Collections.IDictionary]$Secrets)
+    $representations = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    if ($null -eq $Secrets) { return $representations }
+    foreach ($key in $Secrets.Keys) {
+        $value = [string]$Secrets[$key]
+        if ([string]::IsNullOrEmpty($value)) { continue }
+        [void]$representations.Add($value)
+        [void]$representations.Add([Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($value)))
+        [void]$representations.Add([Uri]::EscapeDataString($value))
+    }
+    return $representations
+}
+
+function Find-SisqualSecretLeak {
+    param([Parameter(Mandatory)][string[]]$Texts, [System.Collections.IDictionary]$Secrets)
+    $representations = Get-SisqualSecretRepresentations -Secrets $Secrets
+    foreach ($representation in $representations) {
+        foreach ($text in $Texts) {
+            if ($null -ne $text -and $text.Contains($representation, [StringComparison]::Ordinal)) { return $true }
+        }
+    }
+    return $false
+}
+
+function New-SisqualEngineFailureResult {
+    param(
+        [Parameter(Mandatory)][string]$OperationId,
+        [Parameter(Mandatory)][string]$EngineCode,
+        [Parameter(Mandatory)][ValidateSet('PREVIEW','APPLY')][string]$Mode,
+        [Parameter(Mandatory)][string]$ErrorCode,
+        [string]$EngineVersion = 'host',
+        [int]$ExitCode = 1
+    )
+    $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    return [pscustomobject][ordered]@{
+        contractVersion = $script:EngineHostContractVersion
+        operationId = $OperationId
+        engineCode = $EngineCode
+        engineVersion = $EngineVersion
+        mode = $Mode
+        startedAt = $now
+        completedAt = $now
+        succeeded = $false
+        exitCode = $ExitCode
+        errorMessage = $ErrorCode
+        summary = [pscustomobject][ordered]@{ targetCount = 1; succeededTargets = 0; failedTargets = 1; warningCount = 0; errorCount = 1 }
+        results = @()
+    }
+}
+
+function Test-SisqualEngineResultObject {
+    param(
+        [Parameter(Mandatory)][object]$Result,
+        [Parameter(Mandatory)][string]$OperationId,
+        [Parameter(Mandatory)][string]$EngineCode,
+        [Parameter(Mandatory)][string]$Mode
+    )
+    $required = @('contractVersion','operationId','engineCode','engineVersion','mode','startedAt','completedAt','succeeded','exitCode','summary','results')
+    $allowed = @($required + @('planFingerprint','errorMessage','backup'))
+    foreach ($name in $required) {
+        if ($null -eq $Result.PSObject.Properties[$name]) { return $false }
+    }
+    foreach ($property in $Result.PSObject.Properties) {
+        if ($allowed -cnotcontains $property.Name) { return $false }
+    }
+    if ([string]$Result.contractVersion -cne $script:EngineHostContractVersion) { return $false }
+    if ([string]$Result.operationId -cne $OperationId) { return $false }
+    if ([string]$Result.engineCode -cne $EngineCode) { return $false }
+    if ([string]$Result.mode -cne $Mode) { return $false }
+    if ([string]$Result.operationId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { return $false }
+    if ([string]$Result.engineCode -notmatch '^[A-Z][A-Z0-9_]{1,59}$') { return $false }
+    if ([string]$Result.engineVersion -notmatch '^[A-Za-z0-9._-]{1,40}$') { return $false }
+    if ([string]$Result.mode -notin @('PREVIEW','APPLY')) { return $false }
+    if ([string]$Result.startedAt -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { return $false }
+    if ([string]$Result.completedAt -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { return $false }
+    if ($Result.succeeded -isnot [bool]) { return $false }
+    if ($Result.exitCode -isnot [int] -and $Result.exitCode -isnot [long]) { return $false }
+    if ($null -ne $Result.PSObject.Properties['planFingerprint'] -and [string]$Result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return $false }
+    if ($null -ne $Result.PSObject.Properties['errorMessage'] -and ([string]$Result.errorMessage).Length -gt 2000) { return $false }
+
+    $summaryRequired = @('targetCount','succeededTargets','failedTargets','warningCount','errorCount')
+    if ($null -eq $Result.summary) { return $false }
+    foreach ($name in $summaryRequired) {
+        if ($null -eq $Result.summary.PSObject.Properties[$name]) { return $false }
+        $value = $Result.summary.$name
+        if (($value -isnot [int] -and $value -isnot [long]) -or [long]$value -lt 0) { return $false }
+    }
+    foreach ($property in $Result.summary.PSObject.Properties) {
+        if ($summaryRequired -cnotcontains $property.Name) { return $false }
+    }
+    $summaryTarget = [long]$Result.summary.targetCount
+    $summarySucceeded = [long]$Result.summary.succeededTargets
+    $summaryFailed = [long]$Result.summary.failedTargets
+    if (($summarySucceeded + $summaryFailed) -gt $summaryTarget) { return $false }
+    if ([bool]$Result.succeeded -and ($summaryFailed -ne 0 -or [long]$Result.summary.errorCount -ne 0)) { return $false }
+
+    if ($Result.results -isnot [System.Collections.IEnumerable] -or $Result.results -is [string]) { return $false }
+    foreach ($row in @($Result.results)) {
+        $rowRequired = @('timestamp','instanceCode','operationType','object','status')
+        $rowAllowed = @($rowRequired + @('details'))
+        foreach ($name in $rowRequired) { if ($null -eq $row.PSObject.Properties[$name]) { return $false } }
+        foreach ($property in $row.PSObject.Properties) { if ($rowAllowed -cnotcontains $property.Name) { return $false } }
+        if ([string]$row.timestamp -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { return $false }
+        if (([string]$row.instanceCode).Length -gt 60) { return $false }
+        if ([string]$row.operationType -notmatch '^[A-Z][A-Z0-9_]{1,59}$') { return $false }
+        if (([string]$row.object).Length -gt 400) { return $false }
+        if ([string]$row.status -notmatch '^[A-Za-z][A-Za-z0-9_]{1,59}$') { return $false }
+        if ($null -ne $row.PSObject.Properties['details'] -and ([string]$row.details).Length -gt 2000) { return $false }
+    }
+    return $true
+}
+
+function Test-SisqualAdministrator {
+    if (-not $IsWindows) { return $false }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    finally { $identity.Dispose() }
+}
+
+function New-SisqualEngineRunDirectory {
+    param([Parameter(Mandatory)][string]$OperationId)
+    $root = Join-Path ([IO.Path]::GetTempPath()) 'SISQUALDeployConsole\engine-runs'
+    [void][IO.Directory]::CreateDirectory($root)
+    $run = Join-Path $root $OperationId
+    [void][IO.Directory]::CreateDirectory($run)
+    if ($IsWindows) {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        try {
+            $acl = [Security.AccessControl.DirectorySecurity]::new()
+            $acl.SetAccessRuleProtection($true, $false)
+            $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity.User, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+            $acl.AddAccessRule($rule)
+            [IO.Directory]::SetAccessControl($run, $acl)
+        }
+        finally { $identity.Dispose() }
+    }
+    return $run
+}
+
+function Get-SisqualManifestEngineHash {
+    param([Parameter(Mandatory)][object[]]$ManifestEntries, [Parameter(Mandatory)][string]$RelativePath)
+    $matches = @($ManifestEntries | Where-Object { [string]::Equals([string](Get-SisqualMemberValue $_ 'path' ''), $RelativePath, [StringComparison]::Ordinal) })
+    if ($matches.Count -ne 1) { throw 'ENGINE_MANIFEST_ENTRY_INVALID' }
+    $hash = [string](Get-SisqualMemberValue $matches[0] 'sha256' '')
+    if ($hash -notmatch '^[0-9a-fA-F]{64}$') { throw 'ENGINE_MANIFEST_HASH_INVALID' }
+    return $hash.ToLowerInvariant()
+}
+
+function Write-SisqualEngineHostLog {
+    param([string]$EventCode, [string]$Message, [hashtable]$Properties, [System.Collections.IDictionary]$Secrets)
+    $pieces = @($EventCode, $Message)
+    foreach ($key in @($Properties.Keys)) { $pieces += ('{0}={1}' -f $key, $Properties[$key]) }
+    if (Find-SisqualSecretLeak -Texts $pieces -Secrets $Secrets) { throw 'SECRET_LEAK' }
+    $command = Get-Command -Name Write-SisqualRuntimeLog -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        [void](Write-SisqualRuntimeLog -Level INFO -EventCode $EventCode -Message $Message -Properties $Properties)
+    }
+}
+
+function Invoke-SisqualEngineHost {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Engine,
+        [Parameter(Mandatory)][object]$Action,
+        [Parameter(Mandatory)][ValidateSet('READ_ONLY','OBSERVATIONAL','MUTATING')][string]$EngineClass,
+        [Parameter(Mandatory)][string]$PackageRoot,
+        [Parameter(Mandatory)][string]$CatalogPath,
+        [Parameter(Mandatory)][string]$CatalogMachineName,
+        [Parameter(Mandatory)][object[]]$ManifestEntries,
+        [ValidateSet('PREVIEW','APPLY')][string]$Mode = 'PREVIEW',
+        [AllowNull()][string]$InstanceCode,
+        [AllowNull()][string]$PlanFingerprint,
+        [AllowNull()][string]$ConfirmationText,
+        [System.Collections.IDictionary]$Secrets = @{},
+        [string]$OperationId = ([guid]::NewGuid().ToString()),
+        [string]$PwshPath = (Get-Process -Id $PID).Path,
+        [int]$CancellationGraceSeconds = 30
+    )
+
+    if ($OperationId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { throw 'INVALID_OPERATION_ID' }
+    $engineCode = [string](Get-SisqualMemberValue $Engine 'EngineCode' '')
+    $engineVersion = [string](Get-SisqualMemberValue $Engine 'EngineVersion' '0.0.0')
+    if ($engineCode -notmatch '^[A-Z][A-Z0-9_]{1,59}$') { throw 'INVALID_ENGINE_CODE' }
+    if ([int](Get-SisqualMemberValue $Engine 'IsEnabled' 0) -ne 1) { throw 'ENGINE_DISABLED' }
+
+    $actionType = [string](Get-SisqualMemberValue $Action 'ActionType' 'ENGINE')
+    if ($actionType -ceq 'SQL') { throw 'ACTION_TYPE_NOT_SUPPORTED' }
+    if ($actionType -cne 'ENGINE') { throw 'ACTION_TYPE_REQUIRES_ORCHESTRATOR' }
+    $modePolicy = [string](Get-SisqualMemberValue $Action 'ModePolicy' 'NONE')
+    if ($modePolicy -ceq 'NONE' -and $Mode -cne 'PREVIEW') { throw 'READ_ONLY_APPLY_NOT_ALLOWED' }
+    if ($EngineClass -ceq 'READ_ONLY' -and $Mode -cne 'PREVIEW') { throw 'READ_ONLY_APPLY_NOT_ALLOWED' }
+
+    $requiresInstance = [int](Get-SisqualMemberValue $Action 'RequiresInstanceSelection' 0) -eq 1
+    if ($requiresInstance -and [string]::IsNullOrWhiteSpace($InstanceCode)) { throw 'INSTANCE_REQUIRED' }
+    if (-not $requiresInstance -and [int](Get-SisqualMemberValue $Action 'PassInstanceCode' 0) -ne 1) { $InstanceCode = $null }
+
+    if ($Mode -ceq 'APPLY') {
+        $expectedConfirmation = [string](Get-SisqualMemberValue $Action 'ConfirmationText' '')
+        if (-not [string]::IsNullOrEmpty($expectedConfirmation) -and $ConfirmationText -cne $expectedConfirmation) { throw 'CONFIRMATION_REQUIRED' }
+        if ($PlanFingerprint -notmatch '^[0-9a-f]{64}$') { throw 'PLAN_FINGERPRINT_REQUIRED' }
+        $previewKey = '{0}|{1}' -f $engineCode, [string]$InstanceCode
+        if (-not $script:PreviewFingerprints.ContainsKey($previewKey) -or $script:PreviewFingerprints[$previewKey] -cne $PlanFingerprint) { throw 'PLAN_CHANGED' }
+    }
+
+    $minimumPowerShell = [string](Get-SisqualMemberValue $Engine 'MinimumPowerShell' '')
+    if (-not [string]::IsNullOrWhiteSpace($minimumPowerShell)) {
+        $minimum = [version]$minimumPowerShell
+        if ($PSVersionTable.PSVersion -lt $minimum) { throw 'POWERSHELL_VERSION_UNAVAILABLE' }
+    }
+    if ([int](Get-SisqualMemberValue $Engine 'RequiresAdministrator' 0) -eq 1 -and -not (Test-SisqualAdministrator)) { throw 'ADMINISTRATOR_REQUIRED' }
+    if (-not [string]::Equals($CatalogMachineName, $env:COMPUTERNAME, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
+
+    $engineLeaf = [string](Get-SisqualMemberValue $Engine 'SourceFileName' '')
+    if ($engineLeaf -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*\.ps1$' -or $engineLeaf.Contains('..', [StringComparison]::Ordinal) -or $engineLeaf.Contains('\') -or $engineLeaf.Contains('/')) { throw 'ENGINE_SOURCE_FILENAME_INVALID' }
+    $enginePath = Join-Path (Join-Path $PackageRoot 'engines') $engineLeaf
+    if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) { throw 'ENGINE_FILE_MISSING' }
+    $relativeEnginePath = 'engines/' + $engineLeaf
+    $expectedHash = Get-SisqualManifestEngineHash -ManifestEntries $ManifestEntries -RelativePath $relativeEnginePath
+    $actualHash = Get-SisqualSha256Hex -Path $enginePath
+    if ($actualHash -cne $expectedHash) { throw 'ENGINE_HASH_MISMATCH' }
+
+    $runDirectory = New-SisqualEngineRunDirectory -OperationId $OperationId
+    $cancelPath = Join-Path $runDirectory 'cancel.requested'
+    $resultPath = Join-Path $runDirectory 'result.json'
+    $timeoutSeconds = [int](Get-SisqualMemberValue $Action 'CommandTimeoutSeconds' 0)
+    if ($timeoutSeconds -le 0) { $timeoutSeconds = 900 }
+    $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds).ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+    $request = [ordered]@{
+        contractVersion = $script:EngineHostContractVersion
+        operationId = $OperationId
+        engineCode = $engineCode
+        mode = $Mode
+        instanceCode = if ([int](Get-SisqualMemberValue $Action 'PassInstanceCode' 0) -eq 1) { $InstanceCode } else { $null }
+        catalogPath = $CatalogPath
+        planFingerprint = if ($Mode -ceq 'APPLY') { $PlanFingerprint } else { $null }
+        deadlineUtc = $deadline
+        cancelPath = $cancelPath
+        resultPath = $resultPath
+        secrets = if ($null -eq $Secrets) { @{} } else { $Secrets }
+    }
+    $requestJson = $request | ConvertTo-Json -Compress -Depth 30
+    $requestBytes = [Text.UTF8Encoding]::new($false).GetBytes($requestJson)
+    if ($requestBytes.Length -gt $script:RequestLimitBytes) { throw 'ENGINE_REQUEST_LIMIT' }
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $PwshPath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+    $startInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
+    [void]$startInfo.ArgumentList.Add('-NoLogo')
+    [void]$startInfo.ArgumentList.Add('-NoProfile')
+    [void]$startInfo.ArgumentList.Add('-NonInteractive')
+    [void]$startInfo.ArgumentList.Add('-File')
+    [void]$startInfo.ArgumentList.Add($enginePath)
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $started = [DateTime]::UtcNow
+    $keepRunDirectory = $false
+    try {
+        if (-not $process.Start()) { throw 'ENGINE_START_FAILED' }
+        $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
+        $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
+        $process.StandardInput.Write($requestJson)
+        $process.StandardInput.Close()
+
+        $completed = $process.WaitForExit($timeoutSeconds * 1000)
+        if (-not $completed) {
+            [IO.File]::WriteAllText($cancelPath, 'cancel', [Text.UTF8Encoding]::new($false))
+            $completed = $process.WaitForExit([Math]::Max(1, $CancellationGraceSeconds) * 1000)
+            if (-not $completed) {
+                if ($EngineClass -ceq 'MUTATING') {
+                    $keepRunDirectory = $true
+                    $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; RunDirectory = $runDirectory; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
+                    return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -EngineVersion $engineVersion -ExitCode 1
+                }
+                $process.Kill($true)
+                $process.WaitForExit()
+            }
+        }
+
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $exitCode = $process.ExitCode
+        $rawResultText = ''
+        if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+            $resultInfo = Get-Item -LiteralPath $resultPath
+            if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_RESULT_LIMIT' -EngineVersion $engineVersion -ExitCode $exitCode }
+            $rawResultText = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false))
+        }
+        $rawScanTargets = @($rawResultText, $stdout, $stderr)
+        if (Find-SisqualSecretLeak -Texts $rawScanTargets -Secrets $Secrets) {
+            return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1
+        }
+        if ([string]::IsNullOrWhiteSpace($rawResultText)) {
+            return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode
+        }
+
+        try { $result = $rawResultText | ConvertFrom-Json -Depth 50 }
+        catch { return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode }
+        if (-not (Test-SisqualEngineResultObject -Result $result -OperationId $OperationId -EngineCode $engineCode -Mode $Mode)) {
+            return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode
+        }
+
+        if ($Mode -ceq 'PREVIEW' -and $modePolicy -ceq 'PREVIEW_APPLY') {
+            if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') {
+                return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode
+            }
+            $previewKey = '{0}|{1}' -f $engineCode, [string]$InstanceCode
+            $script:PreviewFingerprints[$previewKey] = [string]$result.planFingerprint
+        }
+
+        Write-SisqualEngineHostLog -EventCode 'ENGINE.COMPLETE' -Message 'Engine run completed.' -Properties @{ operationId = $OperationId; engine = $engineCode; mode = $Mode; instance = [string]$InstanceCode; durationMs = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; exitCode = $exitCode; succeeded = [bool]$result.succeeded } -Secrets $Secrets
+        return $result
+    }
+    catch [IO.InvalidDataException] {
+        try { if (-not $process.HasExited) { $process.Kill($true) } } catch { }
+        return New-SisqualEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_STREAM_LIMIT' -EngineVersion $engineVersion -ExitCode 1
+    }
+    finally {
+        if (-not $keepRunDirectory) {
+            if ($null -ne $process) { $process.Dispose() }
+            if (Test-Path -LiteralPath $runDirectory) { Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
+function Stop-SisqualTimedOutEngineProcess {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$OperationId)
+    if (-not $script:TimedOutProcesses.ContainsKey($OperationId)) { return $false }
+    $entry = $script:TimedOutProcesses[$OperationId]
+    if ($PSCmdlet.ShouldProcess($OperationId, 'Terminate timed-out mutable engine process')) {
+        try {
+            if (-not $entry.Process.HasExited) { $entry.Process.Kill($true); $entry.Process.WaitForExit() }
+        }
+        finally {
+            $entry.Process.Dispose()
+            if (Test-Path -LiteralPath $entry.RunDirectory) { Remove-Item -LiteralPath $entry.RunDirectory -Recurse -Force -ErrorAction SilentlyContinue }
+            [void]$script:TimedOutProcesses.Remove($OperationId)
+        }
+        return $true
+    }
+    return $false
+}
+
+Export-ModuleMember -Function @(
+    'Invoke-SisqualEngineHost',
+    'Get-SisqualPlanFingerprint',
+    'Get-SisqualCompositePlanFingerprint',
+    'Stop-SisqualTimedOutEngineProcess'
+)

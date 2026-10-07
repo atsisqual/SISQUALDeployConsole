@@ -1,0 +1,74 @@
+name: engine-host
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'tests/EngineHost/**'
+      - '.github/workflows/engine-host.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'tests/EngineHost/**'
+      - '.github/workflows/engine-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-host-${{ github.ref }}-${{ matrix.os }}
+  cancel-in-progress: true
+
+jobs:
+  engine-host:
+    name: engine host on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run fake-engine direct conformance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\EngineHost\Test-FakeEngineDirect.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run EngineHost fingerprint tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\EngineHost\Test-EngineHostFingerprints.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run EngineHost contract tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\EngineHost\Test-EngineHost.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run EngineHost input mutation matrix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\EngineHost\Test-EngineHostMutations.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify EngineHost source mutation anchors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\tests\EngineHost\Test-EngineHostSourceMutations.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
