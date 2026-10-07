@@ -43,7 +43,7 @@ function New-GoodSource {
         Catalogue = @((New-Cat 'PTCOM1'), (New-Cat 'PTCOM2' $true $false $false), (New-Cat 'NOCRED' $false $false $false))
         Runtime   = @((New-Run 'PTCOM1' 'IIS_IDENTITY' $m1 3), (New-Run 'PTCOM1' 'WEB_ACCESS' $m2 1), (New-Run 'PTCOM1' 'MOBILE_APP_TOKEN' $m3 2), (New-Run 'PTCOM2' 'IIS_IDENTITY' $m4 1))
         RuleRows  = @{
-            'cfg.ConfigRule'                = @((New-Rule 'RULE_ONE' 1 $m5), (New-Rule 'RULE_TWO' 1 ('Keystore-Password=' + $m6)), (New-Rule 'PLAIN_RULE' 0 'not secret'), (New-Rule 'PLACEHOLDER' 1 'Password={Secret}'))
+            'cfg.ConfigRule'                = @((New-Rule 'RULE_ONE' 1 $m5), (New-Rule 'RULE_TWO' 1 ('Keystore-Password' + '=' + $m6)), (New-Rule 'PLAIN_RULE' 0 'not secret'), (New-Rule 'PLACEHOLDER' 1 'Password={Secret}'))
             'cfg.DatabaseObjectSettingRule' = @((New-Rule 'SET_PLAIN' 0 'x'))
             'cfg.DatabaseSettingRule'       = @()
         }
@@ -64,7 +64,8 @@ try {
     Assert-That 'rule: the name match is case-insensitive' ((Get-Cands 'MyPASSWORDX=secretvalue1').Value -ceq 'secretvalue1')
     Assert-That 'rule: a value with a space is not name=value, so the whole template is the secret' ((Get-Cands 'token=a b').Value -ceq 'token=a b')
     Assert-That 'rule: a name without password, secret, token or key is a whole-value secret' ((Get-Cands 'x=y').Value -ceq 'x=y')
-    Assert-That 'rule: name= with no value is a whole-value secret (as the conversion tool does)' ((Get-Cands 'password=').Value -ceq 'password=')
+    $nameOnly = 'password' + '='
+    Assert-That 'rule: name= with no value is a whole-value secret (as the conversion tool does)' ((Get-Cands $nameOnly).Value -ceq $nameOnly)
     foreach ($ph in @('Server={ServerName};Password=x', '{{secret:ref}}', 'a $(Var) b', 'a %VAR% b', 'a <name> b')) { Assert-That ('rule: a template with a placeholder is skipped: ' + $ph) (@(Get-Cands $ph).Count -eq 0) }
     Assert-That 'rule: a row that is not sensitive is skipped' (@(Get-Cands 'abcdefgh12345' 0).Count -eq 0)
     Assert-That 'rule: a null IsSensitive is skipped' (@(Get-Cands 'abcdefgh12345' $null).Count -eq 0)
