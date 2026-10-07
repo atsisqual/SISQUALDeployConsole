@@ -1,0 +1,28 @@
+name: fix-engine-host-final-review
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/workflows/fix-engine-host-final-review.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine-host/adr-0008-runtime
+          fetch-depth: 0
+
+      - name: Apply reviewed fixes, run focused gates and publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\.github\scripts\fix-engine-host-final-review.ps1
