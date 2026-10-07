@@ -46,7 +46,9 @@ function New-TestContext {
     $source = Join-Path $PSScriptRoot 'FakeEngine.ps1'
     $enginePath = Join-Path (Join-Path $root 'engines') $LeafName
     Copy-Item -LiteralPath $source -Destination $enginePath
-    $catalogPath = Join-Path $root 'catalog.sqlite'
+    $catalogDir = Join-Path $root 'catalog'
+    [void][IO.Directory]::CreateDirectory($catalogDir)
+    $catalogPath = Join-Path $catalogDir 'catalog-TEST.db'
     [IO.File]::WriteAllText($catalogPath, 'synthetic-catalog', [Text.UTF8Encoding]::new($false))
 
     $engine = [pscustomobject]@{
@@ -58,6 +60,9 @@ function New-TestContext {
         RequiresAdministrator = 0
     }
     $action = [pscustomobject]@{
+        ActionCode = 'FAKE_ACTION'
+        EngineCode = 'FAKE_ENGINE'
+        IsEnabled = 1
         ActionType = 'ENGINE'
         ModePolicy = $ModePolicy
         RequiresInstanceSelection = 1
@@ -68,7 +73,10 @@ function New-TestContext {
         ConfirmationText = if ($ModePolicy -ceq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }
         CommandTimeoutSeconds = $TimeoutSeconds
     }
-    $manifest = @([pscustomobject]@{ path = ('engines/' + $LeafName); sha256 = Get-FileSha256 -Path $enginePath })
+    $manifest = @(
+        [pscustomobject]@{ path = ('engines/' + $LeafName); sha256 = Get-FileSha256 -Path $enginePath },
+        [pscustomobject]@{ path = 'catalog/catalog-TEST.db'; sha256 = Get-FileSha256 -Path $catalogPath; size = (Get-Item -LiteralPath $catalogPath).Length }
+    )
     return [pscustomobject]@{
         Root = $root
         Catalog = $catalogPath
@@ -88,7 +96,7 @@ function Invoke-TestHost {
         [string]$ConfirmationText = $null,
         [hashtable]$Secrets = @{}
     )
-    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -CancellationGraceSeconds 2
+    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -151,6 +159,16 @@ try {
     $result = Invoke-TestHost -Context $cooperative
     $watch.Stop()
     Check 'timeout writes cancel request and cooperative engine exits' ($result.errorMessage -ceq 'CANCELLED' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
+
+    $asyncInput = New-TestContext -TimeoutSeconds 1
+    $env:SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS = '6000'
+    try {
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $result = Invoke-TestHost -Context $asyncInput -Secrets @{ BULK = ('Z' * 262144) }
+        $watch.Stop()
+        Check 'large stdin cannot block timeout enforcement' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 5) ([string]$result.errorMessage)
+    }
+    finally { Remove-Item Env:\SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS -ErrorAction SilentlyContinue }
 
     $killable = New-TestContext -Scenario 'HANG_IGNORE' -TimeoutSeconds 1
     $watch = [Diagnostics.Stopwatch]::StartNew()

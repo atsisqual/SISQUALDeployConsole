@@ -26,23 +26,39 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'engines')); $script:Roots.Add($root)
     $leaf = 'FakeEngine.ps1'; $path = Join-Path (Join-Path $root 'engines') $leaf
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'FakeEngine.ps1') -Destination $path
-    $catalog = Join-Path $root 'catalog.sqlite'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
+    $catalogDir = Join-Path $root 'catalog'; [void][IO.Directory]::CreateDirectory($catalogDir)
+    $catalog = Join-Path $catalogDir 'catalog-TEST.db'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     return [pscustomobject]@{
         Root = $root; Catalog = $catalog; Scenario = $Scenario
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
-        Action = [pscustomobject]@{ ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
-        Manifest = @([pscustomobject]@{ path = ('engines/' + $leaf); sha256 = $hash })
+        Action = [pscustomobject]@{ ActionCode = 'FAKE_ACTION'; EngineCode = 'FAKE_ENGINE'; IsEnabled = 1; ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
+        Manifest = @(
+            [pscustomobject]@{ path = ('engines/' + $leaf); sha256 = $hash },
+            [pscustomobject]@{ path = 'catalog/catalog-TEST.db'; sha256 = (Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash.ToLowerInvariant(); size = (Get-Item -LiteralPath $catalog).Length }
+        )
     }
 }
 function Run {
     param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$MachineName = $env:COMPUTERNAME, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY')
-    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogMachineName $MachineName -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -CancellationGraceSeconds 1
+    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogMachineName $MachineName -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
     $ctx = New-Ctx; $ctx.Engine.IsEnabled = 0
     Check 'mutation: disabled engine is rejected' (Throws-Code { Run $ctx } 'ENGINE_DISABLED')
+
+    $ctx = New-Ctx; $ctx.Action.IsEnabled = 0
+    Check 'mutation: disabled action is rejected' (Throws-Code { Run $ctx } 'ACTION_DISABLED')
+
+    $ctx = New-Ctx; $ctx.Action.EngineCode = 'OTHER_ENGINE'
+    Check 'mutation: action engine mapping is exact' (Throws-Code { Run $ctx } 'ACTION_ENGINE_MISMATCH')
+
+    $ctx = New-Ctx; $rogue = Join-Path $ctx.Root 'other.db'; Set-Content -LiteralPath $rogue -Value 'synthetic' -NoNewline -Encoding ascii; $ctx.Catalog = $rogue
+    Check 'mutation: arbitrary catalog path is rejected' (Throws-Code { Run $ctx } 'CATALOG_PATH_MISMATCH')
+
+    $ctx = New-Ctx; Add-Content -LiteralPath $ctx.Catalog -Value 'tamper' -NoNewline -Encoding ascii
+    Check 'mutation: catalog hash is reverified before launch' (Throws-Code { Run $ctx } 'CATALOG_HASH_MISMATCH')
 
     $ctx = New-Ctx; $ctx.Engine.MinimumPowerShell = '99.0'
     Check 'mutation: unsupported minimum PowerShell is rejected' (Throws-Code { Run $ctx } 'POWERSHELL_VERSION_UNAVAILABLE')
@@ -68,7 +84,12 @@ try {
     $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
     Check 'mutation: successful exit without result becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT')
     $failureLog = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { [IO.File]::ReadAllText($env:SISQUAL_ENGINEHOST_TEST_LOG) } else { '' }
-    Check 'mutation: failed completion is audit logged' ($failureLog.Contains('ENGINE.FAIL',[StringComparison]::Ordinal) -and $failureLog.Contains('operationId',[StringComparison]::Ordinal) -and $failureLog.Contains('ENGINE_NO_RESULT',[StringComparison]::Ordinal))
+    Check 'mutation: failed completion is audit logged' ($failureLog.Contains('ENGINE.FAIL',[StringComparison]::Ordinal) -and $failureLog.Contains('operationId',[StringComparison]::Ordinal) -and $failureLog.Contains('ENGINE_NO_RESULT',[StringComparison]::Ordinal) -and $failureLog.Contains('planFingerprint',[StringComparison]::Ordinal) -and $failureLog.Contains('locks',[StringComparison]::Ordinal) -and $failureLog.Contains('targetCount',[StringComparison]::Ordinal))
+
+    if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { Remove-Item -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Force }
+    $ctx = New-Ctx; $result = Run $ctx
+    $completionLog = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { [IO.File]::ReadAllText($env:SISQUAL_ENGINEHOST_TEST_LOG) } else { '' }
+    Check 'mutation: completion audit carries plan locks and summary' ($completionLog.Contains('planFingerprint',[StringComparison]::Ordinal) -and $completionLog.Contains('locks',[StringComparison]::Ordinal) -and $completionLog.Contains('targetCount',[StringComparison]::Ordinal) -and $completionLog.Contains('failedTargets',[StringComparison]::Ordinal) -and $completionLog.Contains('errorCount',[StringComparison]::Ordinal))
 
     $ctx = New-Ctx -Scenario 'UNEXPECTED_EXIT'; $result = Run $ctx
     Check 'mutation: undocumented process exit code becomes ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $result.succeeded)

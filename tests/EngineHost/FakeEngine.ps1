@@ -52,6 +52,8 @@ function Write-ResultFile {
     [IO.File]::WriteAllText([string]$Request.resultPath, ($Result | ConvertTo-Json -Compress -Depth 30), [Text.UTF8Encoding]::new($false))
 }
 
+$delayText = [string]$env:SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS
+if ($delayText -match '^\d{1,5}$') { Start-Sleep -Milliseconds ([Math]::Min([int]$delayText,15000)) }
 $raw = [Console]::In.ReadToEnd()
 try {
     if ([string]::IsNullOrWhiteSpace($raw) -or [Text.UTF8Encoding]::new($false).GetByteCount($raw) -gt 1MB) { exit 2 }
