@@ -94,13 +94,13 @@ function Invoke-TestHost {
 try {
     $good = New-TestContext
     $result = Invoke-TestHost -Context $good
-    Check 'SourceFileName from catalog is honored' ($result.engineCode -ceq 'FAKE_ENGINE' -and $result.succeeded)
-    Check 'host does not derive target counts from result row count' ($result.summary.targetCount -eq 1 -and @($result.results).Count -eq 2 -and $result.succeeded)
+    Check 'SourceFileName from catalog is honored' ($result.engineCode -ceq 'FAKE_ENGINE' -and $result.succeeded) ([string]$result.errorMessage)
+    Check 'host does not derive target counts from result row count' ($result.summary.targetCount -eq 1 -and @($result.results).Count -eq 2 -and $result.succeeded) ([string]$result.errorMessage)
 
     $argsSafe = New-TestContext -Scenario 'ARGS_ENV_SAFE'
     $canary = 'CANARY-HOST-9f4d7e1b'
     $result = Invoke-TestHost -Context $argsSafe -Secrets @{ TEST_SECRET = $canary }
-    Check 'secret is absent from child arguments and environment' ($result.succeeded -and $result.results[0].details -ceq 'ARGS_ENV_SAFE')
+    Check 'secret is absent from child arguments and environment' ($result.succeeded -and $result.results[0].details -ceq 'ARGS_ENV_SAFE') ([string]$result.errorMessage)
 
     foreach ($scenario in @('SECRET_STDOUT','SECRET_STDERR','SECRET_RESULT')) {
         $ctx = New-TestContext -Scenario $scenario
@@ -125,9 +125,16 @@ try {
 
     $mutable = New-TestContext -Scenario 'MUTATING' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING'
     $preview = Invoke-TestHost -Context $mutable
-    Check 'PREVIEW_APPLY preview returns fingerprint' ($preview.succeeded -and [string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
-    $apply = Invoke-TestHost -Context $mutable -Mode APPLY -PlanFingerprint ([string]$preview.planFingerprint) -ConfirmationText 'CONFIRM'
-    Check 'APPLY accepts fingerprint from same host session' ($apply.succeeded -and $apply.mode -ceq 'APPLY')
+    $previewFingerprint = if ($null -ne $preview.PSObject.Properties['planFingerprint']) { [string]$preview.planFingerprint } else { '' }
+    $previewReady = $preview.succeeded -and $previewFingerprint -match '^[0-9a-f]{64}$'
+    Check 'PREVIEW_APPLY preview returns fingerprint' $previewReady ([string]$preview.errorMessage)
+    if ($previewReady) {
+        $apply = Invoke-TestHost -Context $mutable -Mode APPLY -PlanFingerprint $previewFingerprint -ConfirmationText 'CONFIRM'
+        Check 'APPLY accepts fingerprint from same host session' ($apply.succeeded -and $apply.mode -ceq 'APPLY') ([string]$apply.errorMessage)
+    }
+    else {
+        Check 'APPLY accepts fingerprint from same host session' $false ('preview failed: ' + [string]$preview.errorMessage)
+    }
     Check 'stale fingerprint is refused before launch' (Throws-Code { Invoke-TestHost -Context $mutable -Mode APPLY -PlanFingerprint ('0' * 64) -ConfirmationText 'CONFIRM' } 'PLAN_CHANGED')
 
     $childrenA = @(
@@ -143,18 +150,18 @@ try {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $result = Invoke-TestHost -Context $cooperative
     $watch.Stop()
-    Check 'timeout writes cancel request and cooperative engine exits' ($result.errorMessage -ceq 'CANCELLED' -and $watch.Elapsed.TotalSeconds -lt 8)
+    Check 'timeout writes cancel request and cooperative engine exits' ($result.errorMessage -ceq 'CANCELLED' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
 
     $killable = New-TestContext -Scenario 'HANG_IGNORE' -TimeoutSeconds 1
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $result = Invoke-TestHost -Context $killable
     $watch.Stop()
-    Check 'non-mutating timed out child is killed after grace' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 8)
+    Check 'non-mutating timed out child is killed after grace' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()
     $result = Invoke-SisqualEngineHost -Engine $timedMutable.Engine -Action $timedMutable.Action -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
-    Check 'mutable timeout stays running and is not killed by host' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING')
+    Check 'mutable timeout stays running and is not killed by host' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
     Check 'explicit operator action can terminate retained timed-out test process' (Stop-SisqualTimedOutEngineProcess -OperationId $operationId -Confirm:$false)
 }
 finally {
