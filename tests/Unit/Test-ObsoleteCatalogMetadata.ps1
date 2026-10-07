@@ -46,7 +46,7 @@ function New-Column {
 function New-Rows {
     $rows = @{}
     $rows['ops.Action'] = [System.Collections.Generic.List[object]]::new()
-    $rows['ops.Action'].Add([ordered]@{ ActionCode='DATABASE_SETTINGS'; EngineCode='DATABASE_CONTENT_SYNC'; IsEnabled=1 })
+    $rows['ops.Action'].Add([ordered]@{ ActionCode='DATABASE_SETTINGS'; ActionType='ENGINE'; EngineCode='DATABASE_CONTENT_SYNC'; ModePolicy='PREVIEW_APPLY'; IsEnabled=1; RequiresInstanceSelection=1; AllowAllInstances=1; PassInstanceCode=1; PassApply=1 })
     $rows['ops.Action'].Add([ordered]@{ ActionCode='V8_KEYCLOAK_CONFIG'; EngineCode='V8_KEYCLOAK_CONFIG' })
     $rows['ops.Action'].Add([ordered]@{ ActionCode='KEEP_ACTION'; EngineCode='KEEP_ENGINE' })
     $rows['ops.Action'].Add([ordered]@{

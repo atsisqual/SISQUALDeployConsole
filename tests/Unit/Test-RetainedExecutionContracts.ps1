@@ -56,7 +56,7 @@ function New-DatabaseSettingsPathRows {
     $rows = @{}
     $rows['ops.Action'] = [System.Collections.Generic.List[object]]::new()
     $rows['ops.Action'].Add([ordered]@{ ActionCode='FULL_DEPLOYMENT'; ActionType='COMPOSITE'; EngineCode=$null; IsEnabled=1 })
-    $rows['ops.Action'].Add([ordered]@{ ActionCode='DATABASE_SETTINGS'; ActionType='ENGINE'; EngineCode='DATABASE_CONTENT_SYNC'; IsEnabled=1 })
+    $rows['ops.Action'].Add([ordered]@{ ActionCode='DATABASE_SETTINGS'; ActionType='ENGINE'; EngineCode='DATABASE_CONTENT_SYNC'; ModePolicy='PREVIEW_APPLY'; IsEnabled=1; RequiresInstanceSelection=1; AllowAllInstances=1; PassInstanceCode=1; PassApply=1 })
     $rows['ops.ActionStep'] = [System.Collections.Generic.List[object]]::new()
     $rows['ops.ActionStep'].Add([ordered]@{ ParentActionCode='FULL_DEPLOYMENT'; StepOrder=[long]30; ChildActionCode='DATABASE_SETTINGS'; IsEnabled=1 })
     $rows['ops.Engine'] = [System.Collections.Generic.List[object]]::new()
@@ -95,6 +95,30 @@ Assert-Throws 'DATABASE_SETTINGS action cannot be disabled after retirement' { A
 $nullAction = New-DatabaseSettingsPathRows
 $nullAction['ops.Action'][1]['IsEnabled'] = $null
 Assert-Throws 'DATABASE_SETTINGS action enablement cannot be NULL' { Assert-NoRetiredCatalogMetadata -Rows $nullAction } '*DATABASE_SETTINGS*enabled*'
+# The retained DATABASE_SETTINGS action must keep the same approved execution contract as CONFIG_REPAIR.
+$badType = New-DatabaseSettingsPathRows
+$badType['ops.Action'][1]['ActionType'] = 'COMPOSITE'
+Assert-Throws 'DATABASE_SETTINGS must remain an ENGINE action' { Assert-NoRetiredCatalogMetadata -Rows $badType } '*DATABASE_SETTINGS*ENGINE*'
+foreach ($mode in @('NONE', 'APPLY_ONLY', 'preview_apply', '')) {
+    $badSettingsMode = New-DatabaseSettingsPathRows
+    $badSettingsMode['ops.Action'][1]['ModePolicy'] = $mode
+    Assert-Throws ("DATABASE_SETTINGS rejects ModePolicy '{0}'" -f $mode) { Assert-NoRetiredCatalogMetadata -Rows $badSettingsMode } '*DATABASE_SETTINGS*ModePolicy=PREVIEW_APPLY*'
+}
+$nullSettingsMode = New-DatabaseSettingsPathRows
+$nullSettingsMode['ops.Action'][1]['ModePolicy'] = $null
+Assert-Throws 'DATABASE_SETTINGS ModePolicy cannot be NULL' { Assert-NoRetiredCatalogMetadata -Rows $nullSettingsMode } '*DATABASE_SETTINGS*ModePolicy=PREVIEW_APPLY*'
+$missingSettingsMode = New-DatabaseSettingsPathRows
+$missingSettingsMode['ops.Action'][1].Remove('ModePolicy')
+Assert-Throws 'DATABASE_SETTINGS ModePolicy cannot be absent' { Assert-NoRetiredCatalogMetadata -Rows $missingSettingsMode } '*DATABASE_SETTINGS*ModePolicy=PREVIEW_APPLY*'
+foreach ($field in @('RequiresInstanceSelection', 'AllowAllInstances', 'PassInstanceCode', 'PassApply')) {
+    foreach ($variant in @('zero', 'null', 'absent')) {
+        $badFlag = New-DatabaseSettingsPathRows
+        if ($variant -eq 'zero') { $badFlag['ops.Action'][1][$field] = 0 }
+        elseif ($variant -eq 'null') { $badFlag['ops.Action'][1][$field] = $null }
+        else { $badFlag['ops.Action'][1].Remove($field) }
+        Assert-Throws ("DATABASE_SETTINGS {0} cannot be {1}" -f $field, $variant) { Assert-NoRetiredCatalogMetadata -Rows $badFlag } ('*DATABASE_SETTINGS*' + $field + '=1*')
+    }
+}
 $disabledStep = New-DatabaseSettingsPathRows
 $disabledStep['ops.ActionStep'][0]['IsEnabled'] = 0
 Assert-Throws 'FULL_DEPLOYMENT step 30 cannot be disabled after retirement' { Assert-NoRetiredCatalogMetadata -Rows $disabledStep } '*step 30*enabled*'

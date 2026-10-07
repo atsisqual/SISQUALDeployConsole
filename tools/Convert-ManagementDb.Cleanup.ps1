@@ -414,6 +414,23 @@ function Assert-NoRetiredCatalogMetadata {
             [int]$databaseSettingsAction['IsEnabled'] -ne 1) {
             throw 'DATABASE_SETTINGS must remain explicitly enabled after retirement.'
         }
+        # The retained action keeps the same approved execution contract as CONFIG_REPAIR: an ENGINE action with the
+        # preview/apply policy and the instance-selection and pass-through flags the engine relies on.
+        if ([string]$databaseSettingsAction['ActionType'] -cne 'ENGINE') {
+            throw 'DATABASE_SETTINGS must remain an ENGINE action after retirement.'
+        }
+        if (-not (Test-CleanupRowHasKey -Row $databaseSettingsAction -Key 'ModePolicy') -or
+            (Test-CleanupIsNullValue -Value $databaseSettingsAction['ModePolicy']) -or
+            [string]$databaseSettingsAction['ModePolicy'] -cne 'PREVIEW_APPLY') {
+            throw 'DATABASE_SETTINGS must retain its approved execution contract (ModePolicy=PREVIEW_APPLY) after retirement.'
+        }
+        foreach ($field in @('RequiresInstanceSelection', 'AllowAllInstances', 'PassInstanceCode', 'PassApply')) {
+            if (-not (Test-CleanupRowHasKey -Row $databaseSettingsAction -Key $field) -or
+                (Test-CleanupIsNullValue -Value $databaseSettingsAction[$field]) -or
+                [int]$databaseSettingsAction[$field] -ne 1) {
+                throw ('DATABASE_SETTINGS must retain its approved execution contract ({0}=1) after retirement.' -f $field)
+            }
+        }
         if (-not $Rows.ContainsKey('ops.Engine')) {
             throw 'Portable orchestration requires exactly one enabled DATABASE_CONTENT_SYNC engine.'
         }
