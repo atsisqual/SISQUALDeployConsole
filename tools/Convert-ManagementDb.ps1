@@ -392,6 +392,8 @@ function Invoke-NewMachineConversion {
     }
 }
 
+. (Join-Path $PSScriptRoot 'Convert-ManagementDb.Cleanup.ps1')
+
 if ($script:C7ShouldExecute) {
     $cli = $script:C7Cli
     if ($cli.NewMachine) {

@@ -370,6 +370,8 @@ function Invoke-CatalogConversionTest {
     return (New-TestResult -Mode $legacy.Mode -Catalogs $legacy.Catalogs)
 }
 
+. (Join-Path $PSScriptRoot 'Test-CatalogConversion.Cleanup.ps1')
+
 if ($script:C8ShouldExecute) {
     $cli = $script:C8Cli
     $tables = @($script:CarriedTables.Keys)
