@@ -36,6 +36,12 @@ The approved four-term source predicate is:
 
 After that raw preflight, the normal main layers run. Cleanup is then applied as the final converter layer.
 
+## Main composition compatibility
+
+The production sync-file path explicitly reads `cfg.DatabaseSettingRule` alongside the carried-table set so the raw preflight can run before C7. Reduced unit fixtures remain valid: the cleanup adapters do not turn the validation-only table into a new mandatory carried-table dependency for narrow source surfaces.
+
+B6.3b credential import continues to understand legacy rule rows as source input. Its parity contract now distinguishes those source/import rules from converter redaction/carry rules: `cfg.DatabaseSettingRule` remains import/validation-only and is not reintroduced into the portable catalog or the converter redaction-table set.
+
 ## Retirement transform
 
 The portable catalog does not carry:
