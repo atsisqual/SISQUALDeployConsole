@@ -23,8 +23,11 @@ $emptyArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @() })
 $nullValue = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = $null })
 $singleArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @('x') })
 $scalarValue = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = 'x' })
+$orderedArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @('a','b') })
+$reversedArray = Get-SisqualPlanFingerprint -Plan ([ordered]@{ values = @('b','a') })
 Check 'mutation: empty array fingerprint differs from null' ($emptyArray -cne $nullValue)
 Check 'mutation: singleton array fingerprint differs from scalar' ($singleArray -cne $scalarValue)
+Check 'mutation: array order changes the fingerprint' ($orderedArray -cne $reversedArray)
 
 $children = @(
     [pscustomobject]@{ step = 30; engineCode = 'C_ENGINE'; instanceCode = 'C'; planFingerprint = ('c' * 64) },
