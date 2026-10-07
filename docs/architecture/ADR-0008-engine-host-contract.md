@@ -1,6 +1,6 @@
 # ADR-0008: Engine host contract
 
-**Status:** Proposed (2026-10-07). It needs the owner's answers to the six questions at the end before anything is implemented from it.
+**Status:** Accepted (2026-10-07). The owner accepted the decision and the six recommendations at the end ("Aceito tudo", 2026-10-07).
 **Relates to:** ADR-0001 (runtime), ADR-0007 (catalog, logs, no state database), `contracts/engine-result.schema.json`, `docs/phase1/phase1c-operation-coordinator.md` (locks and idempotency), `AGENTS.md` ("Engine contract").
 
 ## Context
@@ -43,11 +43,11 @@ Facts from the source snapshot (`ManagementSync.sql`, nightly of 2026-10-07):
 - Wave 1 is read-only, so it exercises items 1 to 6, 8, 11 and 12 without the destructive parts (10 for mutable engines is proven with a test engine).
 - Not decided here: the web layer that triggers operations, the shared lock names of each engine (they belong in each engine specification), and the order of `FULL_DEPLOYMENT` steps (wave 6).
 
-## Open questions for the owner
+## Questions answered by the owner (2026-10-07, "Aceito tudo")
 
-1. [PROPOSED] One child process per run (above), not an in-process runspace. Recommendation: child process.
-2. [PROPOSED] Read-only engines report `mode` `PREVIEW`, with no change to the result schema, rather than a new `READ_ONLY` value. Recommendation: `PREVIEW`.
-3. [PROPOSED] The three `SQL` actions are refused. `EXECUTION_HISTORY` is replaced by reading the text logs, `LINKS_VISIBILITY_MATRIX` by the read-only matrix of wave 8, and `OBJECT_AUDIT` needs a decision: an engine or retire. Recommendation: decide `OBJECT_AUDIT` when its wave is planned; the host refuses it until then.
-4. [PROPOSED] When `CommandTimeoutSeconds` is 0 the host applies 900 seconds; an engine that needs longer sets it in the catalog. Recommendation: accept.
-5. [PROPOSED] The console runs elevated only if an enabled engine requires administrator; otherwise those engines are listed as unavailable. [V] Check on a real server.
-6. [PROPOSED] A mutable engine that times out is never killed by the host (item 10). Recommendation: accept.
+1. [DECIDED 2026-10-07] One child process per run (above), not an in-process runspace. Recommendation: child process.
+2. [DECIDED 2026-10-07] Read-only engines report `mode` `PREVIEW`, with no change to the result schema, rather than a new `READ_ONLY` value. Recommendation: `PREVIEW`.
+3. [DECIDED 2026-10-07] The three `SQL` actions are refused. `EXECUTION_HISTORY` is replaced by reading the text logs, `LINKS_VISIBILITY_MATRIX` by the read-only matrix of wave 8, and `OBJECT_AUDIT` needs a decision: an engine or retire. Recommendation: decide `OBJECT_AUDIT` when its wave is planned; the host refuses it until then.
+4. [DECIDED 2026-10-07] When `CommandTimeoutSeconds` is 0 the host applies 900 seconds; an engine that needs longer sets it in the catalog. Recommendation: accept.
+5. [DECIDED 2026-10-07] The console runs elevated only if an enabled engine requires administrator; otherwise those engines are listed as unavailable. [V] Check on a real server.
+6. [DECIDED 2026-10-07] A mutable engine that times out is never killed by the host (item 10). Recommendation: accept.
