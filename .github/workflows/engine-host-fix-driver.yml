@@ -1,0 +1,46 @@
+name: engine-host-fix-driver
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/workflows/engine-host-fix-driver.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: engine-host/adr-0008-runtime
+          fetch-depth: 0
+
+      - name: Preserve JSON timestamp strings during result validation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'runtime/Sisqual.Runtime.EngineHost.psm1'
+          $text = [IO.File]::ReadAllText($path)
+          $old = '$rawResultText | ConvertFrom-Json -Depth 50'
+          $new = '$rawResultText | ConvertFrom-Json -Depth 50 -DateKind String'
+          $count = ([regex]::Matches($text, [regex]::Escape($old))).Count
+          if ($count -ne 1) { throw "Expected exactly one result deserializer, found $count." }
+          $text = $text.Replace($old, $new).Replace("`r`n", "`n")
+          [IO.File]::WriteAllText($path, $text, [Text.UTF8Encoding]::new($false))
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -cne $path) { throw ('Unexpected changed files: ' + ($changed -join ', ')) }
+
+      - name: Commit exact fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'atsisqual'
+          git config user.email 'alexandre.teixeira@sisqual.com'
+          git add -- runtime/Sisqual.Runtime.EngineHost.psm1
+          git commit -m 'fix: preserve engine result timestamp strings'
+          git push origin HEAD:engine-host/adr-0008-runtime
