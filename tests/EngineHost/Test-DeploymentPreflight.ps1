@@ -39,6 +39,12 @@ function Write-SafeResultDiagnostic {
     $summary = '{}'
     if ($null -ne $Result.PSObject.Properties['summary'] -and $null -ne $Result.summary) { $summary = $Result.summary | ConvertTo-Json -Compress -Depth 5 }
     Write-Host ('DIAG  {0}: errorMessage={1}; exitCode={2}; summary={3}' -f $Label,$errorMessage,$exitCode,$summary)
+    # Issue codes and instance codes only: the engine never puts a secret, a path or a user name in a row.
+    if ($null -ne $Result.PSObject.Properties['results']) {
+        foreach ($row in @($Result.results | Where-Object { $null -ne $_ -and [string]$_.status -ceq 'ERROR' } | Select-Object -First 8)) {
+            Write-Host ('DIAG  {0}:   ERROR {1} [{2}] [{3}]' -f $Label,[string]$row.object,[string]$row.instanceCode,[string]$row.operationType)
+        }
+    }
 }
 function FileEntry([string]$PackageRoot,[string]$Path) {
     $item = Get-Item -LiteralPath $Path -Force
@@ -261,6 +267,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     try {
         [IO.File]::WriteAllText($moduleFile, $moduleOriginal + "`n# changed after the manifest was made`n", [Text.UTF8Encoding]::new($false))
         $tampered = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+        Write-SafeResultDiagnostic -Label 'tampered-module' -Result $tampered
         Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0) ([string]$tampered.errorMessage)
     }
     finally { [IO.File]::WriteAllText($moduleFile, $moduleOriginal, [Text.UTF8Encoding]::new($false)) }
