@@ -32,7 +32,10 @@ $anchors = @(
     [pscustomobject]@{ Name = 'descendant start time re-checked before the kill'; Text = 'process.StartTime.ToUniversalTime().Ticks != ordered[i].Value' },
     [pscustomobject]@{ Name = 'root start time captured while the engine runs'; Text = '$rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks' },
     [pscustomobject]@{ Name = 'system console host is not a surviving descendant'; Text = 'if (IsSystemConsoleHost(child)) continue;' },
-    [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason' }
+    [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason; instance = [string]$InstanceCode' },
+    [pscustomobject]@{ Name = 'machine ownership uses the operating system name'; Text = '[Environment]::MachineName' },
+    [pscustomobject]@{ Name = 'only declared secrets are forwarded'; Text = "throw 'SECRET_NOT_DECLARED'" },
+    [pscustomobject]@{ Name = 'cancel signal failure does not stop timeout handling'; Text = 'catch { $cancelSignalFailed = $true }' }
 )
 
 $passed = 0

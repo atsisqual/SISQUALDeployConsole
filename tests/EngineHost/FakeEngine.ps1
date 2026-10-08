@@ -198,6 +198,12 @@ switch ($scenario) {
         }
         exit 1
     }
+    'CANCEL_BLOCKED' {
+        [void][IO.Directory]::CreateDirectory([string]$request.cancelPath)
+        Start-Sleep -Seconds 15
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
     'HANG_IGNORE' {
         Start-Sleep -Seconds 15
         Write-ResultFile $request (New-Result $request $true)

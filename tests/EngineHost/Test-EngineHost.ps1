@@ -99,7 +99,7 @@ function New-TestContext {
         Engine = $engine
         Action = $action
         Manifest = $manifest
-        CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalogPath -MachineName $env:COMPUTERNAME)
+        CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalogPath -MachineName ([Environment]::MachineName))
         Class = $EngineClass
         Scenario = $Scenario
     }
@@ -111,9 +111,11 @@ function Invoke-TestHost {
         [string]$Mode = 'PREVIEW',
         [string]$PlanFingerprint = $null,
         [string]$ConfirmationText = $null,
-        [hashtable]$Secrets = @{}
+        [hashtable]$Secrets = @{},
+        [string[]]$Declared = $null
     )
-    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
+    if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
+    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -137,7 +139,7 @@ try {
 
     $foreignMachine = New-TestContext
     Set-SisqualTestCatalogMachineName -Session $foreignMachine.CatalogSession -MachineName 'NOT-THIS-MACHINE'
-    $foreignMachine.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue $env:COMPUTERNAME -Force
+    $foreignMachine.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue ([Environment]::MachineName) -Force
     Check 'machine ownership is read from active catalog session, not caller properties' (Throws-Code { Invoke-TestHost -Context $foreignMachine } 'CATALOG_MACHINE_MISMATCH')
 
     $argsSafe = New-TestContext -Scenario 'ARGS_ENV_SAFE'
@@ -216,6 +218,28 @@ try {
     $result = Invoke-TestHost -Context $killable
     $watch.Stop()
     Check 'non-mutating timed out child is killed after grace' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
+
+    $blocked = New-TestContext -Scenario 'CANCEL_BLOCKED' -TimeoutSeconds 1
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $result = Invoke-TestHost -Context $blocked
+    $watch.Stop()
+    Check 'a cancel signal that cannot be written still ends in the timeout handling (read-only engine is killed)' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 10) ([string]$result.errorMessage)
+
+    $blockedMutable = New-TestContext -Scenario 'CANCEL_BLOCKED' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
+    $blockedOperation = [guid]::NewGuid().ToString()
+    $result = Invoke-SisqualEngineHost -Engine $blockedMutable.Engine -Action $blockedMutable.Action -EngineClass MUTATING -PackageRoot $blockedMutable.Root -CatalogPath $blockedMutable.Catalog -CatalogSession $blockedMutable.CatalogSession -ManifestEntries $blockedMutable.Manifest -Mode PREVIEW -InstanceCode $blockedMutable.Scenario -LockKeys @('INSTANCE:' + [string]$blockedMutable.Scenario) -OperationId $blockedOperation -CancellationGraceSeconds 1
+    Check 'a cancel signal that cannot be written: a mutable engine is retained, not left untracked' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
+    [void](Stop-SisqualTimedOutEngineProcess -OperationId $blockedOperation -Confirm:$false)
+
+    # The machine comes from the operating system, not from a variable the caller can change.
+    $spoofed = New-TestContext
+    Set-SisqualTestCatalogMachineName -Session $spoofed.CatalogSession -MachineName 'SPOOFED-HOST'
+    $savedName = $env:COMPUTERNAME; $env:COMPUTERNAME = 'SPOOFED-HOST'
+    try { Check 'changing COMPUTERNAME does not make a foreign catalog pass the machine ownership check' (Throws-Code { Invoke-TestHost -Context $spoofed } 'CATALOG_MACHINE_MISMATCH') }
+    finally { if ($null -eq $savedName) { Remove-Item Env:\COMPUTERNAME -ErrorAction SilentlyContinue } else { $env:COMPUTERNAME = $savedName } }
+
+    $secretCtx = New-TestContext
+    Check 'an undeclared secret is rejected by the host before launch' (Throws-Code { Invoke-TestHost -Context $secretCtx -Secrets @{ TEST_SECRET = 'a'; OTHER_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()

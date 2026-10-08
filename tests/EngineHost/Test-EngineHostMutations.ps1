@@ -37,7 +37,7 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     $catalog = Join-Path $catalogDir 'catalog-TEST.db'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     return [pscustomobject]@{
-        Root = $root; Catalog = $catalog; Scenario = $Scenario; CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName $env:COMPUTERNAME)
+        Root = $root; Catalog = $catalog; Scenario = $Scenario; CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName ([Environment]::MachineName))
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
         Action = [pscustomobject]@{ ActionCode = 'FAKE_ACTION'; EngineCode = 'FAKE_ENGINE'; IsEnabled = 1; ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
         Manifest = @(
@@ -47,8 +47,9 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     }
 }
 function Run {
-    param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY')
-    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
+    param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY', [string[]]$Declared = $null)
+    if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
+    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
@@ -72,7 +73,7 @@ try {
 
     $ctx = New-Ctx
     Set-SisqualTestCatalogMachineName -Session $ctx.CatalogSession -MachineName 'NOT-THIS-MACHINE'
-    $ctx.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue $env:COMPUTERNAME -Force
+    $ctx.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue ([Environment]::MachineName) -Force
     Check 'mutation: foreign catalog machine is rejected from authenticated session metadata' (Throws-Code { Run $ctx } 'CATALOG_MACHINE_MISMATCH')
 
     $ctx = New-Ctx
@@ -136,6 +137,17 @@ try {
         }
         finally { try { if (-not $parentProc.HasExited) { $parentProc.Kill($true) } } catch { } }
     }
+
+    # ADR-0008 item 3: only declared credential references reach the engine.
+    $ctx = New-Ctx
+    Check 'mutation: a secret the engine does not declare is rejected before launch' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a'; OTHER_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
+    Check 'mutation: with no declared references any secret is rejected' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @() } 'SECRET_NOT_DECLARED')
+    Check 'mutation: a reference with an invalid shape is rejected even if declared' (Throws-Code { Run $ctx -Secrets @{ 'bad ref' = 'a' } -Declared @('bad ref') } 'SECRET_NOT_DECLARED')
+    Check 'mutation: the declared reference match is case sensitive' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @('test_secret') } 'SECRET_NOT_DECLARED')
+    # ADR-0008 item 12: a synthesised failure names the instance in the audit record.
+    $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
+    $auditTail = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 4) -join "`n" } else { '' }
+    Check 'mutation: the failure audit record carries the instance and the reason is a field' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $auditTail.Contains('"instance":"NO_RESULT"') -and $auditTail.Contains('"reason"'))
 
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {

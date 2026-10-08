@@ -487,13 +487,14 @@ function New-SisqualLoggedEngineFailureResult {
         [System.Collections.IDictionary]$Secrets = @{},
         [AllowNull()][string]$PlanFingerprint,
         [string[]]$LockKeys = @(),
-        [string]$Reason = ''
+        [string]$Reason = '',
+        [AllowNull()][string]$InstanceCode
     )
     $result = New-SisqualEngineFailureResult $OperationId $EngineCode $Mode $ErrorCode $EngineVersion $ExitCode
     Write-SisqualEngineHostLog -EventCode 'ENGINE.FAIL' -Message 'Engine run failed.' -Properties @{
         operationId = $OperationId; engine = $EngineCode; mode = $Mode
         durationMs = [int]([DateTime]::UtcNow - $StartedAt).TotalMilliseconds
-        exitCode = $ExitCode; succeeded = $false; error = $ErrorCode; reason = $Reason
+        exitCode = $ExitCode; succeeded = $false; error = $ErrorCode; reason = $Reason; instance = [string]$InstanceCode
         planFingerprint = [string]$PlanFingerprint; locks = (@($LockKeys) -join ',')
         targetCount = [int]$result.summary.targetCount; succeededTargets = [int]$result.summary.succeededTargets
         failedTargets = [int]$result.summary.failedTargets; warningCount = [int]$result.summary.warningCount; errorCount = [int]$result.summary.errorCount
@@ -516,6 +517,7 @@ function Invoke-SisqualEngineHost {
         [AllowNull()][string]$PlanFingerprint,
         [AllowNull()][string]$ConfirmationText,
         [System.Collections.IDictionary]$Secrets = @{},
+        [string[]]$DeclaredSecretReferences = @(),
         [string[]]$LockKeys = @(),
         [string]$OperationId = ([guid]::NewGuid().ToString()),
         [string]$PwshPath = (Get-Process -Id $PID).Path,
@@ -560,7 +562,13 @@ function Invoke-SisqualEngineHost {
     try { $catalogMachineName = [string](& $catalogReader -Session $CatalogSession) }
     catch { throw 'CATALOG_SESSION_INVALID' }
     if ([string]::IsNullOrWhiteSpace($catalogMachineName)) { throw 'CATALOG_SESSION_INVALID' }
-    if (-not [string]::Equals($catalogMachineName, $env:COMPUTERNAME, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
+    if (-not [string]::Equals($catalogMachineName, [Environment]::MachineName, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
+    # ADR-0008 item 3: the request carries only the credential references the engine specification declares. Anything else is a caller error and nothing is started.
+    if ($null -ne $Secrets) {
+        foreach ($secretReference in @($Secrets.Keys)) {
+            if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or @($DeclaredSecretReferences) -cnotcontains [string]$secretReference) { throw 'SECRET_NOT_DECLARED' }
+        }
+    }
     [string[]]$normalizedLocks = @($LockKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)
 
     $engineLeaf = [string](Get-SisqualMemberValue $Engine 'SourceFileName' '')
@@ -604,6 +612,7 @@ function Invoke-SisqualEngineHost {
         $stdinTask = $process.StandardInput.BaseStream.WriteAsync($requestBytes, 0, $requestBytes.Length)
         $stdinClosed = $false
         $stdinWriteFailed = $false
+        $cancelSignalFailed = $false
         while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadlineAt) {
             if (-not $stdinClosed -and $stdinTask.IsCompleted) {
                 try { [void]$stdinTask.GetAwaiter().GetResult(); $process.StandardInput.Close() }
@@ -614,7 +623,9 @@ function Invoke-SisqualEngineHost {
         }
         $completed = $process.HasExited
         if (-not $completed) {
-            [IO.File]::WriteAllText($cancelPath, 'cancel', [Text.UTF8Encoding]::new($false))
+            # A cancellation signal that cannot be written (for example a directory pre-created at that path) is not a reason to stop the timeout handling.
+            try { [IO.File]::WriteAllText($cancelPath, 'cancel', [Text.UTF8Encoding]::new($false)) }
+            catch { $cancelSignalFailed = $true }
             $graceDeadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $CancellationGraceSeconds))
             while (-not $process.HasExited -and [DateTime]::UtcNow -lt $graceDeadline) {
                 if (-not $stdinClosed -and $stdinTask.IsCompleted) {
@@ -629,7 +640,7 @@ function Invoke-SisqualEngineHost {
                 if ($EngineClass -ceq 'MUTATING') {
                     $keepRunDirectory = $true
                     $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; RunDirectory = $runDirectory; StdinTask = $stdinTask; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
-                    return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+                    return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -Reason $(if ($cancelSignalFailed) { 'cancel_signal_failed' } else { '' }) -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
                 }
                 $process.Kill($true); $process.WaitForExit()
             }
@@ -653,36 +664,36 @@ function Invoke-SisqualEngineHost {
             try { $process.StandardOutput.Close() } catch { }
             try { $process.StandardError.Close() } catch { }
             [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks)
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stream_deadline' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stream_deadline' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         try { $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult() }
         catch [IO.InvalidDataException] { throw }
-        catch { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        catch { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         $exitCode = $process.ExitCode
         if ($descendantsKilled -gt 0) {
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('descendants_killed:' + [Sisqual.Runtime.EngineHost.ProcessTree]::LastKilled) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('descendants_killed:' + [Sisqual.Runtime.EngineHost.ProcessTree]::LastKilled) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         if ($stdinWriteFailed) {
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stdin_write_failed' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stdin_write_failed' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         $rawResultText = ''
         if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
             $resultInfo = Get-Item -LiteralPath $resultPath
-            if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_RESULT_LIMIT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+            if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_RESULT_LIMIT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
             try { $rawResultText = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false, $true)) }
-            catch [Text.DecoderFallbackException] { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+            catch [Text.DecoderFallbackException] { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         }
-        if (Find-SisqualSecretLeak -Texts @($rawResultText,$stdout,$stderr) -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-        if ($exitCode -notin @(0,1,2,3)) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-        if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if (Find-SisqualSecretLeak -Texts @($rawResultText,$stdout,$stderr) -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if ($exitCode -notin @(0,1,2,3)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
 
         try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String }
-        catch { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-        if (Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-        if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        catch { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if (Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
 
         if ($Mode -ceq 'PREVIEW' -and $modePolicy -ceq 'PREVIEW_APPLY') {
-            if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+            if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
             if ([bool]$result.succeeded) {
                 $previewKey = '{0}|{1}' -f $engineCode, [string]$InstanceCode
                 $script:PreviewFingerprints[$previewKey] = [string]$result.planFingerprint
@@ -701,7 +712,7 @@ function Invoke-SisqualEngineHost {
     }
     catch [IO.InvalidDataException] {
         try { if (-not $process.HasExited) { $process.Kill($true) } } catch { }
-        return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_STREAM_LIMIT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+        return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_STREAM_LIMIT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
     }
     finally {
         if (-not $keepRunDirectory) {
