@@ -78,3 +78,8 @@ None: paths, sizes and counts. Folder names can contain customer host names; the
 1. [PENDING] Where measurements are kept. Recommendation: one JSON line per measurement in a history file in the log folder (latest and a bounded history), read by the screen.
 2. [PENDING] Whether a measurement may exceed the time budget when the owner asks for a full scan. Recommendation: yes, as an explicit option.
 3. [PENDING] Gigabytes: decimal or binary for the ceilings. Recommendation: binary, stated in the screen.
+
+## Host contract
+
+- Engine class: `OBSERVATIONAL`.
+- Credential references: none.
