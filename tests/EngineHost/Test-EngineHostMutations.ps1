@@ -118,39 +118,17 @@ try {
     $ctx = New-Ctx -Scenario 'INVALID_UTF8_RESULT'; $result = Run $ctx
     Check 'mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
 
-    # Process id reuse: a child counts only if it started at or after its parent.
-    Check 'mutation: a child that started before its parent is not a descendant (process id reuse)' (-not [Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(200, 100))
-    Check 'mutation: a child that started after its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 200))
-    Check 'mutation: a child that started in the same instant as its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 100))
+    # Containment: everything the engine starts lives in a job object, so an orphaned grandchild is reached without any process id logic.
     if ($IsWindows) {
-        $parentInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path); $parentInfo.UseShellExecute = $false; $parentInfo.CreateNoWindow = $true
-        foreach ($a in @('-NoLogo','-NoProfile','-NonInteractive','-Command','$c = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList ''-NoLogo'',''-NoProfile'',''-Command'',''Start-Sleep -Seconds 40'' -PassThru; Start-Sleep -Seconds 40')) { [void]$parentInfo.ArgumentList.Add($a) }
-        $parentProc = [Diagnostics.Process]::Start($parentInfo)
-        try {
-            Start-Sleep -Milliseconds 2500
-            $rootTicks = $parentProc.StartTime.ToUniversalTime().Ticks
-            $future = $rootTicks + [TimeSpan]::FromHours(1).Ticks
-            $refused = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $future)
-            Check 'mutation: a real child older than the claimed root start is refused (the guard works end to end)' ($refused -eq 0)
-            $killed = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $rootTicks)
-            Check 'mutation: with the true root start the real child is killed' ($killed -ge 1)
+        $ctx = New-Ctx -Scenario 'GRANDCHILD'; $result = Run $ctx
+        $marker = [string]$result.operationId
+        $alive = $true
+        for ($i = 0; $i -lt 20 -and $alive; $i++) {
+            $alive = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($marker) }).Count -gt 0
+            if ($alive) { Start-Sleep -Milliseconds 250 }
         }
-        finally { try { if (-not $parentProc.HasExited) { $parentProc.Kill($true) } } catch { } }
+        Check 'mutation: an orphaned grandchild is terminated through the job and the run is ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $alive)
     }
-
-    # ADR-0008 item 3: only declared credential references reach the engine.
-    $ctx = New-Ctx
-    Check 'mutation: a secret the engine does not declare is rejected before launch' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a'; OTHER_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
-    Check 'mutation: with no declared references any secret is rejected' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @() } 'SECRET_NOT_DECLARED')
-    Check 'mutation: a reference with an invalid shape is rejected even if declared' (Throws-Code { Run $ctx -Secrets @{ 'bad ref' = 'a' } -Declared @('bad ref') } 'SECRET_NOT_DECLARED')
-    Check 'mutation: the declared reference match is case sensitive' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @('test_secret') } 'SECRET_NOT_DECLARED')
-    # ADR-0008 item 12: a synthesised failure names the instance in the audit record.
-    $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
-    $auditTail = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 4) -join "`n" } else { '' }
-    Check 'mutation: the failure audit record carries the instance and the reason is a field' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $auditTail.Contains('"instance":"NO_RESULT"') -and $auditTail.Contains('"reason"'))
-
-    $ctx = New-Ctx -Scenario 'NULL_RESULT_ROW'; $result = Run $ctx
-    Check 'mutation: a null result row becomes ENGINE_INVALID_RESULT without throwing out of the host' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
 
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {

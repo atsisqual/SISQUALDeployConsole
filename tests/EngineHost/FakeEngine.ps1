@@ -200,6 +200,19 @@ switch ($scenario) {
         }
         exit 1
     }
+    'GRANDCHILD' {
+        # The engine starts a child that starts a grandchild and exits: the grandchild is an orphan whose recorded parent is dead.
+        $marker = [string]$request.operationId
+        $childInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+        $childInfo.UseShellExecute = $false
+        $childInfo.CreateNoWindow = $true
+        $launcher = "Start-Process -FilePath (Get-Process -Id `$PID).Path -ArgumentList '-NoLogo','-NoProfile','-Command','Start-Sleep -Seconds 40 # $marker' -WindowStyle Hidden; Start-Sleep -Milliseconds 400"
+        foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',$launcher)) { [void]$childInfo.ArgumentList.Add($argument) }
+        $child = [Diagnostics.Process]::Start($childInfo)
+        [void]$child.WaitForExit(15000)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
     'NULL_RESULT_ROW' {
         $result = New-Result -Request $request -Succeeded $true
         $result.results = @($null)

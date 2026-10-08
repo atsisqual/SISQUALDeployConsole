@@ -38,40 +38,54 @@ namespace Sisqual.Runtime.EngineHost {
         }
     }
 
-    public static class ProcessTree {
-        private const uint TH32CS_SNAPPROCESS = 0x00000002;
-        private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+    // The engine and everything it starts live in one job object and the host terminates the job. A descendant is therefore
+    // identified by membership of the job and never by a process id, which Windows reuses; grandchildren whose parent already
+    // died are contained too, and no state is shared between invocations. There is deliberately no kill-on-close limit: if the
+    // host itself dies, a mutable engine must not be killed in the middle of a change.
+    public sealed class JobContainment : IDisposable {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool QueryInformationJobObject(IntPtr job, int informationClass, IntPtr information, int informationLength, IntPtr returnLength);
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr handle);
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private struct PROCESSENTRY32 {
-            public uint dwSize;
-            public uint cntUsage;
-            public uint th32ProcessID;
-            public IntPtr th32DefaultHeapID;
-            public uint th32ModuleID;
-            public uint cntThreads;
-            public uint th32ParentProcessID;
-            public int pcPriClassBase;
-            public uint dwFlags;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-            public string szExeFile;
+        private const int JobObjectBasicProcessIdList = 3;
+        private IntPtr handle;
+
+        private JobContainment(IntPtr handle) { this.handle = handle; }
+
+        public static JobContainment Create() {
+            var job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero) throw new InvalidOperationException("ENGINE_CONTAINMENT_FAILED");
+            return new JobContainment(job);
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
-        [DllImport("kernel32.dll")]
-        private static extern bool CloseHandle(IntPtr hObject);
+        public void Assign(IntPtr processHandle) {
+            if (handle == IntPtr.Zero || !AssignProcessToJobObject(handle, processHandle)) throw new InvalidOperationException("ENGINE_CONTAINMENT_FAILED");
+        }
 
-        // A child counts only if it started at or after its parent: a recorded parent id alone is not enough, because Windows reuses
-        // process ids and an unrelated or orphaned process can name a dead engine's id as its parent.
-        // Names of the processes killed by the last KillDescendants call, for the audit log.
-        public static string LastKilled = "";
+        // Process ids that are in the job now, or null if the list cannot be read.
+        private int[] Members() {
+            if (handle == IntPtr.Zero) return new int[0];
+            int size = 8 + IntPtr.Size * 512;
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try {
+                if (!QueryInformationJobObject(handle, JobObjectBasicProcessIdList, buffer, size, IntPtr.Zero)) return null;
+                int count = Marshal.ReadInt32(buffer, 4);
+                var ids = new int[count];
+                for (int i = 0; i < count; i++) ids[i] = unchecked((int)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size).ToInt64());
+                return ids;
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }
 
-        // The console host of the engine's own console (System32\\conhost.exe) is part of the engine's console, not a process the engine left behind.
+        // The console host of the engine's own console (System32\conhost.exe) belongs to the engine's console, not to what the engine left
+        // behind. The process id is used only to decide whether to count it; everything is terminated through the job.
         private static bool IsSystemConsoleHost(int pid) {
             try {
                 using (var process = Process.GetProcessById(pid)) {
@@ -83,76 +97,26 @@ namespace Sisqual.Runtime.EngineHost {
             catch { return false; }
         }
 
-        public static bool IsPlausibleChild(long parentStartUtcTicks, long childStartUtcTicks) {
-            return childStartUtcTicks >= parentStartUtcTicks;
-        }
-
-        private static bool TryGetStartTicks(int pid, out long ticks) {
-            try {
-                using (var process = Process.GetProcessById(pid)) {
-                    ticks = process.StartTime.ToUniversalTime().Ticks;
-                    return true;
+        // Terminates every process still in the job and returns the names of the survivors, not counting the engine's console host.
+        public string[] TerminateSurvivors() {
+            var names = new List<string>();
+            var members = Members();
+            if (members == null) names.Add("unknown");
+            else {
+                foreach (var pid in members) {
+                    if (IsSystemConsoleHost(pid)) continue;
+                    try { using (var process = Process.GetProcessById(pid)) names.Add(process.ProcessName); }
+                    catch { names.Add("unknown"); }
                 }
             }
-            catch { ticks = 0; return false; }
+            TerminateAll();
+            return names.ToArray();
         }
 
-        public static int KillDescendants(int rootProcessId, long rootStartUtcTicks) {
-            LastKilled = "";
-            var snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if (snapshot == INVALID_HANDLE_VALUE) return 0;
-            try {
-                var parentMap = new Dictionary<int, List<int>>();
-                var entry = new PROCESSENTRY32();
-                entry.dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>();
-                if (Process32First(snapshot, ref entry)) {
-                    do {
-                        int parent = unchecked((int)entry.th32ParentProcessID);
-                        int pid = unchecked((int)entry.th32ProcessID);
-                        if (!parentMap.TryGetValue(parent, out var children)) {
-                            children = new List<int>();
-                            parentMap[parent] = children;
-                        }
-                        children.Add(pid);
-                        entry.dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>();
-                    } while (Process32Next(snapshot, ref entry));
-                }
+        public void TerminateAll() { if (handle != IntPtr.Zero) TerminateJobObject(handle, 1); }
 
-                var ordered = new List<KeyValuePair<int, long>>();
-                var queue = new Queue<KeyValuePair<int, long>>();
-                queue.Enqueue(new KeyValuePair<int, long>(rootProcessId, rootStartUtcTicks));
-                while (queue.Count > 0) {
-                    var parent = queue.Dequeue();
-                    if (!parentMap.TryGetValue(parent.Key, out var children)) continue;
-                    foreach (var child in children) {
-                        long childStart;
-                        if (!TryGetStartTicks(child, out childStart)) continue;
-                        if (!IsPlausibleChild(parent.Value, childStart)) continue;
-                        if (IsSystemConsoleHost(child)) continue;
-                        var item = new KeyValuePair<int, long>(child, childStart);
-                        ordered.Add(item);
-                        queue.Enqueue(item);
-                    }
-                }
-
-                int killed = 0;
-                for (int i = ordered.Count - 1; i >= 0; i--) {
-                    try {
-                        using (var process = Process.GetProcessById(ordered[i].Key)) {
-                            if (process.StartTime.ToUniversalTime().Ticks != ordered[i].Value) continue;
-                            if (!process.HasExited) {
-                                try { LastKilled += process.ProcessName + ";"; } catch { }
-                                process.Kill(true);
-                                process.WaitForExit(2000);
-                                killed++;
-                            }
-                        }
-                    }
-                    catch { }
-                }
-                return killed;
-            }
-            finally { CloseHandle(snapshot); }
+        public void Dispose() {
+            if (handle != IntPtr.Zero) { CloseHandle(handle); handle = IntPtr.Zero; }
         }
     }
 }
@@ -165,11 +129,15 @@ function Wait-SisqualEngineTaskUntil {
     return $Task.IsCompleted
 }
 
-function Stop-SisqualEngineDescendants {
-    param([Parameter(Mandatory)][int]$RootProcessId,[Parameter(Mandatory)][long]$RootStartUtcTicks)
-    if (-not $IsWindows) { return 0 }
-    try { return [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($RootProcessId, $RootStartUtcTicks) }
-    catch { return 0 }
+function New-SisqualEngineContainment {
+    if (-not $IsWindows) { return $null }
+    return [Sisqual.Runtime.EngineHost.JobContainment]::Create()
+}
+
+function Stop-SisqualEngineProcessTree {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process, [AllowNull()][object]$Containment)
+    if ($null -ne $Containment) { try { $Containment.TerminateAll() } catch { } }
+    else { try { if (-not $Process.HasExited) { $Process.Kill($true) } } catch { } }
 }
 
 function Get-SisqualMemberValue {
@@ -632,10 +600,14 @@ function Invoke-SisqualEngineHost {
     }
 
     $process = [Diagnostics.Process]::new(); $process.StartInfo = $startInfo
-    $started = [DateTime]::UtcNow; $keepRunDirectory = $false
+    $started = [DateTime]::UtcNow; $keepRunDirectory = $false; $job = $null
     try {
         if (-not $process.Start()) { throw 'ENGINE_START_FAILED' }
-        $rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks
+        $job = New-SisqualEngineContainment
+        if ($null -ne $job) {
+            try { $job.Assign($process.Handle) }
+            catch { Stop-SisqualEngineProcessTree -Process $process -Containment $null; throw 'ENGINE_CONTAINMENT_FAILED' }
+        }
         $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
         $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
         $deadlineAt = $started.AddSeconds($timeoutSeconds)
@@ -670,10 +642,10 @@ function Invoke-SisqualEngineHost {
             if (-not $completed) {
                 if ($EngineClass -ceq 'MUTATING') {
                     $keepRunDirectory = $true
-                    $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; RunDirectory = $runDirectory; StdinTask = $stdinTask; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
+                    $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; Job = $job; RunDirectory = $runDirectory; StdinTask = $stdinTask; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
                     return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -Reason $(if ($cancelSignalFailed) { 'cancel_signal_failed' } else { '' }) -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
                 }
-                $process.Kill($true); $process.WaitForExit()
+                Stop-SisqualEngineProcessTree -Process $process -Containment $job; $process.WaitForExit()
             }
         }
         if (-not $stdinClosed) {
@@ -688,13 +660,15 @@ function Invoke-SisqualEngineHost {
             $stdinClosed = $true
         }
 
-        $descendantsKilled = Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks
+        $survivors = @()
+        if ($null -ne $job) { $survivors = @($job.TerminateSurvivors()) }
+        $descendantsKilled = $survivors.Count
         $stdoutReady = Wait-SisqualEngineTaskUntil -Task $stdoutTask -DeadlineUtc $deadlineAt
         $stderrReady = Wait-SisqualEngineTaskUntil -Task $stderrTask -DeadlineUtc $deadlineAt
         if (-not $stdoutReady -or -not $stderrReady) {
             try { $process.StandardOutput.Close() } catch { }
             try { $process.StandardError.Close() } catch { }
-            [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks)
+            Stop-SisqualEngineProcessTree -Process $process -Containment $job
             return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stream_deadline' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         try { $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult() }
@@ -702,7 +676,7 @@ function Invoke-SisqualEngineHost {
         catch { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         $exitCode = $process.ExitCode
         if ($descendantsKilled -gt 0) {
-            return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('descendants_killed:' + [Sisqual.Runtime.EngineHost.ProcessTree]::LastKilled) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('descendants_killed:' + ($survivors -join ';')) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         if ($stdinWriteFailed) {
             return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stdin_write_failed' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
@@ -742,12 +716,13 @@ function Invoke-SisqualEngineHost {
         return $result
     }
     catch [IO.InvalidDataException] {
-        try { if (-not $process.HasExited) { $process.Kill($true) } } catch { }
+        Stop-SisqualEngineProcessTree -Process $process -Containment $job
         return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_STREAM_LIMIT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
     }
     finally {
         if (-not $keepRunDirectory) {
             if ($null -ne $process) { $process.Dispose() }
+            if ($null -ne $job) { $job.Dispose() }
             if (Test-Path -LiteralPath $runDirectory) { Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue }
         }
     }
@@ -759,9 +734,13 @@ function Stop-SisqualTimedOutEngineProcess {
     if (-not $script:TimedOutProcesses.ContainsKey($OperationId)) { return $false }
     $entry = $script:TimedOutProcesses[$OperationId]
     if ($PSCmdlet.ShouldProcess($OperationId, 'Terminate timed-out mutable engine process')) {
-        try { if (-not $entry.Process.HasExited) { $entry.Process.Kill($true); $entry.Process.WaitForExit() } }
+        try {
+            Stop-SisqualEngineProcessTree -Process $entry.Process -Containment $entry.Job
+            if (-not $entry.Process.HasExited) { $entry.Process.WaitForExit() }
+        }
         finally {
             $entry.Process.Dispose()
+            if ($null -ne $entry.Job) { $entry.Job.Dispose() }
             if (Test-Path -LiteralPath $entry.RunDirectory) { Remove-Item -LiteralPath $entry.RunDirectory -Recurse -Force -ErrorAction SilentlyContinue }
             [void]$script:TimedOutProcesses.Remove($OperationId)
         }
