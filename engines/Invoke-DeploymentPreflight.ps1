@@ -147,7 +147,7 @@ function Expand-LocalTemplate {
         '{MACHINE_NAME}' = [string](Get-Field $Server 'MachineName' '')
         '{SERVICES_ROOT}' = [string](Get-Field $Server 'ServicesRoot' '')
         '{CONFIG_BACKUP_ROOT}' = [string](Get-Field $Server 'ConfigBackupRoot' '')
-        '{SQL_INSTANCE}' = [string](Get-Field $Instance 'SqlInstanceName' (Get-Field $Instance 'SqlInstance' ''))
+        '{SQL_INSTANCE}' = [string](Get-Field $Instance 'SqlInstanceName' '')
     }
     $result = $Template
     foreach ($key in $values.Keys) { $result = $result.Replace($key,[string]$values[$key],[StringComparison]::Ordinal) }
@@ -252,7 +252,7 @@ function Invoke-ReviewIisModel {
     $appCodes = @{}
     foreach ($app in $applications) { $appCodes[[string](Get-Field $app 'ApplicationCode' '')] = $true }
     foreach ($definition in @(Get-EnabledRows 'cfg_IisApplicationDefinition')) {
-        $code = [string](Get-Field $definition 'ApplicationCode' '')
+        $code = [string](Get-Field $definition 'IisApplicationCode' '')
         if (-not [string]::IsNullOrWhiteSpace($code) -and -not $appCodes.ContainsKey($code)) { Add-Issue ERROR IIS_MODEL IIS_APPLICATION_MISSING $code }
     }
 }
@@ -278,7 +278,7 @@ function Invoke-ReviewWindowsServices {
         $credentialRef = 'IIS_IDENTITY.' + $instanceCode
         if (-not (Test-SecretPresent $credentialRef)) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_ACCOUNT_PASSWORD_MISSING $instanceCode $instanceCode }
         foreach ($definition in $definitions) {
-            $template = [string](Get-Field $definition 'ServiceNameTemplate' (Get-Field $definition 'ServiceName' ''))
+            $template = [string](Get-Field $definition 'ServiceNameTemplate' '')
             $name = Expand-LocalTemplate $template $Context.Server $instance
             if ($name.Length -gt 256) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_NAME_TOO_LONG $name $instanceCode }
             if (-not [string]::IsNullOrWhiteSpace($name)) {
@@ -308,11 +308,10 @@ function Invoke-ReviewWebAccess {
         $user = [string](Get-Field $instance 'WebAccessUserName' '')
         if ([string]::IsNullOrWhiteSpace($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_USERNAME_MISSING $code $code }
         elseif ($users.ContainsKey($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $user $code } else { $users[$user] = $true }
-        if (-not (Test-SecretPresent ('WEB_ACCESS.' + $code))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PASSWORD_MISSING $code $code }
     }
     foreach ($policy in @(Get-EnabledRows 'cfg_WebAccessPolicy')) {
-        if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }
-        if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'PublicUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PUBLIC_URL_MISSING }
+        if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }
+        if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'PublicLaunchBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PUBLIC_URL_MISSING }
     }
 }
 
@@ -332,20 +331,33 @@ function Invoke-ReviewLinksPresentation {
     $templates = @(Get-EnabledRows 'cfg_LinksPageTemplate')
     if ($templates.Count -eq 0) { Add-Issue ERROR LINKS_PRESENTATION LINKS_PAGE_TEMPLATE_MISSING }
     if (@(Get-EnabledRows 'cfg_LinksPagePresentationResource').Count -eq 0) { Add-Issue ERROR LINKS_PRESENTATION LINKS_PRESENTATION_RESOURCE_MISSING }
+    # The QR asset of a customer is the global asset QR_CHANNEL_<CustomerCode> (docs/migration/instance-directory-design.md). Codes and severities are those
+    # of the original review: a missing asset is a WARNING for an enabled PT or ES instance with a customer code, an unassigned asset is INFO.
     $assets = @(Get-EnabledRows 'cfg_LinksPageAsset')
-    $assignedCustomers = @($Context.SelectedInstances | ForEach-Object { [string](Get-Field $_ 'CustomerCode' '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
-    foreach ($customer in $assignedCustomers) {
-        if (@($assets | Where-Object { [string](Get-Field $_ 'CustomerCode' '') -ceq $customer }).Count -eq 0) { Add-Issue ERROR LINKS_PRESENTATION QR_ASSET_MISSING $customer }
+    $assetCodes = @{}
+    foreach ($asset in $assets) { $assetCodes[[string](Get-Field $asset 'AssetCode' '')] = $true }
+    foreach ($instance in $Context.SelectedInstances) {
+        $customer = [string](Get-Field $instance 'CustomerCode' '')
+        $country = [string](Get-Field $instance 'CountryCode' '')
+        if ([string]::IsNullOrWhiteSpace($customer) -or $country -cnotin @('PT','ES')) { continue }
+        $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
+        if (-not $assetCodes.ContainsKey('QR_CHANNEL_' + $customer)) { Add-Issue WARNING LINKS_PRESENTATION QR_ASSET_MISSING ($instanceCode + ' / ' + $customer) $instanceCode 'No QR asset is configured for this enabled PT/ES environment.' }
+    }
+    $assignedAssetCodes = @{}
+    foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
+        $customer = [string](Get-Field $instance 'CustomerCode' '')
+        if (-not [string]::IsNullOrWhiteSpace($customer)) { $assignedAssetCodes['QR_CHANNEL_' + $customer] = $true }
     }
     foreach ($asset in $assets) {
+        $assetCode = [string](Get-Field $asset 'AssetCode' '')
+        if (-not $assetCode.StartsWith('QR_CHANNEL_', [StringComparison]::Ordinal)) { continue }
         $hash = [string](Get-Field $asset 'ContentSha256' '')
-        $bytes = Get-Field $asset 'BinaryContent' $null
+        $bytes = Get-Field $asset 'Content' $null
         if ($null -ne $bytes -and $bytes -is [byte[]] -and -not [string]::IsNullOrWhiteSpace($hash)) {
             $actual = ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))).ToLowerInvariant()
-            if ($actual -cne $hash.ToLowerInvariant()) { Add-Issue ERROR LINKS_PRESENTATION QR_CONTENT_HASH_MISMATCH ([string](Get-Field $asset 'AssetCode' '')) }
+            if ($actual -cne $hash.ToLowerInvariant()) { Add-Issue ERROR LINKS_PRESENTATION QR_CONTENT_HASH_MISMATCH $assetCode }
         }
-        $customer = [string](Get-Field $asset 'CustomerCode' '')
-        if (-not [string]::IsNullOrWhiteSpace($customer) -and $assignedCustomers -cnotcontains $customer) { Add-Issue WARNING LINKS_PRESENTATION QR_ASSET_UNASSIGNED $customer }
+        if (-not $assignedAssetCodes.ContainsKey($assetCode)) { Add-Issue INFO LINKS_PRESENTATION QR_ASSET_UNASSIGNED $assetCode '' 'The QR asset is currently not assigned to an enabled ManagedInstance.' }
     }
 }
 
@@ -411,7 +423,7 @@ function Invoke-RequiredFileChecks {
     $files = @(Get-EnabledRows 'cfg_ConfigFile')
     $rules = @(Get-EnabledRows 'cfg_ConfigRule')
     $requiredFileIds = @{}
-    foreach ($rule in $rules) { $requiredFileIds[[string](Get-Field $rule 'FileID' '')] = $true }
+    foreach ($file in $files) { if ([int](Get-Field $file 'IsRequired' 0) -eq 1) { $requiredFileIds[[string](Get-Field $file 'FileID' '')] = $true } }
     $applications = @{}
     foreach ($app in @(Get-EnabledRows 'cfg_Application')) { $applications[[string](Get-Field $app 'ApplicationCode' '')] = $app }
     $policies = @{}
@@ -465,6 +477,14 @@ function Invoke-ServiceFileChecks {
 
 function Open-PreflightCatalog {
     param([Parameter(Mandatory)][string]$PackageRoot,[Parameter(Mandatory)][string]$CatalogPath,[Parameter(Mandatory)][object[]]$ManifestFiles)
+    # The modules run inside this process: each is compared with the manifest immediately before it is imported, as the host does with the engine file.
+    foreach ($relative in @('runtime/Sisqual.Runtime.Catalog.psm1','runtime/Sisqual.Runtime.Catalog.Core.ps1')) {
+        $entry = @($ManifestFiles | Where-Object { [string](Get-Field $_ 'path' '') -ceq $relative })
+        if ($entry.Count -ne 1) { throw 'RUNTIME_MODULE_MANIFEST_MISSING' }
+        $moduleFile = Join-Path $PackageRoot ($relative -replace '/',[string][IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $moduleFile -PathType Leaf)) { throw 'RUNTIME_CATALOG_MODULE_MISSING' }
+        if ((Get-FileHash -LiteralPath $moduleFile -Algorithm SHA256).Hash.ToLowerInvariant() -cne ([string](Get-Field $entry[0] 'sha256' '')).ToLowerInvariant()) { throw 'RUNTIME_MODULE_HASH_MISMATCH' }
+    }
     $catalogModule = Join-Path $PackageRoot 'runtime\Sisqual.Runtime.Catalog.psm1'
     if (-not (Test-Path -LiteralPath $catalogModule -PathType Leaf)) { throw 'RUNTIME_CATALOG_MODULE_MISSING' }
     Import-Module $catalogModule -Force -ErrorAction Stop
@@ -494,7 +514,10 @@ function Write-EngineResult {
     $errorCount = @($script:Issues | Where-Object Severity -eq 'ERROR').Count
     $warningCount = @($script:Issues | Where-Object Severity -eq 'WARNING').Count
     $targetCount = [Math]::Max(1,@(Get-SelectedInstances -Instances (Get-CatalogRows 'dbo_ManagedInstance') -RequestedCode ([string](Get-Field $script:Request 'instanceCode' ''))).Count)
-    $failedTargets = if ($errorCount -gt 0 -or $Cancelled) { 1 } else { 0 }
+    # A failed target is an instance with at least one ERROR; an ERROR that belongs to no instance (the catalog or the server) fails one target.
+    $failedInstanceCount = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and -not [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) } | ForEach-Object { [string]$_.InstanceCode } | Sort-Object -Unique).Count
+    $globalErrors = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) }).Count
+    $failedTargets = [Math]::Min($targetCount, $failedInstanceCount + $(if ($failedInstanceCount -eq 0 -and ($globalErrors -gt 0 -or $Cancelled)) { 1 } else { 0 }))
     $succeededTargets = if ($failedTargets -eq 0) { $targetCount } else { [Math]::Max(0,$targetCount - $failedTargets) }
     $severityOrder = @{ ERROR=0; WARNING=1; INFO=2 }
     $rows = foreach ($issue in @($script:Issues | Sort-Object @{Expression={$severityOrder[$_.Severity]}},Area,InstanceCode,Object)) {

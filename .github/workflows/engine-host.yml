@@ -112,6 +112,12 @@ jobs:
           pwsh -NoProfile -File .\tests\EngineHost\Test-DeploymentPreflightMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-7-deployment-preflight-mutations.log')
           exit $LASTEXITCODE
 
+      - name: Run DEPLOYMENT_PREFLIGHT schema conformance
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-DeploymentPreflightSchema.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-8-deployment-preflight-schema.log')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Publish the logs to a temporary results branch
         # A pull request from a fork or from Dependabot gets a read-only token, so the push would fail and turn the checks red.
         if: ${{ always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

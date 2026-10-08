@@ -129,8 +129,8 @@ CREATE TABLE dbo_ManagedInstance(InstanceCode TEXT,ServerCode TEXT,HostName TEXT
 INSERT INTO dbo_ManagedInstance VALUES('INST1','TESTSERVER','preflight-host.invalid','PT','C1','svc-user','web-user',X'0102','01',1);
 CREATE TABLE cfg_Application(ApplicationCode TEXT,PhysicalPathTemplate TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_Application VALUES('APP1','{INSTANCE_ROOT}\\App',1);
-CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,IsEnabled INTEGER);
-INSERT INTO cfg_ConfigFile VALUES(1,'APP1','config.json',1);
+CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,FileFormat TEXT,IsRequired INTEGER,IsEnabled INTEGER);
+INSERT INTO cfg_ConfigFile VALUES(1,'APP1','config.json','JSON',1,1);
 CREATE TABLE cfg_ConfigRule(RuleID INTEGER,RuleCode TEXT,FileID INTEGER,IsEnabled INTEGER);
 INSERT INTO cfg_ConfigRule VALUES(1,'APP_CONFIG',1,1);
 CREATE TABLE cfg_ConfigFileRepairPolicy(FileID INTEGER,RepairMode TEXT,IsEnabled INTEGER);
@@ -141,9 +141,9 @@ CREATE TABLE cfg_ManagedAssetDestination(AssetType TEXT,DestinationCode TEXT,IsE
 INSERT INTO cfg_ManagedAssetDestination VALUES('CUSTOMER_LOGO','APP',1);
 CREATE TABLE cfg_IisServerPolicy(ServerCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_IisServerPolicy VALUES('TESTSERVER',1);
-CREATE TABLE cfg_IisApplicationDefinition(ApplicationCode TEXT,IsEnabled INTEGER);
+CREATE TABLE cfg_IisApplicationDefinition(IisApplicationCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_IisApplicationDefinition VALUES('APP1',1);
-CREATE TABLE cfg_WebAccessPolicy(ServerCode TEXT,BackendUrlTemplate TEXT,PublicUrlTemplate TEXT,IsEnabled INTEGER);
+CREATE TABLE cfg_WebAccessPolicy(ServerCode TEXT,BackendBaseUrlTemplate TEXT,PublicLaunchBaseUrlTemplate TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_WebAccessPolicy VALUES('TESTSERVER','https://127.0.0.1:8443','https://{HOST_NAME}/',1);
 CREATE TABLE cfg_WebAccessTemplate(TemplateCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_WebAccessTemplate VALUES('ROOT_PAGE',1);
@@ -151,14 +151,14 @@ CREATE TABLE cfg_LinksPagePolicy(ServerCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_LinksPagePolicy VALUES('TESTSERVER',1);
 CREATE TABLE cfg_LinksProfile(ProfileCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_LinksProfile VALUES('DEFAULT',1);
-CREATE TABLE cfg_LinksProfileInstance(ProfileCode TEXT,InstanceCode TEXT,IsEnabled INTEGER);
-INSERT INTO cfg_LinksProfileInstance VALUES('DEFAULT','INST1',1);
+CREATE TABLE cfg_LinksProfileInstance(ProfileCode TEXT,InstanceCode TEXT);
+INSERT INTO cfg_LinksProfileInstance VALUES('DEFAULT','INST1');
 CREATE TABLE cfg_LinksPageTemplate(TemplateCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_LinksPageTemplate VALUES('INDEX',1);
 CREATE TABLE cfg_LinksPagePresentationResource(ResourceCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_LinksPagePresentationResource VALUES('TEXT',1);
-CREATE TABLE cfg_LinksPageAsset(AssetCode TEXT,CustomerCode TEXT,ContentSha256 TEXT,BinaryContent BLOB,IsEnabled INTEGER);
-INSERT INTO cfg_LinksPageAsset VALUES('QR_C1','C1','',X'01',1);
+CREATE TABLE cfg_LinksPageAsset(AssetCode TEXT,FileName TEXT,MimeType TEXT,Content BLOB,ContentSha256 TEXT,IsEnabled INTEGER,ModifiedAt TEXT);
+INSERT INTO cfg_LinksPageAsset VALUES('QR_CHANNEL_C1','qr.png','image/png',X'01','',1,NULL);
 CREATE TABLE cfg_PulseProfile(HubInstanceCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_PulseProfile VALUES('INST1',1);
 CREATE TABLE cfg_PulseHttpPolicy(ApplicationCode TEXT,IsEnabled INTEGER);
@@ -179,7 +179,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     New-Item -ItemType Directory -Path (Join-Path $package 'runtime') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $hostModule) 'Invoke-SisqualEngineLauncher.ps1') -Destination (Join-Path $package 'runtime/Invoke-SisqualEngineLauncher.ps1')
     New-Item -ItemType Directory -Path (Join-Path $package 'contracts') -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $package 'contracts/engine-secret-references.json'),'{"contractVersion":"0.1-proposed","engines":{"DEPLOYMENT_PREFLIGHT":["IIS_IDENTITY.*","WEB_ACCESS.*"]}}',[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $package 'contracts/engine-secret-references.json'),'{"contractVersion":"0.1-proposed","engines":{"DEPLOYMENT_PREFLIGHT":["IIS_IDENTITY.*"]}}',[Text.UTF8Encoding]::new($false))
     $entries = PackageEntries $package
     $manifest = [ordered]@{
         contractVersion='0.1-proposed'; packageId='00000000-0000-4000-8000-000000000111'; productVersion='0.0.0-test'; builtAt='2026-10-08T06:01:00Z'
@@ -189,8 +189,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     }
     [IO.File]::WriteAllText((Join-Path $package 'package-manifest.json'),($manifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
 
-    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!' }
-    $declared = @('IIS_IDENTITY.INST1','WEB_ACCESS.INST1')
+    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'IIS_IDENTITY.INST2'='canary-preflight-secret-B!' }
     $directResultPath = Join-Path $temp 'direct-preview-result.json'
     $directRequest = [ordered]@{
         contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000301'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
@@ -229,9 +228,9 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'normalized result arithmetic is valid' (([int]$result.summary.succeededTargets + [int]$result.summary.failedTargets) -le [int]$result.summary.targetCount -and [int]$result.summary.errorCount -eq 0)
     $serialized = $result | ConvertTo-Json -Compress -Depth 30
     Check 'canary A absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST1'],[StringComparison]::Ordinal))
-    Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['WEB_ACCESS.INST1'],[StringComparison]::Ordinal))
+    Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST2'],[StringComparison]::Ordinal))
 
-    $missingSecret = @{ 'WEB_ACCESS.INST1'='another-canary-value' }
+    $missingSecret = @{ 'IIS_IDENTITY.INST2'='another-canary-value' }
     $missing = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret
     $missingHasExpectedError = (-not [bool]$missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
     if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
