@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # only to publish the test logs to a temporary results/ branch
 
 concurrency:
   group: engine-host-${{ github.ref }}
@@ -41,34 +41,60 @@ jobs:
       - name: Run fake-engine direct conformance
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          .\tests\EngineHost\Test-FakeEngineDirect.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File .\tests\EngineHost\Test-FakeEngineDirect.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-1-direct.log')
+          exit $LASTEXITCODE
 
       - name: Run EngineHost fingerprint tests
+        if: success() || failure()
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          .\tests\EngineHost\Test-EngineHostFingerprints.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostFingerprints.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-2-fingerprints.log')
+          exit $LASTEXITCODE
 
       - name: Run EngineHost contract tests
+        if: success() || failure()
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          .\tests\EngineHost\Test-EngineHost.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHost.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-3-contract.log')
+          exit $LASTEXITCODE
 
       - name: Run EngineHost input mutation matrix
+        if: success() || failure()
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          .\tests\EngineHost\Test-EngineHostMutations.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-4-mutations.log')
+          exit $LASTEXITCODE
 
       - name: Verify EngineHost source mutation anchors
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostSourceMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-5-source-mutations.log')
+          exit $LASTEXITCODE
+
+      - name: Publish the logs to a temporary results branch
+        if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          .\tests\EngineHost\Test-EngineHostSourceMutations.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $stage = Join-Path $env:RUNNER_TEMP 'stage-log'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          foreach ($f in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter 'eh-*.log') {
+              $text = [IO.File]::ReadAllText($f.FullName)
+              $text = [regex]::Replace($text, '[^\x09\x0A\x20-\x7E]', '?')
+              if ($text.Length -gt 200000) { $text = $text.Substring(0, 200000) }
+              [IO.File]::WriteAllText((Join-Path $stage $f.Name), ($text -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+          }
+          if (-not (Get-ChildItem -LiteralPath $stage -Filter '*.log')) { [IO.File]::WriteAllText((Join-Path $stage 'eh-none.log'), 'no log was produced', [Text.UTF8Encoding]::new($false)) }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $tag = $env:GITHUB_RUN_ID + '-' + ('${{ matrix.os }}' -replace '[^a-z0-9]', '')
+          $branch = 'results/engine-host-' + $tag
+          git checkout --orphan $branch
+          git rm -rf -q --ignore-unmatch .
+          $dest = 'docs/phase1/evidence/engine-host-' + $tag
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item -Path (Join-Path $stage '*.log') -Destination $dest
+          git add -A
+          git commit -q -m ('results: engine host logs of run ' + $tag)
+          git push origin $branch
