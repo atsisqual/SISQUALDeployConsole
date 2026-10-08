@@ -32,14 +32,19 @@ namespace Sisqual.Runtime.EngineHost {
             var buffer = new char[4096];
             var builder = new StringBuilder();
             var utf8 = new UTF8Encoding(false, true);
-            var bytes = 0;
+            long bytes = 0;
+            var overflow = false;
             while (true) {
                 var read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                 if (read == 0) break;
+                // After the limit the content is thrown away but the pipe is still drained to its end: a reader that stopped would leave the
+                // engine blocked on a full pipe, and the host would wait for the whole timeout instead of reporting ENGINE_STREAM_LIMIT.
+                if (overflow) continue;
                 bytes += utf8.GetByteCount(buffer, 0, read);
-                if (bytes > maxBytes) throw new InvalidDataException("ENGINE_STREAM_LIMIT");
+                if (bytes > maxBytes) { overflow = true; builder.Clear(); continue; }
                 builder.Append(buffer, 0, read);
             }
+            if (overflow) throw new InvalidDataException("ENGINE_STREAM_LIMIT");
             return builder.ToString();
         }
     }
@@ -763,8 +768,10 @@ function Invoke-SisqualEngineHost {
         if ($exitCode -notin @(0,1,2,3)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('exit_code:' + [string]$exitCode) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         if ([string]::IsNullOrWhiteSpace($rawResultText)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'empty_result' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
 
-        try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String }
+        try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String -NoEnumerate }
         catch { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        # The root must be one object: a root array with a single element would otherwise be collapsed into that element and accepted.
+        if ($result -isnot [System.Management.Automation.PSCustomObject]) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         if (Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         if (-not (Test-SisqualEngineResultSafe -Result $result -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ExitCode $exitCode)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
 

@@ -204,6 +204,18 @@ switch ($scenario) {
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
+    'STREAM_FLOOD' {
+        # Far more than the limit and more than a pipe holds: a reader that stops at the limit leaves this engine blocked on a full pipe.
+        $chunk = 'X' * 65536
+        for ($i = 0; $i -lt 64; $i++) { [Console]::Out.Write($chunk) }
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'RESULT_ROOT_ARRAY' {
+        $json = '[' + ((New-Result $request $true) | ConvertTo-Json -Compress -Depth 30) + ']'
+        [IO.File]::WriteAllText([string]$request.resultPath, $json, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
     'STREAM_LIMIT' { [Console]::Out.Write(('X' * (1MB + 64KB))); exit 0 }
     'HANG_COOPERATIVE' {
         $limit = [DateTime]::UtcNow.AddSeconds(15)

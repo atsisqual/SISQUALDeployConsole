@@ -172,6 +172,11 @@ try {
     }
     finally { & $module { param($block) Set-Item -Path Function:New-SisqualEngineContainment -Value $block } $originalContainment }
 
+    $ctx = New-Ctx -Scenario 'STREAM_FLOOD'
+    $watch = [Diagnostics.Stopwatch]::StartNew(); $result = Run $ctx; $watch.Stop()
+    Check 'mutation: an engine that floods past the limit gets ENGINE_STREAM_LIMIT at once, not after the timeout' ($result.errorMessage -ceq 'ENGINE_STREAM_LIMIT' -and $watch.Elapsed.TotalSeconds -lt 4) (('{0} after {1:n1} s' -f $result.errorMessage, $watch.Elapsed.TotalSeconds))
+    $ctx = New-Ctx -Scenario 'RESULT_ROOT_ARRAY'; $result = Run $ctx
+    Check 'mutation: a valid result wrapped in a root array is ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX','SECRET_URL_FORM')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }

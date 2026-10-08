@@ -39,6 +39,8 @@ $anchors = @(
     [pscustomobject]@{ Name = 'declared secrets come from the approved package contract'; Text = 'Get-SisqualDeclaredSecretReferences -PackageRoot' },
     [pscustomobject]@{ Name = 'actions without an engine are classified before any engine is looked up'; Text = '# An action that does not run an engine (COMPOSITE, SQL) is classified before any engine is looked up' },
     [pscustomobject]@{ Name = 'a failed containment ends the launcher process'; Text = "catch { Stop-SisqualEngineProcessTree -Process `$process -Containment `$null; throw 'ENGINE_CONTAINMENT_FAILED' }" },
+    [pscustomobject]@{ Name = 'the stream reader keeps draining after the limit'; Text = 'if (overflow) continue;' },
+    [pscustomobject]@{ Name = 'the result root must be one object'; Text = 'ConvertFrom-Json -Depth 50 -DateKind String -NoEnumerate' },
     [pscustomobject]@{ Name = 'engine is contained in a job object'; Text = '$job.Assign($process.Handle)' },
     [pscustomobject]@{ Name = 'survivors are terminated through the job'; Text = '$job.TerminateSurvivors()' },
     [pscustomobject]@{ Name = 'the console host is not counted as a survivor'; Text = 'if (IsSystemConsoleHost(pid)) continue;' },
