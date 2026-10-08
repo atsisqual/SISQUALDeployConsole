@@ -50,10 +50,20 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     Set-SisqualTestCatalogRows -Session $built.CatalogSession -Engine $built.Engine -Action $built.Action
     return $built
 }
+function Get-ManifestWithSecretContract {
+    # The credential references an engine may receive come from the package contract, which is in the manifest like every other file.
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Declared)
+    $dir = Join-Path $Context.Root 'contracts'; [void][IO.Directory]::CreateDirectory($dir)
+    $path = Join-Path $dir 'engine-secret-references.json'
+    [IO.File]::WriteAllText($path, ([ordered]@{ contractVersion = '0.1-proposed'; engines = [ordered]@{ FAKE_ENGINE = @($Declared) } } | ConvertTo-Json -Depth 5 -Compress), [Text.UTF8Encoding]::new($false))
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return @(@($Context.Manifest | Where-Object { $_.path -cne 'contracts/engine-secret-references.json' }) + [pscustomobject]@{ path = 'contracts/engine-secret-references.json'; sha256 = $hash })
+}
 function Run {
     param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY', [string[]]$Declared = $null)
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    Invoke-SisqualEngineHost -ActionCode $Ctx.Action.ActionCode -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
+    $manifestForCall = if ($Secrets.Count -gt 0) { Get-ManifestWithSecretContract -Context $Ctx -Declared $Declared } else { $Ctx.Manifest }
+    Invoke-SisqualEngineHost -ActionCode $Ctx.Action.ActionCode -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $manifestForCall -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
@@ -146,6 +156,21 @@ try {
         }
         Check 'mutation: an orphaned grandchild is terminated through the job and the run is ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $alive)
     }
+
+    # A failed containment must not leave the gated launcher alive.
+    $module = Get-Module Sisqual.Runtime.EngineHost
+    $originalContainment = & $module { (Get-Item Function:New-SisqualEngineContainment).ScriptBlock }
+    & $module { Set-Item -Path Function:New-SisqualEngineContainment -Value { throw 'simulated containment failure' } }
+    try {
+        $ctx = New-Ctx
+        Check 'mutation: a failed containment is ENGINE_CONTAINMENT_FAILED' (Throws-Code { Run $ctx } 'ENGINE_CONTAINMENT_FAILED')
+        if ($IsWindows) {
+            Start-Sleep -Milliseconds 500
+            $leftover = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains([string]$ctx.Root) }).Count
+            Check 'mutation: a failed containment leaves no launcher process waiting for its gate' ($leftover -eq 0)
+        }
+    }
+    finally { & $module { param($block) Set-Item -Path Function:New-SisqualEngineContainment -Value $block } $originalContainment }
 
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX','SECRET_URL_FORM')) {

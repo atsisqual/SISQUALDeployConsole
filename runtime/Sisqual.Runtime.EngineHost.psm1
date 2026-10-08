@@ -8,6 +8,7 @@ $script:ResultLimitBytes = 4MB
 $script:StreamLimitBytes = 1MB
 $script:EngineLauncherPath = Join-Path $PSScriptRoot 'Invoke-SisqualEngineLauncher.ps1'
 $script:EngineLauncherManifestPath = 'runtime/Invoke-SisqualEngineLauncher.ps1'
+$script:SecretContractManifestPath = 'contracts/engine-secret-references.json'
 # After the engine has ended, how long the host waits for the redirected streams to reach end of file. It is counted from the moment the
 # engine ended, not from the engine deadline: after a cooperative cancellation that deadline has already passed.
 $script:StreamDrainSeconds = 5
@@ -439,6 +440,23 @@ function Test-SisqualEngineResultSafe {
     catch { return $false }
 }
 
+function Get-SisqualDeclaredSecretReferences {
+    # The credential references an engine may receive come from the approved contract of the package (contracts/engine-secret-references.json),
+    # verified against the signed manifest, never from an argument of the caller. An engine that is not in the contract may receive none.
+    param([Parameter(Mandatory)][string]$PackageRoot, [Parameter(Mandatory)][object[]]$ManifestEntries, [Parameter(Mandatory)][string]$EngineCode)
+    $path = Join-Path $PackageRoot ($script:SecretContractManifestPath -replace '/', [IO.Path]::DirectorySeparatorChar)
+    $expected = Get-SisqualManifestEngineHash $ManifestEntries $script:SecretContractManifestPath
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'ENGINE_SECRET_CONTRACT_INVALID' }
+    if ((Get-SisqualSha256Hex $path) -cne $expected) { throw 'ENGINE_SECRET_CONTRACT_INVALID' }
+    try { $contract = [IO.File]::ReadAllText($path, [Text.UTF8Encoding]::new($false, $true)) | ConvertFrom-Json -Depth 10 }
+    catch { throw 'ENGINE_SECRET_CONTRACT_INVALID' }
+    if ($null -eq $contract -or $contract.contractVersion -cne $script:EngineHostContractVersion -or $null -eq $contract.PSObject.Properties['engines']) { throw 'ENGINE_SECRET_CONTRACT_INVALID' }
+    $entry = $contract.engines.PSObject.Properties[$EngineCode]
+    if ($null -eq $entry) { return [string[]]@() }
+    foreach ($reference in @($entry.Value)) { if ($reference -isnot [string] -or $reference -cnotmatch '^[A-Z0-9_.:-]{1,120}$') { throw 'ENGINE_SECRET_CONTRACT_INVALID' } }
+    return [string[]]@($entry.Value)
+}
+
 function Test-SisqualAdministrator {
     if (-not $IsWindows) { return $false }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -524,7 +542,6 @@ function Invoke-SisqualEngineHost {
         [AllowNull()][string]$PlanFingerprint,
         [AllowNull()][string]$ConfirmationText,
         [System.Collections.IDictionary]$Secrets = @{},
-        [string[]]$DeclaredSecretReferences = @(),
         [string[]]$LockKeys = @(),
         [string]$OperationId = ([guid]::NewGuid().ToString()),
         [string]$PwshPath = (Get-Process -Id $PID).Path,
@@ -547,13 +564,15 @@ function Invoke-SisqualEngineHost {
     $actionReader = Get-Command -Name 'Get-SisqualRuntimeCatalogAction' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
     $engineReader = Get-Command -Name 'Get-SisqualRuntimeCatalogEngine' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
     if ($null -eq $actionReader -or $null -eq $engineReader) { throw 'CATALOG_SESSION_REQUIRED' }
-    try {
-        $Action = & $actionReader -Session $CatalogSession -ActionCode $ActionCode
-        $Engine = $null
-        if ($null -ne $Action) { $Engine = & $engineReader -Session $CatalogSession -EngineCode ([string](Get-SisqualMemberValue $Action 'EngineCode' '')) }
-    }
+    try { $Action = & $actionReader -Session $CatalogSession -ActionCode $ActionCode }
     catch { throw 'CATALOG_SESSION_INVALID' }
     if ($null -eq $Action) { throw 'ACTION_NOT_FOUND' }
+    # An action that does not run an engine (COMPOSITE, SQL) is classified before any engine is looked up: it has no engine code to resolve.
+    $actionType = [string](Get-SisqualMemberValue $Action 'ActionType' 'ENGINE')
+    if ($actionType -ceq 'SQL') { throw 'ACTION_TYPE_NOT_SUPPORTED' }
+    if ($actionType -cne 'ENGINE') { throw 'ACTION_TYPE_REQUIRES_ORCHESTRATOR' }
+    try { $Engine = & $engineReader -Session $CatalogSession -EngineCode ([string](Get-SisqualMemberValue $Action 'EngineCode' '')) }
+    catch { throw 'CATALOG_SESSION_INVALID' }
     if ($null -eq $Engine) { throw 'ENGINE_NOT_FOUND' }
     $engineCode = [string](Get-SisqualMemberValue $Engine 'EngineCode' '')
     $engineVersion = [string](Get-SisqualMemberValue $Engine 'EngineVersion' '0.0.0')
@@ -563,9 +582,6 @@ function Invoke-SisqualEngineHost {
     $actionEngineCode = [string](Get-SisqualMemberValue $Action 'EngineCode' '')
     if ($actionEngineCode -cne $engineCode) { throw 'ACTION_ENGINE_MISMATCH' }
 
-    $actionType = [string](Get-SisqualMemberValue $Action 'ActionType' 'ENGINE')
-    if ($actionType -ceq 'SQL') { throw 'ACTION_TYPE_NOT_SUPPORTED' }
-    if ($actionType -cne 'ENGINE') { throw 'ACTION_TYPE_REQUIRES_ORCHESTRATOR' }
     $modePolicy = [string](Get-SisqualMemberValue $Action 'ModePolicy' 'NONE')
     if (($modePolicy -ceq 'NONE' -or $EngineClass -ceq 'READ_ONLY') -and $Mode -cne 'PREVIEW') { throw 'READ_ONLY_APPLY_NOT_ALLOWED' }
     # What may be killed on a timeout never depends on the class a caller declares: only an action that cannot apply (ModePolicy NONE, read from the
@@ -603,10 +619,12 @@ function Invoke-SisqualEngineHost {
         if ($null -eq $catalogInstance) { throw 'INSTANCE_NOT_FOUND' }
         if ([int]$catalogInstance.IsEnabled -ne 1) { throw 'INSTANCE_DISABLED' }
     }
-    # ADR-0008 item 3: the request carries only the credential references the engine specification declares. Anything else is a caller error and nothing is started.
-    if ($null -ne $Secrets) {
+    # ADR-0008 item 3: the request carries only the credential references the approved contract of the package declares for this engine. Anything else is
+    # a caller error and nothing is started. The contract is read only when secrets are supplied.
+    if ($null -ne $Secrets -and @($Secrets.Keys).Count -gt 0) {
+        $declaredSecretReferences = @(Get-SisqualDeclaredSecretReferences -PackageRoot $PackageRoot -ManifestEntries $ManifestEntries -EngineCode $engineCode)
         foreach ($secretReference in @($Secrets.Keys)) {
-            if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or @($DeclaredSecretReferences) -cnotcontains [string]$secretReference) { throw 'SECRET_NOT_DECLARED' }
+            if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or $declaredSecretReferences -cnotcontains [string]$secretReference) { throw 'SECRET_NOT_DECLARED' }
         }
     }
     [string[]]$normalizedLocks = @($LockKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)
@@ -653,11 +671,12 @@ function Invoke-SisqualEngineHost {
     $started = [DateTime]::UtcNow; $keepRunDirectory = $false; $job = $null
     try {
         if (-not $process.Start()) { throw 'ENGINE_START_FAILED' }
-        $job = New-SisqualEngineContainment
-        if ($null -ne $job) {
-            try { $job.Assign($process.Handle) }
-            catch { Stop-SisqualEngineProcessTree -Process $process -Containment $null; throw 'ENGINE_CONTAINMENT_FAILED' }
+        # The launcher is waiting for its gate line and must not outlive a failed containment: whatever fails here ends the process.
+        try {
+            $job = New-SisqualEngineContainment
+            if ($null -ne $job) { $job.Assign($process.Handle) }
         }
+        catch { Stop-SisqualEngineProcessTree -Process $process -Containment $null; throw 'ENGINE_CONTAINMENT_FAILED' }
         $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
         $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
         $deadlineAt = $started.AddSeconds($timeoutSeconds)

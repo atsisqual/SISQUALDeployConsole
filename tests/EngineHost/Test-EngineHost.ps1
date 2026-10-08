@@ -109,6 +109,16 @@ function New-TestContext {
     return $built
 }
 
+function Get-ManifestWithSecretContract {
+    # The credential references an engine may receive come from the package contract, which is in the manifest like every other file.
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Declared)
+    $dir = Join-Path $Context.Root 'contracts'; [void][IO.Directory]::CreateDirectory($dir)
+    $path = Join-Path $dir 'engine-secret-references.json'
+    [IO.File]::WriteAllText($path, ([ordered]@{ contractVersion = '0.1-proposed'; engines = [ordered]@{ FAKE_ENGINE = @($Declared) } } | ConvertTo-Json -Depth 5 -Compress), [Text.UTF8Encoding]::new($false))
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return @(@($Context.Manifest | Where-Object { $_.path -cne 'contracts/engine-secret-references.json' }) + [pscustomobject]@{ path = 'contracts/engine-secret-references.json'; sha256 = $hash })
+}
+
 function Invoke-TestHost {
     param(
         [object]$Context,
@@ -120,7 +130,8 @@ function Invoke-TestHost {
         [string]$Instance = $null
     )
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    return Invoke-SisqualEngineHost -ActionCode $Context.Action.ActionCode -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $(if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { $Context.Scenario }) -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
+    $manifestForCall = if ($Secrets.Count -gt 0) { Get-ManifestWithSecretContract -Context $Context -Declared $Declared } else { $Context.Manifest }
+    return Invoke-SisqualEngineHost -ActionCode $Context.Action.ActionCode -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $manifestForCall -Mode $Mode -InstanceCode $(if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { $Context.Scenario }) -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -293,6 +304,21 @@ try {
     $noLauncher = @($launcherCtx.Manifest | Where-Object { $_.path -cne 'runtime/Invoke-SisqualEngineLauncher.ps1' })
     Check 'a launcher that does not match its manifest entry is not run' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $launcherCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $launcherCtx.Root -CatalogPath $launcherCtx.Catalog -CatalogSession $launcherCtx.CatalogSession -ManifestEntries $badLauncher -InstanceCode $launcherCtx.Scenario } 'ENGINE_LAUNCHER_HASH_MISMATCH')
     Check 'a launcher with no manifest entry is not run' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $launcherCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $launcherCtx.Root -CatalogPath $launcherCtx.Catalog -CatalogSession $launcherCtx.CatalogSession -ManifestEntries $noLauncher -InstanceCode $launcherCtx.Scenario } 'ENGINE_MANIFEST_ENTRY_INVALID')
+
+    # ADR-0008 item 3: the credential references an engine may receive come from the approved package contract, not from an argument.
+    $secretParameters = (Get-Command Invoke-SisqualEngineHost).Parameters
+    Check 'the host no longer accepts a list of declared secrets from the caller' (-not $secretParameters.ContainsKey('DeclaredSecretReferences'))
+    $contractCtx = New-TestContext
+    $goodContract = Get-ManifestWithSecretContract -Context $contractCtx -Declared @('TEST_SECRET')
+    $tamperedContract = @($goodContract | ForEach-Object { if ($_.path -ceq 'contracts/engine-secret-references.json') { [pscustomobject]@{ path = $_.path; sha256 = ('0' * 64) } } else { $_ } })
+    Check 'a secret contract that does not match its manifest entry is not trusted' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $contractCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $contractCtx.Root -CatalogPath $contractCtx.Catalog -CatalogSession $contractCtx.CatalogSession -ManifestEntries $tamperedContract -InstanceCode $contractCtx.Scenario -Secrets @{ TEST_SECRET = 'a' } } 'ENGINE_SECRET_CONTRACT_INVALID')
+    Check 'supplying secrets without a contract entry in the manifest is refused' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $contractCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $contractCtx.Root -CatalogPath $contractCtx.Catalog -CatalogSession $contractCtx.CatalogSession -ManifestEntries $contractCtx.Manifest -InstanceCode $contractCtx.Scenario -Secrets @{ TEST_SECRET = 'a' } } 'ENGINE_MANIFEST_ENTRY_INVALID')
+    Check 'an adapter cannot widen the contract: a secret that the contract does not list is refused' (Throws-Code { Invoke-TestHost -Context $contractCtx -Secrets @{ TEST_SECRET = 'a'; EXTRA_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
+    # An action that does not run an engine is classified before any engine is looked up.
+    $composite = New-TestContext; $composite.Action.ActionType = 'COMPOSITE'; $composite.Action.EngineCode = $null
+    Check 'a composite action without an engine code is classified, not looked up as an engine' (Throws-Code { Invoke-TestHost -Context $composite } 'ACTION_TYPE_REQUIRES_ORCHESTRATOR')
+    $sqlAction = New-TestContext; $sqlAction.Action.ActionType = 'SQL'; $sqlAction.Action.EngineCode = ''
+    Check 'a SQL action without an engine code is refused as unsupported, not as an invalid session' (Throws-Code { Invoke-TestHost -Context $sqlAction } 'ACTION_TYPE_NOT_SUPPORTED')
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()
