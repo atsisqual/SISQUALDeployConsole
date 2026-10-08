@@ -53,14 +53,14 @@ Facts from the source snapshot (`ManagementSync.sql`, nightly of 2026-10-07):
 5. [DECIDED 2026-10-07] The console runs elevated only if an enabled engine requires administrator; otherwise those engines are listed as unavailable. [V] Check on a real server.
 6. [DECIDED 2026-10-07] A mutable engine that times out is never killed by the host (item 10). Recommendation: accept.
 
-## Amendments awaiting owner approval (2026-10-08)
+## Amendments approved by the owner (2026-10-08)
 
-These were added while the host was reviewed. They change what an engine receives or sees, and `AGENTS.md` requires approval before an engine input or result contract changes, so until the owner approves them they are `[PROPOSED]` and are not part of the accepted decision above (the text above describes what the code now does).
+These were added while the host was reviewed. They change what an engine receives or sees, and `AGENTS.md` requires approval before an engine input or result contract changes. The owner approved the four on 2026-10-08 ("A", answering whether to approve them) and they are part of the accepted decision; the text above describes what the code does.
 
-1. [PROPOSED] The credential references an engine may receive are declared in the package contract `contracts/engine-secret-references.json`, verified against the signed manifest, not by an argument of the caller (item 3).
-2. [PROPOSED] The engine is started through a host-owned launcher: the first line on standard input is `GO`, sent only after the process is in the job object, and the request follows as before. An engine must end with an explicit `exit` (items 1 and 2).
-3. [PROPOSED] The engine starts with a minimal allowlisted environment, not the console's own (item 2).
-4. [PROPOSED] What the host may kill on a timeout follows the action's `ModePolicy` (`NONE` only), not a class declared by the caller (item 10).
+1. [DECIDED 2026-10-08] The credential references an engine may receive are declared in the package contract `contracts/engine-secret-references.json`, verified against the signed manifest, not by an argument of the caller (item 3).
+2. [DECIDED 2026-10-08] The engine is started through a host-owned launcher: the first line on standard input is `GO`, sent only after the process is in the job object, and the request follows as before. An engine must end with an explicit `exit` (items 1 and 2).
+3. [DECIDED 2026-10-08] The engine starts with a minimal allowlisted environment, not the console's own (item 2).
+4. [DECIDED 2026-10-08] What the host may kill on a timeout follows the action's `ModePolicy` (`NONE` only), not a class declared by the caller (item 10).
 
 ## Trust boundary of the host
 
