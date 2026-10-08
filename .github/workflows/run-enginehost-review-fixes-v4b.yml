@@ -1,0 +1,29 @@
+name: run-enginehost-review-fixes-v4b
+
+on:
+  push:
+    branches:
+      - engine-host/adr-0008-runtime
+    paths:
+      - '.github/scripts/Run-EngineHostReviewFixesV4b.ps1'
+      - '.github/workflows/run-enginehost-review-fixes-v4b.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Run corrected final EngineHost proof
+        shell: pwsh
+        run: ./.github/scripts/Run-EngineHostReviewFixesV4b.ps1
