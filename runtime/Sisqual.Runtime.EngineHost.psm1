@@ -97,18 +97,28 @@ namespace Sisqual.Runtime.EngineHost {
             catch { return false; }
         }
 
-        // Terminates every process still in the job and returns the names of the survivors, not counting the engine's console host.
-        public string[] TerminateSurvivors() {
+        private List<string> SurvivorNames() {
             var names = new List<string>();
             var members = Members();
-            if (members == null) names.Add("unknown");
-            else {
-                foreach (var pid in members) {
-                    if (IsSystemConsoleHost(pid)) continue;
-                    try { using (var process = Process.GetProcessById(pid)) names.Add(process.ProcessName); }
-                    catch (ArgumentException) { /* it exited after the list was read (for example the engine's console host): not a survivor */ }
-                    catch { names.Add("unknown"); }
-                }
+            if (members == null) { names.Add("unknown"); return names; }
+            foreach (var pid in members) {
+                if (IsSystemConsoleHost(pid)) continue;
+                try { using (var process = Process.GetProcessById(pid)) names.Add(process.ProcessName); }
+                catch (ArgumentException) { /* it exited after the list was read: not a survivor */ }
+                catch { names.Add("unknown"); }
+            }
+            return names;
+        }
+
+        // Terminates every process still in the job and returns the names of the survivors. A survivor is a process that is still
+        // alive after a short settling time: the engine's own console host and other helpers that are only finishing are not.
+        public string[] TerminateSurvivors() {
+            var deadline = DateTime.UtcNow.AddMilliseconds(500);
+            List<string> names;
+            while (true) {
+                names = SurvivorNames();
+                if (names.Count == 0 || DateTime.UtcNow >= deadline) break;
+                System.Threading.Thread.Sleep(50);
             }
             TerminateAll();
             return names.ToArray();

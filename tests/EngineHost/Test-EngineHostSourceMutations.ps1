@@ -32,6 +32,7 @@ $anchors = @(
     [pscustomobject]@{ Name = 'survivors are terminated through the job'; Text = '$job.TerminateSurvivors()' },
     [pscustomobject]@{ Name = 'the console host is not counted as a survivor'; Text = 'if (IsSystemConsoleHost(pid)) continue;' },
     [pscustomobject]@{ Name = 'a member that already exited is not a survivor'; Text = 'catch (ArgumentException) {' },
+    [pscustomobject]@{ Name = 'survivors are those still alive after a settling time'; Text = 'if (names.Count == 0 || DateTime.UtcNow >= deadline) break;' },
     [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason; instance = [string]$InstanceCode' },
     [pscustomobject]@{ Name = 'machine ownership uses the operating system name'; Text = '[Environment]::MachineName' },
     [pscustomobject]@{ Name = 'only declared secrets are forwarded'; Text = "throw 'SECRET_NOT_DECLARED'" },
