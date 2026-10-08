@@ -559,7 +559,8 @@ function Invoke-SisqualEngineHost {
         $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
         $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
         $deadlineAt = $started.AddSeconds($timeoutSeconds)
-        $stdinTask = $process.StandardInput.WriteAsync($requestJson)
+        $requestBytes = [Text.UTF8Encoding]::new($false).GetBytes($requestJson)
+        $stdinTask = $process.StandardInput.BaseStream.WriteAsync($requestBytes, 0, $requestBytes.Length)
         $stdinClosed = $false
         $stdinWriteFailed = $false
         while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadlineAt) {

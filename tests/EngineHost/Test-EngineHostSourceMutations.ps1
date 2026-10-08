@@ -20,7 +20,7 @@ $anchors = @(
     [pscustomobject]@{ Name = 'Seal-Package canonical serializer reused'; Text = 'function ConvertTo-SisqualCanonicalJson' },
     [pscustomobject]@{ Name = 'decoded result secret scan'; Text = 'Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets' },
     [pscustomobject]@{ Name = 'failed completion audit helper'; Text = 'function New-SisqualLoggedEngineFailureResult' },
-    [pscustomobject]@{ Name = 'async stdin write'; Text = 'StandardInput.WriteAsync($requestJson)' },
+    [pscustomobject]@{ Name = 'async stdin byte write'; Text = 'StandardInput.BaseStream.WriteAsync($requestBytes, 0, $requestBytes.Length)' },
     [pscustomobject]@{ Name = 'catalog path verification'; Text = 'Get-SisqualVerifiedCatalogPath -PackageRoot' },
     [pscustomobject]@{ Name = 'action enabled guard'; Text = "throw 'ACTION_DISABLED'" },
     [pscustomobject]@{ Name = 'action engine mapping guard'; Text = "throw 'ACTION_ENGINE_MISMATCH'" },
