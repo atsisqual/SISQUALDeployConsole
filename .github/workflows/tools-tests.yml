@@ -129,7 +129,8 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Publish the logs to a temporary results branch
-        if: always()
+        # A pull request from a fork or from Dependabot gets a read-only token, so the push would fail and turn the checks red.
+        if: ${{ always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

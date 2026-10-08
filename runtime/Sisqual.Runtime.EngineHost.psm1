@@ -6,6 +6,7 @@ $script:EngineHostContractVersion = '0.1-proposed'
 $script:RequestLimitBytes = 1MB
 $script:ResultLimitBytes = 4MB
 $script:StreamLimitBytes = 1MB
+$script:EngineLauncherPath = Join-Path $PSScriptRoot 'Invoke-SisqualEngineLauncher.ps1'
 # After the engine has ended, how long the host waits for the redirected streams to reach end of file. It is counted from the moment the
 # engine ended, not from the engine deadline: after a cooperative cancellation that deadline has already passed.
 $script:StreamDrainSeconds = 5
@@ -295,6 +296,7 @@ function Get-SisqualSecretRepresentations {
         [void]$representations.Add($value)
         [void]$representations.Add([Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($value)))
         [void]$representations.Add([Uri]::EscapeDataString($value))
+        [void]$representations.Add([System.Net.WebUtility]::UrlEncode($value))
         $jsonLiteral = ConvertTo-Json -InputObject $value -Compress
         if ($jsonLiteral.Length -ge 2 -and $jsonLiteral[0] -eq '"' -and $jsonLiteral[$jsonLiteral.Length - 1] -eq '"') {
             [void]$representations.Add($jsonLiteral.Substring(1, $jsonLiteral.Length - 2))
@@ -320,6 +322,15 @@ function Find-SisqualSecretLeak {
         if (-not $decodedText.Equals($text, [StringComparison]::Ordinal)) {
             foreach ($representation in $representations) {
                 if ($decodedText.Contains($representation, [StringComparison]::Ordinal)) { return $true }
+            }
+        }
+
+        # application/x-www-form-urlencoded writes a space as '+' (and the percent escapes in any case), which EscapeDataString does not decode.
+        $formDecoded = $text
+        try { $formDecoded = [System.Net.WebUtility]::UrlDecode($text) } catch { $formDecoded = $text }
+        if (-not $formDecoded.Equals($text, [StringComparison]::Ordinal)) {
+            foreach ($representation in $representations) {
+                if ($formDecoded.Contains($representation, [StringComparison]::Ordinal)) { return $true }
             }
         }
     }
@@ -606,7 +617,8 @@ function Invoke-SisqualEngineHost {
     $startInfo.FileName = $PwshPath; $startInfo.UseShellExecute = $false; $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardInput = $true; $startInfo.RedirectStandardOutput = $true; $startInfo.RedirectStandardError = $true
     $startInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false); $startInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false); $startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
-    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-File',$enginePath)) { [void]$startInfo.ArgumentList.Add($argument) }
+    if (-not (Test-Path -LiteralPath $script:EngineLauncherPath -PathType Leaf)) { throw 'ENGINE_LAUNCHER_MISSING' }
+    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-File',$script:EngineLauncherPath,'-EnginePath',$enginePath)) { [void]$startInfo.ArgumentList.Add($argument) }
     $startInfo.Environment.Clear()
     foreach ($variableName in $script:EngineEnvironmentAllowlist) {
         $variableValue = [Environment]::GetEnvironmentVariable($variableName)
@@ -625,7 +637,8 @@ function Invoke-SisqualEngineHost {
         $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
         $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
         $deadlineAt = $started.AddSeconds($timeoutSeconds)
-        $requestBytes = [Text.UTF8Encoding]::new($false).GetBytes($requestJson)
+        # The first line is the gate of the launcher: it is sent only now, after the process is in the job object.
+        $requestBytes = [Text.UTF8Encoding]::new($false).GetBytes("GO`n" + $requestJson)
         $stdinTask = $process.StandardInput.BaseStream.WriteAsync($requestBytes, 0, $requestBytes.Length)
         $stdinClosed = $false
         $stdinWriteFailed = $false

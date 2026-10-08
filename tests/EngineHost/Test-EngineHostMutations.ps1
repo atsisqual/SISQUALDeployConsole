@@ -118,6 +118,19 @@ try {
     $ctx = New-Ctx -Scenario 'INVALID_UTF8_RESULT'; $result = Run $ctx
     Check 'mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
 
+    # The launcher gate: a helper started during the engine's own initialisation is inside the job object as well.
+    if ($IsWindows) {
+        $ctx = New-Ctx
+        $earlyMarker = [guid]::NewGuid().ToString('N')
+        [IO.File]::WriteAllText((Join-Path (Join-Path $ctx.Root 'engines') 'early-helper.flag'), $earlyMarker)
+        $result = Run $ctx
+        $earlyAlive = $true
+        for ($i = 0; $i -lt 20 -and $earlyAlive; $i++) {
+            $earlyAlive = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($earlyMarker) }).Count -gt 0
+            if ($earlyAlive) { Start-Sleep -Milliseconds 250 }
+        }
+        Check 'mutation: a helper started during engine initialisation is inside the job (launcher gate) and is terminated' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $earlyAlive)
+    }
     # Containment: everything the engine starts lives in a job object, so an orphaned grandchild is reached without any process id logic.
     if ($IsWindows) {
         $ctx = New-Ctx -Scenario 'GRANDCHILD'; $result = Run $ctx
@@ -131,7 +144,7 @@ try {
     }
 
     $canary = 'canary value/+with?encoding=1'
-    foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
+    foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX','SECRET_URL_FORM')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
         Check ("mutation: encoded secret detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
     }

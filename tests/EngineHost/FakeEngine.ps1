@@ -52,6 +52,15 @@ function Write-ResultFile {
     [IO.File]::WriteAllText([string]$Request.resultPath, ($Result | ConvertTo-Json -Compress -Depth 30), [Text.UTF8Encoding]::new($false))
 }
 
+# Test hook: start a helper during initialisation, before the request is read (what the launcher gate must keep inside the job object).
+$earlyFlag = Join-Path $PSScriptRoot 'early-helper.flag'
+if (Test-Path -LiteralPath $earlyFlag -PathType Leaf) {
+    $earlyInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+    $earlyInfo.UseShellExecute = $false
+    $earlyInfo.CreateNoWindow = $true
+    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',('Start-Sleep -Seconds 40 # ' + ([IO.File]::ReadAllText($earlyFlag)).Trim()))) { [void]$earlyInfo.ArgumentList.Add($argument) }
+    [void][Diagnostics.Process]::Start($earlyInfo)
+}
 # The test hook is a file next to the engine, not an environment variable: the host starts engines with a minimal environment.
 $delayFile = Join-Path $PSScriptRoot 'delay-stdin.ms'
 $delayText = if (Test-Path -LiteralPath $delayFile -PathType Leaf) { ([IO.File]::ReadAllText($delayFile)).Trim() } else { '' }
@@ -106,6 +115,11 @@ switch ($scenario) {
     }
     'SECRET_URL' {
         [Console]::Error.WriteLine([Uri]::EscapeDataString($secretValue))
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_URL_FORM' {
+        [Console]::Error.WriteLine([System.Net.WebUtility]::UrlEncode($secretValue))
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
