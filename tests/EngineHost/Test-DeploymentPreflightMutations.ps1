@@ -11,6 +11,27 @@ function Check([string]$Name,[bool]$Condition) {
     if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) }
     else { $script:Failed++; Write-Host ('FAIL  ' + $Name) }
 }
+function Invoke-ProbeProcess([string]$ScriptPath,[object]$Request) {
+    $info = [Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = (Get-Process -Id $PID).Path
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-File',$ScriptPath)) { [void]$info.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::new(); $process.StartInfo = $info
+    try {
+        [void]$process.Start()
+        $process.StandardInput.Write(($Request | ConvertTo-Json -Compress -Depth 30))
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode=$process.ExitCode; Stdout=$stdout; Stderr=$stderr }
+    }
+    finally { $process.Dispose() }
+}
 
 $reviewNames = @(
     'MANAGEMENT_MODEL','APPLICATION_CATALOG','MANAGED_ASSETS','REPAIR_MODEL','IIS_MODEL','EXTENDED_APPLICATIONS',
@@ -62,6 +83,40 @@ Check 'MUTATION introduce executable text primitive is detected' (-not (Test-Sou
 
 $mutatedCatalogCommandText = $source + "`n`$rows = Get-CatalogRows 'ops_ReviewDefinition'; `$unsafe = `$rows[0].CommandText"
 Check 'MUTATION read catalog review CommandText is detected' (-not (Test-SourceContract $mutatedCatalogCommandText))
+
+# Instrument a temporary copy only: each invalid-request gate gets a distinct exit code.
+# A valid request should pass all of them and reach the later package/catalog failure path instead.
+$instrumented = $source
+$gateReplacements = [ordered]@{
+    "if ([string]::IsNullOrWhiteSpace(`$raw) -or [Text.UTF8Encoding]::new(`$false).GetByteCount(`$raw) -gt 1MB) { Exit-InvalidRequest }" = "if ([string]::IsNullOrWhiteSpace(`$raw) -or [Text.UTF8Encoding]::new(`$false).GetByteCount(`$raw) -gt 1MB) { exit 21 }"
+    "if (`$null -eq `$script:Request.PSObject.Properties[`$name]) { Exit-InvalidRequest }" = "if (`$null -eq `$script:Request.PSObject.Properties[`$name]) { exit 22 }"
+    "if ([string](Get-Field `$script:Request 'contractVersion' '') -cne `$script:ContractVersion) { Exit-InvalidRequest }" = "if ([string](Get-Field `$script:Request 'contractVersion' '') -cne `$script:ContractVersion) { exit 23 }"
+    "if ([string](Get-Field `$script:Request 'engineCode' '') -cne `$script:EngineCode) { Exit-InvalidRequest }" = "if ([string](Get-Field `$script:Request 'engineCode' '') -cne `$script:EngineCode) { exit 24 }"
+    "if ([string](Get-Field `$script:Request 'mode' '') -cne 'PREVIEW') { Exit-InvalidRequest }" = "if ([string](Get-Field `$script:Request 'mode' '') -cne 'PREVIEW') { exit 25 }"
+    "if ([string](Get-Field `$script:Request 'operationId' '') -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { Exit-InvalidRequest }" = "if ([string](Get-Field `$script:Request 'operationId' '') -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { exit 26 }"
+    "if (-not [IO.Path]::IsPathFullyQualified(`$catalogPath) -or -not (Test-Path -LiteralPath `$catalogPath -PathType Leaf) -or [string]::IsNullOrWhiteSpace(`$resultPath)) { Exit-InvalidRequest }" = "if (-not [IO.Path]::IsPathFullyQualified(`$catalogPath) -or -not (Test-Path -LiteralPath `$catalogPath -PathType Leaf) -or [string]::IsNullOrWhiteSpace(`$resultPath)) { exit 27 }"
+    "if (-not [datetime]::TryParseExact([string](Get-Field `$script:Request 'deadlineUtc' ''),'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal,[ref]`$deadline)) { Exit-InvalidRequest }" = "if (-not [datetime]::TryParseExact([string](Get-Field `$script:Request 'deadlineUtc' ''),'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal,[ref]`$deadline)) { exit 28 }"
+    "catch { Exit-InvalidRequest }" = "catch { exit 29 }"
+}
+foreach ($replacement in $gateReplacements.GetEnumerator()) {
+    Check ('diagnostic gate source exists before instrumentation: ' + $replacement.Value.Substring($replacement.Value.LastIndexOf('exit '))) ($instrumented.Contains([string]$replacement.Key,[StringComparison]::Ordinal))
+    $instrumented = $instrumented.Replace([string]$replacement.Key,[string]$replacement.Value)
+}
+$probeRoot = Join-Path $env:TEMP ('sisqual-preflight-gate-probe-' + [guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path (Join-Path $probeRoot 'engines') -Force | Out-Null
+    $probeScript = Join-Path $probeRoot 'engines\Invoke-DeploymentPreflight.ps1'
+    [IO.File]::WriteAllText($probeScript,$instrumented,[Text.UTF8Encoding]::new($false))
+    $probeRequest = [ordered]@{
+        contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000401'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
+        catalogPath=$sourcePath; planFingerprint=$null; deadlineUtc=$deadlineText; cancelPath=(Join-Path $probeRoot 'cancel'); resultPath=(Join-Path $probeRoot 'result.json'); secrets=@{}
+    }
+    $probe = Invoke-ProbeProcess -ScriptPath $probeScript -Request $probeRequest
+    $gateNames = @{ 21='raw-size';22='required-property';23='contract-version';24='engine-code';25='mode';26='operation-id';27='catalog-or-result-path';28='deadline';29='unexpected-validation-exception' }
+    if ($gateNames.ContainsKey([int]$probe.ExitCode)) { Write-Host ('DIAG  instrumented-envelope: gate={0}; exitCode={1}' -f $gateNames[[int]$probe.ExitCode],$probe.ExitCode) }
+    Check 'instrumented valid envelope passes every invalid-request gate' (-not $gateNames.ContainsKey([int]$probe.ExitCode) -and $probe.ExitCode -ne 2)
+}
+finally { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 Write-Host ("SUMMARY: {0} passed, {1} failed" -f $script:Passed,$script:Failed)
 if ($script:Failed -gt 0) { exit 1 }
