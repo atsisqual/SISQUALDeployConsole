@@ -31,6 +31,7 @@ $anchors = @(
     [pscustomobject]@{ Name = 'engine is contained in a job object'; Text = '$job.Assign($process.Handle)' },
     [pscustomobject]@{ Name = 'survivors are terminated through the job'; Text = '$job.TerminateSurvivors()' },
     [pscustomobject]@{ Name = 'the console host is not counted as a survivor'; Text = 'if (IsSystemConsoleHost(pid)) continue;' },
+    [pscustomobject]@{ Name = 'a member that already exited is not a survivor'; Text = 'catch (ArgumentException) {' },
     [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason; instance = [string]$InstanceCode' },
     [pscustomobject]@{ Name = 'machine ownership uses the operating system name'; Text = '[Environment]::MachineName' },
     [pscustomobject]@{ Name = 'only declared secrets are forwarded'; Text = "throw 'SECRET_NOT_DECLARED'" },

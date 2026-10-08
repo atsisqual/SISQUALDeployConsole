@@ -106,6 +106,7 @@ namespace Sisqual.Runtime.EngineHost {
                 foreach (var pid in members) {
                     if (IsSystemConsoleHost(pid)) continue;
                     try { using (var process = Process.GetProcessById(pid)) names.Add(process.ProcessName); }
+                    catch (ArgumentException) { /* it exited after the list was read (for example the engine's console host): not a survivor */ }
                     catch { names.Add("unknown"); }
                 }
             }
