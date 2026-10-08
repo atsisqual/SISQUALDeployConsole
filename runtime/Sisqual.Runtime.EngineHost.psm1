@@ -445,6 +445,24 @@ function Test-SisqualEngineResultSafe {
     catch { return $false }
 }
 
+function Test-SisqualSecretReferenceShape {
+    # A reference in the contract is either exact (KIND.CODE and similar) or a kind wildcard KIND.* for references that exist per instance or rule.
+    param([string]$Reference)
+    return ($Reference -cmatch '^[A-Z0-9_.:-]{1,120}$' -or $Reference -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN|RULE_SECRET)\.\*$')
+}
+
+function Test-SisqualSecretReferenceDeclared {
+    param([string]$Reference, [string[]]$Declared)
+    foreach ($item in $Declared) {
+        if ([string]::Equals($Reference, $item, [StringComparison]::Ordinal)) { return $true }
+        if ($item -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN|RULE_SECRET)\.\*$') {
+            $prefix = $item.Substring(0, $item.Length - 1)
+            if ($Reference.StartsWith($prefix, [StringComparison]::Ordinal) -and $Reference.Substring($prefix.Length) -cmatch '^[A-Z0-9_-]{1,60}$') { return $true }
+        }
+    }
+    return $false
+}
+
 function Get-SisqualDeclaredSecretReferences {
     # The credential references an engine may receive come from the approved contract of the package (contracts/engine-secret-references.json),
     # verified against the signed manifest, never from an argument of the caller. An engine that is not in the contract may receive none.
@@ -458,7 +476,7 @@ function Get-SisqualDeclaredSecretReferences {
     if ($null -eq $contract -or $contract.contractVersion -cne $script:EngineHostContractVersion -or $null -eq $contract.PSObject.Properties['engines']) { throw 'ENGINE_SECRET_CONTRACT_INVALID' }
     $entry = $contract.engines.PSObject.Properties[$EngineCode]
     if ($null -eq $entry) { return [string[]]@() }
-    foreach ($reference in @($entry.Value)) { if ($reference -isnot [string] -or $reference -cnotmatch '^[A-Z0-9_.:-]{1,120}$') { throw 'ENGINE_SECRET_CONTRACT_INVALID' } }
+    foreach ($reference in @($entry.Value)) { if ($reference -isnot [string] -or -not (Test-SisqualSecretReferenceShape $reference)) { throw 'ENGINE_SECRET_CONTRACT_INVALID' } }
     return [string[]]@($entry.Value)
 }
 
@@ -629,7 +647,7 @@ function Invoke-SisqualEngineHost {
     if ($null -ne $Secrets -and @($Secrets.Keys).Count -gt 0) {
         $declaredSecretReferences = @(Get-SisqualDeclaredSecretReferences -PackageRoot $PackageRoot -ManifestEntries $ManifestEntries -EngineCode $engineCode)
         foreach ($secretReference in @($Secrets.Keys)) {
-            if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or $declaredSecretReferences -cnotcontains [string]$secretReference) { throw 'SECRET_NOT_DECLARED' }
+            if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or -not (Test-SisqualSecretReferenceDeclared ([string]$secretReference) $declaredSecretReferences)) { throw 'SECRET_NOT_DECLARED' }
         }
     }
     [string[]]$normalizedLocks = @($LockKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)

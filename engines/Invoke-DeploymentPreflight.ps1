@@ -530,7 +530,7 @@ $startedAt = [DateTime]::UtcNow
 $raw = [Console]::In.ReadToEnd()
 try {
     if ([string]::IsNullOrWhiteSpace($raw) -or [Text.UTF8Encoding]::new($false).GetByteCount($raw) -gt 1MB) { Exit-InvalidRequest }
-    $script:Request = $raw | ConvertFrom-Json -Depth 30
+    $script:Request = $raw | ConvertFrom-Json -Depth 30 -DateKind String   # ISO text must stay text: as a DateTime its string form is culture text and the deadline check would reject a valid request
     foreach ($name in @('contractVersion','operationId','engineCode','mode','catalogPath','deadlineUtc','cancelPath','resultPath','secrets')) {
         if ($null -eq $script:Request.PSObject.Properties[$name]) { Exit-InvalidRequest }
     }
@@ -553,7 +553,7 @@ try {
     $manifestPath = Join-Path $packageRoot 'package-manifest.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'PACKAGE_MANIFEST_MISSING' }
     $manifestText = [IO.File]::ReadAllText($manifestPath,[Text.UTF8Encoding]::new($false,$true))
-    $manifest = $manifestText | ConvertFrom-Json -Depth 50
+    $manifest = $manifestText | ConvertFrom-Json -Depth 50 -DateKind String
     $manifestFiles = @($manifest.files)
     if ($manifestFiles.Count -eq 0) { throw 'PACKAGE_MANIFEST_FILES_MISSING' }
     $script:Connection = Open-PreflightCatalog -PackageRoot $packageRoot -CatalogPath ([string](Get-Field $script:Request 'catalogPath' '')) -ManifestFiles $manifestFiles
