@@ -67,3 +67,8 @@ The fixed drive-letter search of the old console's folder disappears: that folde
 1. [PENDING] Where the installers come from and who pins them. Recommendation: an operator-provided folder set in the machine settings, pinned by SHA-256 in the catalog.
 2. [PENDING] JDK 23 is a short-term release. Confirm the Keycloak version's requirement and whether to move to a long-term release. Recommendation: decide before porting, since the pin changes.
 3. [PENDING] Copying a library into the system directory: is there an alternative (a library path for the service)? Recommendation: test whether the JDBC driver finds it next to the Keycloak files; keep the system directory only if not.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: none.
