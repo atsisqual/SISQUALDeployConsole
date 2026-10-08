@@ -78,3 +78,8 @@ The console menus (reading numbers and ranges from the keyboard) become browser 
 1. [PENDING] Which option (A recommended). A needs a catalog-change function in the tools (a separate PR).
 2. [PENDING] Whether per-instance visibility changes are needed in V1 at all: only 1 of 70 instances has an override today. Recommendation: provide the read-only effective matrix first and the proposal generator second.
 3. [PENDING] Who may change visibility and whether a second reader is required (R-047).
+
+## Host contract
+
+- Engine class: `MUTATING`. [PENDING] confirmar com o dono.
+- Credential references: none.
