@@ -91,4 +91,5 @@ The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026
 ## Host contract
 
 - Engine class: `READ_ONLY`.
-- Credential references: `IIS_IDENTITY.*`.
+- Intended credential references: `IIS_IDENTITY.*` only.
+- Executable host acceptance today: after PR #67 is integrated, the host accepts only the exact `IIS_IDENTITY` references declared there for `DEPLOYMENT_PREFLIGHT`. `IIS_IDENTITY.*` is a descriptive family name here, not a wildcard accepted by the host.
