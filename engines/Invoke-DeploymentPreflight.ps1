@@ -367,7 +367,7 @@ function Invoke-ReviewPulseModel {
     if ($profiles.Count -eq 0) { Add-Issue ERROR PULSE_MODEL PULSE_HUB_NOT_FOUND }
     foreach ($profile in $profiles) {
         $hub = [string](Get-Field $profile 'HubInstanceCode' '')
-        $hubRows = @($Context.Instances | Where-Object { Test-Enabled $_ -and [string](Get-Field $_ 'InstanceCode' '') -ceq $hub })
+        $hubRows = @($Context.Instances | Where-Object { (Test-Enabled $_) -and [string](Get-Field $_ 'InstanceCode' '') -ceq $hub })
         if ($hubRows.Count -ne 1) { Add-Issue ERROR PULSE_MODEL PULSE_HUB_NOT_FOUND $hub; continue }
         if (-not (Test-SecretPresent ('IIS_IDENTITY.' + $hub))) { Add-Issue ERROR PULSE_MODEL PULSE_TASK_CREDENTIAL_MISSING $hub $hub }
     }
@@ -513,7 +513,13 @@ function Write-EngineResult {
     $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     $errorCount = @($script:Issues | Where-Object Severity -eq 'ERROR').Count
     $warningCount = @($script:Issues | Where-Object Severity -eq 'WARNING').Count
-    $targetCount = [Math]::Max(1,@(Get-SelectedInstances -Instances (Get-CatalogRows 'dbo_ManagedInstance') -RequestedCode ([string](Get-Field $script:Request 'instanceCode' ''))).Count)
+    # When the catalog could not be opened (a module that no longer matches the manifest, the provider, the file) there is nothing to count, and the result
+    # must still be written: one target, failed.
+    $targetCount = 1
+    if ($null -ne $script:Connection) {
+        try { $targetCount = [Math]::Max(1,@(Get-SelectedInstances -Instances (Get-CatalogRows 'dbo_ManagedInstance') -RequestedCode ([string](Get-Field $script:Request 'instanceCode' ''))).Count) }
+        catch { $targetCount = 1 }
+    }
     # A failed target is an instance with at least one ERROR; an ERROR that belongs to no instance (the catalog or the server) fails one target.
     $failedInstanceCount = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and -not [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) } | ForEach-Object { [string]$_.InstanceCode } | Sort-Object -Unique).Count
     $globalErrors = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) }).Count
