@@ -544,6 +544,12 @@ function Invoke-SisqualEngineHost {
     if ($actionType -cne 'ENGINE') { throw 'ACTION_TYPE_REQUIRES_ORCHESTRATOR' }
     $modePolicy = [string](Get-SisqualMemberValue $Action 'ModePolicy' 'NONE')
     if (($modePolicy -ceq 'NONE' -or $EngineClass -ceq 'READ_ONLY') -and $Mode -cne 'PREVIEW') { throw 'READ_ONLY_APPLY_NOT_ALLOWED' }
+    # What may be killed on a timeout never depends on the class a caller declares: only an action that cannot apply (ModePolicy NONE, read from the
+    # verified catalog) is read-only. Declaring READ_ONLY for an action that can apply is refused; every other engine is retained, never killed.
+    if ($EngineClass -ceq 'READ_ONLY' -and $modePolicy -cne 'NONE') { throw 'ENGINE_CLASS_MISMATCH' }
+    $mayKillOnTimeout = ($modePolicy -ceq 'NONE')
+    # The child is the packaged PowerShell this host itself runs in (verified by the bootstrap), never a path supplied by a caller.
+    if (-not [string]::Equals([IO.Path]::GetFullPath($PwshPath), [IO.Path]::GetFullPath((Get-Process -Id $PID).Path), [StringComparison]::OrdinalIgnoreCase)) { throw 'PWSH_PATH_NOT_ALLOWED' }
 
     $requiresInstance = [int](Get-SisqualMemberValue $Action 'RequiresInstanceSelection' 0) -eq 1
     $allowAllInstances = [int](Get-SisqualMemberValue $Action 'AllowAllInstances' 0) -eq 1
@@ -667,7 +673,7 @@ function Invoke-SisqualEngineHost {
             }
             $completed = $process.HasExited
             if (-not $completed) {
-                if ($EngineClass -ceq 'MUTATING') {
+                if (-not $mayKillOnTimeout) {
                     $keepRunDirectory = $true
                     $script:TimedOutProcesses[$OperationId] = [pscustomobject]@{ Process = $process; Job = $job; RunDirectory = $runDirectory; StdinTask = $stdinTask; StdoutTask = $stdoutTask; StderrTask = $stderrTask }
                     return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'TIMED_OUT_RUNNING' -Reason $(if ($cancelSignalFailed) { 'cancel_signal_failed' } else { '' }) -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks

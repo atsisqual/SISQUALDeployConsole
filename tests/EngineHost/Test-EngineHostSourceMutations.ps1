@@ -31,6 +31,8 @@ $anchors = @(
     [pscustomobject]@{ Name = 'the engine is started through the host launcher that waits for the gate'; Text = "'-File',`$script:EngineLauncherPath,'-EnginePath',`$enginePath" },
     [pscustomobject]@{ Name = 'the gate line is sent only after the job assignment'; Text = 'GetBytes("GO`n" + $requestJson)' },
     [pscustomobject]@{ Name = 'form-style URL encoding is decoded before the leak check'; Text = '[System.Net.WebUtility]::UrlDecode($text)' },
+    [pscustomobject]@{ Name = 'the child executable is pinned to the running PowerShell'; Text = "throw 'PWSH_PATH_NOT_ALLOWED'" },
+    [pscustomobject]@{ Name = 'the kill policy comes from the action, not from the declared class'; Text = "`$mayKillOnTimeout = (`$modePolicy -ceq 'NONE')" },
     [pscustomobject]@{ Name = 'engine is contained in a job object'; Text = '$job.Assign($process.Handle)' },
     [pscustomobject]@{ Name = 'survivors are terminated through the job'; Text = '$job.TerminateSurvivors()' },
     [pscustomobject]@{ Name = 'the console host is not counted as a survivor'; Text = 'if (IsSystemConsoleHost(pid)) continue;' },

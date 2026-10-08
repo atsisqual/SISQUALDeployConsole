@@ -261,6 +261,18 @@ try {
     finally { Remove-Item Env:\SISQUAL_TEST_CANARY_ENV -ErrorAction SilentlyContinue }
     Check 'a variable of the console process does not reach the engine' ([bool]$envResult.succeeded -and [string]$envResult.errorMessage -cne 'ENV_LEAK') ([string]$envResult.errorMessage)
 
+    # What the host may kill does not depend on the class the caller declares.
+    $mismatch = New-TestContext -ModePolicy 'PREVIEW_APPLY' -EngineClass 'READ_ONLY'
+    Check 'an action that can apply cannot be declared READ_ONLY' (Throws-Code { Invoke-TestHost -Context $mismatch } 'ENGINE_CLASS_MISMATCH')
+    $observational = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'OBSERVATIONAL' -TimeoutSeconds 1
+    $observationalOperation = [guid]::NewGuid().ToString()
+    $result = Invoke-SisqualEngineHost -Engine $observational.Engine -Action $observational.Action -EngineClass OBSERVATIONAL -PackageRoot $observational.Root -CatalogPath $observational.Catalog -CatalogSession $observational.CatalogSession -ManifestEntries $observational.Manifest -Mode PREVIEW -InstanceCode $observational.Scenario -LockKeys @('INSTANCE:' + [string]$observational.Scenario) -OperationId $observationalOperation -CancellationGraceSeconds 1
+    Check 'an engine of an action that can apply is retained on timeout whatever class is declared (never killed by the host)' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
+    [void](Stop-SisqualTimedOutEngineProcess -OperationId $observationalOperation -Confirm:$false)
+    $otherExe = if ($IsWindows) { Join-Path ([Environment]::SystemDirectory) 'cmd.exe' } else { '/bin/sh' }
+    $pinned = New-TestContext
+    Check 'the child executable must be the PowerShell this host runs in' (Throws-Code { Invoke-SisqualEngineHost -Engine $pinned.Engine -Action $pinned.Action -EngineClass READ_ONLY -PackageRoot $pinned.Root -CatalogPath $pinned.Catalog -CatalogSession $pinned.CatalogSession -ManifestEntries $pinned.Manifest -InstanceCode $pinned.Scenario -PwshPath $otherExe } 'PWSH_PATH_NOT_ALLOWED')
+
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()
     $result = Invoke-SisqualEngineHost -Engine $timedMutable.Engine -Action $timedMutable.Action -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogSession $timedMutable.CatalogSession -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
