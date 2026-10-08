@@ -75,3 +75,8 @@ Recording each run, the state between runs and the per-run plan and snapshot rea
 4. [DECIDED 2026-10-07] The branding assets are global files written into every hub's website root: confirm they are part of this engine and not of `MANAGED_ASSETS`. Recommendation: keep them here, as today.
 
 The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026-10-07, covering this engine and the other wave 1 engine); see `docs/decisions-log.md`.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `IIS_IDENTITY.*`.
