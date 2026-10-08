@@ -193,7 +193,7 @@ try {
     Test-Check 'active verified catalog session reads an enabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT01').IsEnabled) -eq 1)
     Test-Check 'active verified catalog session reads a disabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT02').IsEnabled) -eq 0)
     Test-Check 'an instance that is not in the catalog is null' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT99'))
-    Test-Check 'the instance code is a bound parameter (an injection attempt matches nothing)' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode ""PT01' OR '1'='1""))
+    Test-Check 'the instance code is a bound parameter (an injection attempt matches nothing)' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT01'' OR ''1''=''1'))
     Test-Throws 'forged catalog session cannot read instances' { Get-SisqualRuntimeCatalogInstance -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) -InstanceCode 'PT01' }
     Test-Throws 'forged catalog session cannot read machine ownership' { Get-SisqualRuntimeCatalogMachineName -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) | Out-Null }
 
