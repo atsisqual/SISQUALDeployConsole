@@ -13,6 +13,7 @@ function global:Write-SisqualRuntimeLog {
     Add-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Value ($entry | ConvertTo-Json -Compress -Depth 10) -Encoding utf8
     return $env:SISQUAL_ENGINEHOST_TEST_LOG
 }
+$script:LauncherHash = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'runtime' 'Invoke-SisqualEngineLauncher.ps1') -Algorithm SHA256).Hash.ToLowerInvariant()
 $script:Passed = 0
 $script:Failed = 0
 $script:Roots = [Collections.Generic.List[string]]::new()
@@ -36,20 +37,23 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     $catalogDir = Join-Path $root 'catalog'; [void][IO.Directory]::CreateDirectory($catalogDir)
     $catalog = Join-Path $catalogDir 'catalog-TEST.db'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-    return [pscustomobject]@{
+    $built = [pscustomobject]@{
         Root = $root; Catalog = $catalog; Scenario = $Scenario; CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName ([Environment]::MachineName))
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
         Action = [pscustomobject]@{ ActionCode = 'FAKE_ACTION'; EngineCode = 'FAKE_ENGINE'; IsEnabled = 1; ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
         Manifest = @(
             [pscustomobject]@{ path = ('engines/' + $leaf); sha256 = $hash },
+            [pscustomobject]@{ path = 'runtime/Invoke-SisqualEngineLauncher.ps1'; sha256 = $script:LauncherHash },
             [pscustomobject]@{ path = 'catalog/catalog-TEST.db'; sha256 = (Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash.ToLowerInvariant(); size = (Get-Item -LiteralPath $catalog).Length }
         )
     }
+    Set-SisqualTestCatalogRows -Session $built.CatalogSession -Engine $built.Engine -Action $built.Action
+    return $built
 }
 function Run {
     param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY', [string[]]$Declared = $null)
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
+    Invoke-SisqualEngineHost -ActionCode $Ctx.Action.ActionCode -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
@@ -60,7 +64,7 @@ try {
     Check 'mutation: disabled action is rejected' (Throws-Code { Run $ctx } 'ACTION_DISABLED')
 
     $ctx = New-Ctx; $ctx.Action.EngineCode = 'OTHER_ENGINE'
-    Check 'mutation: action engine mapping is exact' (Throws-Code { Run $ctx } 'ACTION_ENGINE_MISMATCH')
+    Check 'mutation: an action that names an engine that is not in the verified catalog is rejected (the engine is resolved from the action, so the mapping is exact by construction)' (Throws-Code { Run $ctx } 'ENGINE_NOT_FOUND')
 
     $ctx = New-Ctx; $rogue = Join-Path $ctx.Root 'other.db'; Set-Content -LiteralPath $rogue -Value 'synthetic' -NoNewline -Encoding ascii; $ctx.Catalog = $rogue
     Check 'mutation: arbitrary catalog path is rejected' (Throws-Code { Run $ctx } 'CATALOG_PATH_MISMATCH')
@@ -166,7 +170,7 @@ try {
 
     $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1; $ctx.Action.AllowAllInstances = 0
     Check 'mutation: required instance cannot be omitted' (Throws-Code {
-        Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
+        Invoke-SisqualEngineHost -ActionCode $ctx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
 }
 finally {

@@ -7,6 +7,7 @@ $script:RequestLimitBytes = 1MB
 $script:ResultLimitBytes = 4MB
 $script:StreamLimitBytes = 1MB
 $script:EngineLauncherPath = Join-Path $PSScriptRoot 'Invoke-SisqualEngineLauncher.ps1'
+$script:EngineLauncherManifestPath = 'runtime/Invoke-SisqualEngineLauncher.ps1'
 # After the engine has ended, how long the host waits for the redirected streams to reach end of file. It is counted from the moment the
 # engine ended, not from the engine deadline: after a cooperative cancellation that deadline has already passed.
 $script:StreamDrainSeconds = 5
@@ -356,11 +357,12 @@ function Find-SisqualDecodedSecretLeak {
 }
 
 function New-SisqualEngineFailureResult {
-    param([string]$OperationId, [string]$EngineCode, [ValidateSet('PREVIEW','APPLY')][string]$Mode, [string]$ErrorCode, [string]$EngineVersion = 'host', [int]$ExitCode = 1)
+    param([string]$OperationId, [string]$EngineCode, [ValidateSet('PREVIEW','APPLY')][string]$Mode, [string]$ErrorCode, [string]$EngineVersion = 'host', [int]$ExitCode = 1, [datetime]$StartedAt = ([DateTime]::UtcNow))
     $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $startedText = $StartedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     return [pscustomobject][ordered]@{
         contractVersion = $script:EngineHostContractVersion; operationId = $OperationId; engineCode = $EngineCode; engineVersion = $EngineVersion; mode = $Mode
-        startedAt = $now; completedAt = $now; succeeded = $false; exitCode = $ExitCode; errorMessage = $ErrorCode
+        startedAt = $startedText; completedAt = $now; succeeded = $false; exitCode = $ExitCode; errorMessage = $ErrorCode
         summary = [pscustomobject][ordered]@{ targetCount = 1; succeededTargets = 0; failedTargets = 1; warningCount = 0; errorCount = 1 }
         results = @()
     }
@@ -496,7 +498,7 @@ function New-SisqualLoggedEngineFailureResult {
         [string]$Reason = '',
         [AllowNull()][string]$InstanceCode
     )
-    $result = New-SisqualEngineFailureResult $OperationId $EngineCode $Mode $ErrorCode $EngineVersion $ExitCode
+    $result = New-SisqualEngineFailureResult $OperationId $EngineCode $Mode $ErrorCode $EngineVersion $ExitCode -StartedAt $StartedAt
     Write-SisqualEngineHostLog -EventCode 'ENGINE.FAIL' -Message 'Engine run failed.' -Properties @{
         operationId = $OperationId; engine = $EngineCode; mode = $Mode
         durationMs = [int]([DateTime]::UtcNow - $StartedAt).TotalMilliseconds
@@ -511,8 +513,7 @@ function New-SisqualLoggedEngineFailureResult {
 function Invoke-SisqualEngineHost {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][object]$Engine,
-        [Parameter(Mandatory)][object]$Action,
+        [Parameter(Mandatory)][string]$ActionCode,
         [Parameter(Mandatory)][ValidateSet('READ_ONLY','OBSERVATIONAL','MUTATING')][string]$EngineClass,
         [Parameter(Mandatory)][string]$PackageRoot,
         [Parameter(Mandatory)][string]$CatalogPath,
@@ -531,6 +532,29 @@ function Invoke-SisqualEngineHost {
     )
 
     if ($OperationId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { throw 'INVALID_OPERATION_ID' }
+    if ($ActionCode -cnotmatch '^[A-Z][A-Z0-9_]{1,59}$') { throw 'INVALID_ACTION_CODE' }
+    $CatalogPath = Get-SisqualVerifiedCatalogPath -PackageRoot $PackageRoot -CatalogPath $CatalogPath -ManifestEntries $ManifestEntries
+    $sessionPath = [string](Get-SisqualMemberValue $CatalogSession 'CatalogPath' '')
+    if ([string]::IsNullOrWhiteSpace($sessionPath) -or -not [IO.Path]::GetFullPath($sessionPath).Equals($CatalogPath,[StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_SESSION_MISMATCH' }
+    $catalogReader = Get-Command -Name 'Get-SisqualRuntimeCatalogMachineName' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+    if ($null -eq $catalogReader) { throw 'CATALOG_SESSION_REQUIRED' }
+    try { $catalogMachineName = [string](& $catalogReader -Session $CatalogSession) }
+    catch { throw 'CATALOG_SESSION_INVALID' }
+    if ([string]::IsNullOrWhiteSpace($catalogMachineName)) { throw 'CATALOG_SESSION_INVALID' }
+    if (-not [string]::Equals($catalogMachineName, [Environment]::MachineName, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
+    # AGENTS.md: privileged inputs come from the verified catalog, never from the caller. The action, and the engine it names, are read from the
+    # active session by action code; nothing the caller could mis-bind (an engine row, an action row) is trusted.
+    $actionReader = Get-Command -Name 'Get-SisqualRuntimeCatalogAction' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+    $engineReader = Get-Command -Name 'Get-SisqualRuntimeCatalogEngine' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+    if ($null -eq $actionReader -or $null -eq $engineReader) { throw 'CATALOG_SESSION_REQUIRED' }
+    try {
+        $Action = & $actionReader -Session $CatalogSession -ActionCode $ActionCode
+        $Engine = $null
+        if ($null -ne $Action) { $Engine = & $engineReader -Session $CatalogSession -EngineCode ([string](Get-SisqualMemberValue $Action 'EngineCode' '')) }
+    }
+    catch { throw 'CATALOG_SESSION_INVALID' }
+    if ($null -eq $Action) { throw 'ACTION_NOT_FOUND' }
+    if ($null -eq $Engine) { throw 'ENGINE_NOT_FOUND' }
     $engineCode = [string](Get-SisqualMemberValue $Engine 'EngineCode' '')
     $engineVersion = [string](Get-SisqualMemberValue $Engine 'EngineVersion' '0.0.0')
     if ($engineCode -notmatch '^[A-Z][A-Z0-9_]{1,59}$') { throw 'INVALID_ENGINE_CODE' }
@@ -568,15 +592,6 @@ function Invoke-SisqualEngineHost {
     $minimumPowerShell = [string](Get-SisqualMemberValue $Engine 'MinimumPowerShell' '')
     if (-not [string]::IsNullOrWhiteSpace($minimumPowerShell) -and $PSVersionTable.PSVersion -lt [version]$minimumPowerShell) { throw 'POWERSHELL_VERSION_UNAVAILABLE' }
     if ([int](Get-SisqualMemberValue $Engine 'RequiresAdministrator' 0) -eq 1 -and -not (Test-SisqualAdministrator)) { throw 'ADMINISTRATOR_REQUIRED' }
-    $CatalogPath = Get-SisqualVerifiedCatalogPath -PackageRoot $PackageRoot -CatalogPath $CatalogPath -ManifestEntries $ManifestEntries
-    $sessionPath = [string](Get-SisqualMemberValue $CatalogSession 'CatalogPath' '')
-    if ([string]::IsNullOrWhiteSpace($sessionPath) -or -not [IO.Path]::GetFullPath($sessionPath).Equals($CatalogPath,[StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_SESSION_MISMATCH' }
-    $catalogReader = Get-Command -Name 'Get-SisqualRuntimeCatalogMachineName' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
-    if ($null -eq $catalogReader) { throw 'CATALOG_SESSION_REQUIRED' }
-    try { $catalogMachineName = [string](& $catalogReader -Session $CatalogSession) }
-    catch { throw 'CATALOG_SESSION_INVALID' }
-    if ([string]::IsNullOrWhiteSpace($catalogMachineName)) { throw 'CATALOG_SESSION_INVALID' }
-    if (-not [string]::Equals($catalogMachineName, [Environment]::MachineName, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
     # ADR-0008 item 7: a selected instance must exist and be enabled in the verified catalog, and the action must allow a selection.
     if (-not [string]::IsNullOrWhiteSpace($InstanceCode)) {
         if ([string](Get-SisqualMemberValue $Action 'InstanceSelectionPolicy' '') -ceq 'NONE') { throw 'INSTANCE_SELECTION_NOT_ALLOWED' }
@@ -603,6 +618,9 @@ function Invoke-SisqualEngineHost {
     $expectedHash = Get-SisqualManifestEngineHash $ManifestEntries ('engines/' + $engineLeaf)
     $actualHash = Get-SisqualSha256Hex $enginePath
     if ($actualHash -cne $expectedHash) { throw 'ENGINE_HASH_MISMATCH' }
+    # The launcher runs before the engine and receives the whole request, secrets included: it is verified against the manifest like the engine is.
+    if (-not (Test-Path -LiteralPath $script:EngineLauncherPath -PathType Leaf)) { throw 'ENGINE_LAUNCHER_MISSING' }
+    if ((Get-SisqualSha256Hex $script:EngineLauncherPath) -cne (Get-SisqualManifestEngineHash $ManifestEntries $script:EngineLauncherManifestPath)) { throw 'ENGINE_LAUNCHER_HASH_MISMATCH' }
 
     $runDirectory = New-SisqualEngineRunDirectory $OperationId
     $cancelPath = Join-Path $runDirectory 'cancel.requested'

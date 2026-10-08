@@ -14,6 +14,7 @@ function global:Write-SisqualRuntimeLog {
     Add-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Value ($entry | ConvertTo-Json -Compress -Depth 10) -Encoding utf8
     return $env:SISQUAL_ENGINEHOST_TEST_LOG
 }
+$script:LauncherHash = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'runtime' 'Invoke-SisqualEngineLauncher.ps1') -Algorithm SHA256).Hash.ToLowerInvariant()
 $script:Passed = 0
 $script:Failed = 0
 $script:TempRoots = [Collections.Generic.List[string]]::new()
@@ -91,9 +92,10 @@ function New-TestContext {
     }
     $manifest = @(
         [pscustomobject]@{ path = ('engines/' + $LeafName); sha256 = Get-FileSha256 -Path $enginePath },
+        [pscustomobject]@{ path = 'runtime/Invoke-SisqualEngineLauncher.ps1'; sha256 = $script:LauncherHash },
         [pscustomobject]@{ path = 'catalog/catalog-TEST.db'; sha256 = Get-FileSha256 -Path $catalogPath; size = (Get-Item -LiteralPath $catalogPath).Length }
     )
-    return [pscustomobject]@{
+    $built = [pscustomobject]@{
         Root = $root
         Catalog = $catalogPath
         Engine = $engine
@@ -103,6 +105,8 @@ function New-TestContext {
         Class = $EngineClass
         Scenario = $Scenario
     }
+    Set-SisqualTestCatalogRows -Session $built.CatalogSession -Engine $built.Engine -Action $built.Action
+    return $built
 }
 
 function Invoke-TestHost {
@@ -116,7 +120,7 @@ function Invoke-TestHost {
         [string]$Instance = $null
     )
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $(if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { $Context.Scenario }) -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
+    return Invoke-SisqualEngineHost -ActionCode $Context.Action.ActionCode -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $(if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { $Context.Scenario }) -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -220,6 +224,9 @@ try {
     $result = Invoke-TestHost -Context $killable
     $watch.Stop()
     Check 'non-mutating timed out child is killed after grace' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
+    $startedAt = [datetime]::Parse([string]$result.startedAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal)
+    $completedAt = [datetime]::Parse([string]$result.completedAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal)
+    Check 'a synthesised failure keeps the real start of the run (it is not a zero-length result)' (($completedAt - $startedAt).TotalSeconds -ge 1) (('{0} -> {1}' -f $result.startedAt, $result.completedAt))
 
     $blocked = New-TestContext -Scenario 'CANCEL_BLOCKED' -TimeoutSeconds 1
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -229,7 +236,7 @@ try {
 
     $blockedMutable = New-TestContext -Scenario 'CANCEL_BLOCKED' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $blockedOperation = [guid]::NewGuid().ToString()
-    $result = Invoke-SisqualEngineHost -Engine $blockedMutable.Engine -Action $blockedMutable.Action -EngineClass MUTATING -PackageRoot $blockedMutable.Root -CatalogPath $blockedMutable.Catalog -CatalogSession $blockedMutable.CatalogSession -ManifestEntries $blockedMutable.Manifest -Mode PREVIEW -InstanceCode $blockedMutable.Scenario -LockKeys @('INSTANCE:' + [string]$blockedMutable.Scenario) -OperationId $blockedOperation -CancellationGraceSeconds 1
+    $result = Invoke-SisqualEngineHost -ActionCode $blockedMutable.Action.ActionCode -EngineClass MUTATING -PackageRoot $blockedMutable.Root -CatalogPath $blockedMutable.Catalog -CatalogSession $blockedMutable.CatalogSession -ManifestEntries $blockedMutable.Manifest -Mode PREVIEW -InstanceCode $blockedMutable.Scenario -LockKeys @('INSTANCE:' + [string]$blockedMutable.Scenario) -OperationId $blockedOperation -CancellationGraceSeconds 1
     Check 'a cancel signal that cannot be written: a mutable engine is retained, not left untracked' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
     [void](Stop-SisqualTimedOutEngineProcess -OperationId $blockedOperation -Confirm:$false)
 
@@ -266,16 +273,30 @@ try {
     Check 'an action that can apply cannot be declared READ_ONLY' (Throws-Code { Invoke-TestHost -Context $mismatch } 'ENGINE_CLASS_MISMATCH')
     $observational = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'OBSERVATIONAL' -TimeoutSeconds 1
     $observationalOperation = [guid]::NewGuid().ToString()
-    $result = Invoke-SisqualEngineHost -Engine $observational.Engine -Action $observational.Action -EngineClass OBSERVATIONAL -PackageRoot $observational.Root -CatalogPath $observational.Catalog -CatalogSession $observational.CatalogSession -ManifestEntries $observational.Manifest -Mode PREVIEW -InstanceCode $observational.Scenario -LockKeys @('INSTANCE:' + [string]$observational.Scenario) -OperationId $observationalOperation -CancellationGraceSeconds 1
+    $result = Invoke-SisqualEngineHost -ActionCode $observational.Action.ActionCode -EngineClass OBSERVATIONAL -PackageRoot $observational.Root -CatalogPath $observational.Catalog -CatalogSession $observational.CatalogSession -ManifestEntries $observational.Manifest -Mode PREVIEW -InstanceCode $observational.Scenario -LockKeys @('INSTANCE:' + [string]$observational.Scenario) -OperationId $observationalOperation -CancellationGraceSeconds 1
     Check 'an engine of an action that can apply is retained on timeout whatever class is declared (never killed by the host)' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
     [void](Stop-SisqualTimedOutEngineProcess -OperationId $observationalOperation -Confirm:$false)
     $otherExe = if ($IsWindows) { Join-Path ([Environment]::SystemDirectory) 'cmd.exe' } else { '/bin/sh' }
     $pinned = New-TestContext
-    Check 'the child executable must be the PowerShell this host runs in' (Throws-Code { Invoke-SisqualEngineHost -Engine $pinned.Engine -Action $pinned.Action -EngineClass READ_ONLY -PackageRoot $pinned.Root -CatalogPath $pinned.Catalog -CatalogSession $pinned.CatalogSession -ManifestEntries $pinned.Manifest -InstanceCode $pinned.Scenario -PwshPath $otherExe } 'PWSH_PATH_NOT_ALLOWED')
+    Check 'the child executable must be the PowerShell this host runs in' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $pinned.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $pinned.Root -CatalogPath $pinned.Catalog -CatalogSession $pinned.CatalogSession -ManifestEntries $pinned.Manifest -InstanceCode $pinned.Scenario -PwshPath $otherExe } 'PWSH_PATH_NOT_ALLOWED')
+
+    # AGENTS.md: the action and the engine come from the verified catalog session, not from the caller.
+    $parameters = (Get-Command Invoke-SisqualEngineHost).Parameters
+    Check 'the host no longer accepts engine or action rows from the caller' (-not $parameters.ContainsKey('Engine') -and -not $parameters.ContainsKey('Action') -and $parameters.ContainsKey('ActionCode'))
+    $fromCatalog = New-TestContext
+    Check 'an action code that is not in the verified catalog is rejected before launch' (Throws-Code { Invoke-SisqualEngineHost -ActionCode 'OTHER_ACTION' -EngineClass READ_ONLY -PackageRoot $fromCatalog.Root -CatalogPath $fromCatalog.Catalog -CatalogSession $fromCatalog.CatalogSession -ManifestEntries $fromCatalog.Manifest -InstanceCode $fromCatalog.Scenario } 'ACTION_NOT_FOUND')
+    $noEngine = New-TestContext; $noEngine.Engine.EngineCode = 'OTHER_ENGINE'
+    Check 'an action whose engine is not in the verified catalog is rejected before launch' (Throws-Code { Invoke-TestHost -Context $noEngine } 'ENGINE_NOT_FOUND')
+    # The launcher runs before the engine and receives the whole request, so it is verified against the manifest like the engine.
+    $launcherCtx = New-TestContext
+    $badLauncher = @($launcherCtx.Manifest | ForEach-Object { if ($_.path -ceq 'runtime/Invoke-SisqualEngineLauncher.ps1') { [pscustomobject]@{ path = $_.path; sha256 = ('0' * 64) } } else { $_ } })
+    $noLauncher = @($launcherCtx.Manifest | Where-Object { $_.path -cne 'runtime/Invoke-SisqualEngineLauncher.ps1' })
+    Check 'a launcher that does not match its manifest entry is not run' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $launcherCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $launcherCtx.Root -CatalogPath $launcherCtx.Catalog -CatalogSession $launcherCtx.CatalogSession -ManifestEntries $badLauncher -InstanceCode $launcherCtx.Scenario } 'ENGINE_LAUNCHER_HASH_MISMATCH')
+    Check 'a launcher with no manifest entry is not run' (Throws-Code { Invoke-SisqualEngineHost -ActionCode $launcherCtx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $launcherCtx.Root -CatalogPath $launcherCtx.Catalog -CatalogSession $launcherCtx.CatalogSession -ManifestEntries $noLauncher -InstanceCode $launcherCtx.Scenario } 'ENGINE_MANIFEST_ENTRY_INVALID')
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()
-    $result = Invoke-SisqualEngineHost -Engine $timedMutable.Engine -Action $timedMutable.Action -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogSession $timedMutable.CatalogSession -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
+    $result = Invoke-SisqualEngineHost -ActionCode $timedMutable.Action.ActionCode -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogSession $timedMutable.CatalogSession -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
     Check 'mutable timeout stays running and is not killed by host' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
     Check 'explicit operator action can terminate retained timed-out test process' (Stop-SisqualTimedOutEngineProcess -OperationId $operationId -Confirm:$false)
 }

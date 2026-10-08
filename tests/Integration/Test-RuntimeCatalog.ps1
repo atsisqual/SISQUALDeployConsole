@@ -103,6 +103,10 @@ CREATE TABLE dbo_ManagedServer(MachineName TEXT NOT NULL);
 INSERT INTO dbo_ManagedServer(MachineName) VALUES('CATALOG-MACHINE');
 CREATE TABLE dbo_ManagedInstance(InstanceCode TEXT NOT NULL PRIMARY KEY, IsEnabled INTEGER NOT NULL);
 INSERT INTO dbo_ManagedInstance(InstanceCode, IsEnabled) VALUES('PT01', 1), ('PT02', 0);
+CREATE TABLE ops_Engine(EngineCode TEXT NOT NULL PRIMARY KEY, DisplayName TEXT, SourceFileName TEXT NOT NULL, EngineVersion TEXT, MinimumPowerShell TEXT, RequiresAdministrator INTEGER NOT NULL, IsEnabled INTEGER NOT NULL, ModifiedAt TEXT);
+INSERT INTO ops_Engine(EngineCode, DisplayName, SourceFileName, EngineVersion, MinimumPowerShell, RequiresAdministrator, IsEnabled) VALUES('FAKE_ENGINE', 'Fake', 'Odd-Engine.ps1', '1.2.3', '7.0', 0, 1);
+CREATE TABLE ops_Action(ActionCode TEXT NOT NULL PRIMARY KEY, GroupCode TEXT, DisplayName TEXT, Description TEXT, ActionType TEXT NOT NULL, EngineCode TEXT, SqlCommand TEXT, ModePolicy TEXT NOT NULL, RequiresInstanceSelection INTEGER NOT NULL, InstanceSelectionPolicy TEXT, AllowAllInstances INTEGER NOT NULL, BatchAllEnabled INTEGER, PassInstanceCode INTEGER NOT NULL, PassApply INTEGER NOT NULL, ConfirmationText TEXT, CommandTimeoutSeconds INTEGER NOT NULL, SortOrder INTEGER, ShowInMenu INTEGER, StopOnError INTEGER, IsEnabled INTEGER NOT NULL, ModifiedAt TEXT);
+INSERT INTO ops_Action(ActionCode, ActionType, EngineCode, ModePolicy, RequiresInstanceSelection, InstanceSelectionPolicy, AllowAllInstances, PassInstanceCode, PassApply, ConfirmationText, CommandTimeoutSeconds, IsEnabled) VALUES('FAKE_ACTION', 'ENGINE', 'FAKE_ENGINE', 'PREVIEW_APPLY', 1, 'ALL_ENABLED', 0, 1, 1, NULL, 900, 1);
 CREATE TABLE sample(code TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO sample(code,value) VALUES('A','alpha'),('B','beta');
 "@
@@ -190,6 +194,13 @@ try {
     Test-Check 'catalog session records guarded trust evidence' ($session.VerifiedSha256 -ceq $validTrust.Sha256 -and $session.VerifiedSize -eq $validTrust.Size)
     Test-Check 'catalog session does not expose raw SQLite connection' ($null -eq $session.PSObject.Properties['Connection'])
     Test-Check 'active verified catalog session reads machine ownership from dbo_ManagedServer' ((Get-SisqualRuntimeCatalogMachineName -Session $session) -ceq 'CATALOG-MACHINE')
+    $engineRow = Get-SisqualRuntimeCatalogEngine -Session $session -EngineCode 'FAKE_ENGINE'
+    Test-Check 'the engine row is read from the verified session with its columns and types' ($engineRow.SourceFileName -ceq 'Odd-Engine.ps1' -and $engineRow.EngineVersion -ceq '1.2.3' -and [int]$engineRow.RequiresAdministrator -eq 0 -and [int]$engineRow.IsEnabled -eq 1 -and $null -eq $engineRow.ModifiedAt)
+    $actionRow = Get-SisqualRuntimeCatalogAction -Session $session -ActionCode 'FAKE_ACTION'
+    Test-Check 'the action row is read from the verified session; a NULL column is $null' ($actionRow.ModePolicy -ceq 'PREVIEW_APPLY' -and $actionRow.EngineCode -ceq 'FAKE_ENGINE' -and [int]$actionRow.CommandTimeoutSeconds -eq 900 -and $null -eq $actionRow.ConfirmationText -and [int]$actionRow.AllowAllInstances -eq 0)
+    Test-Check 'an engine or an action that is not in the catalog is null' (($null -eq (Get-SisqualRuntimeCatalogEngine -Session $session -EngineCode 'NOPE')) -and ($null -eq (Get-SisqualRuntimeCatalogAction -Session $session -ActionCode 'NOPE')))
+    Test-Check 'the key of an engine or action row is a bound parameter' (($null -eq (Get-SisqualRuntimeCatalogEngine -Session $session -EngineCode 'FAKE_ENGINE'' OR ''1''=''1')) -and ($null -eq (Get-SisqualRuntimeCatalogAction -Session $session -ActionCode 'FAKE_ACTION'' OR ''1''=''1')))
+    Test-Throws 'forged catalog session cannot read engine or action rows' { Get-SisqualRuntimeCatalogAction -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) -ActionCode 'FAKE_ACTION' }
     Test-Check 'active verified catalog session reads an enabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT01').IsEnabled) -eq 1)
     Test-Check 'active verified catalog session reads a disabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT02').IsEnabled) -eq 0)
     Test-Check 'an instance that is not in the catalog is null' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT99'))
