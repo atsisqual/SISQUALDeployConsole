@@ -37,6 +37,14 @@ Check 'unmodified preflight source satisfies the local contract anchors' (Test-S
 Check 'all 12 local reviews are registered exactly once' (@($reviewNames | Where-Object { ([regex]::Matches($source,[regex]::Escape($_ + ' = ${function:'))).Count -eq 1 }).Count -eq 12)
 Check 'catalog review CommandText is never read as executable code' ($source -notmatch '(?is)ops_ReviewDefinition.{0,240}CommandText|CommandText.{0,240}ops_ReviewDefinition')
 
+$hostStyleOperationId = [guid]::NewGuid().ToString()
+Check 'host-style operation id matches the engine request envelope' ($hostStyleOperationId -cmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+Check 'fully-qualified existing Windows path passes the engine path gate' ([IO.Path]::IsPathFullyQualified($sourcePath) -and (Test-Path -LiteralPath $sourcePath -PathType Leaf))
+$deadlineText = [DateTime]::UtcNow.AddMinutes(15).ToString('yyyy-MM-ddTHH:mm:ssZ')
+$parsedDeadline = [datetime]::MinValue
+$deadlineOk = [datetime]::TryParseExact($deadlineText,'yyyy-MM-ddTHH:mm:ssZ',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal,[ref]$parsedDeadline)
+Check 'host-style deadline passes the engine exact UTC parser' $deadlineOk
+
 $mutatedMode = $source.Replace("if ([string](Get-Field `$script:Request 'mode' '') -cne 'PREVIEW') { Exit-InvalidRequest }",'# mutation: READ_ONLY mode guard removed')
 Check 'MUTATION remove READ_ONLY PREVIEW guard is detected' (-not (Test-SourceContract $mutatedMode))
 
