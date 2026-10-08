@@ -127,12 +127,17 @@ CREATE TABLE dbo_ManagedServer(ServerCode TEXT,MachineName TEXT,ServicesRoot TEX
 INSERT INTO dbo_ManagedServer VALUES('TESTSERVER',$(SqlLiteral $machine),'$svc','$svc',1);
 CREATE TABLE dbo_ManagedInstance(InstanceCode TEXT,ServerCode TEXT,HostName TEXT,CountryCode TEXT,CustomerCode TEXT,IisIdentityUserName TEXT,WebAccessUserName TEXT,CustomerLogo BLOB,CustomerLogoSha256 TEXT,IsEnabled INTEGER);
 INSERT INTO dbo_ManagedInstance VALUES('INST1','TESTSERVER','preflight-host.invalid','PT','C1','svc-user','web-user',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST2','TESTSERVER','preflight-host2.invalid','PT','C2','svc-user2','web-user2',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST3','TESTSERVER','preflight-host3.invalid','ES','C3','svc-user3','web-user3',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST4','TESTSERVER','preflight-host4.invalid','BR','C4','svc-user4','web-user4',X'0102','01',1);
 CREATE TABLE cfg_Application(ApplicationCode TEXT,PhysicalPathTemplate TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_Application VALUES('APP1','{INSTANCE_ROOT}\\App',1);
 CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,FileFormat TEXT,IsRequired INTEGER,IsEnabled INTEGER);
 INSERT INTO cfg_ConfigFile VALUES(1,'APP1','config.json','JSON',1,1);
+INSERT INTO cfg_ConfigFile VALUES(2,'APP1','optional.json','JSON',0,1);
 CREATE TABLE cfg_ConfigRule(RuleID INTEGER,RuleCode TEXT,FileID INTEGER,IsEnabled INTEGER);
 INSERT INTO cfg_ConfigRule VALUES(1,'APP_CONFIG',1,1);
+INSERT INTO cfg_ConfigRule VALUES(2,'APP_OPTIONAL',2,1);
 CREATE TABLE cfg_ConfigFileRepairPolicy(FileID INTEGER,RepairMode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_ConfigFileRepairPolicy VALUES(1,'PATCH',1);
 CREATE TABLE cfg_WindowsServiceDefinition(ServiceCode TEXT,ServiceNameTemplate TEXT,ExecutablePathTemplate TEXT,IsEnabled INTEGER);
@@ -159,6 +164,7 @@ CREATE TABLE cfg_LinksPagePresentationResource(ResourceCode TEXT,IsEnabled INTEG
 INSERT INTO cfg_LinksPagePresentationResource VALUES('TEXT',1);
 CREATE TABLE cfg_LinksPageAsset(AssetCode TEXT,FileName TEXT,MimeType TEXT,Content BLOB,ContentSha256 TEXT,IsEnabled INTEGER,ModifiedAt TEXT);
 INSERT INTO cfg_LinksPageAsset VALUES('QR_CHANNEL_C1','qr.png','image/png',X'01','',1,NULL);
+INSERT INTO cfg_LinksPageAsset VALUES('QR_CHANNEL_ZZ','zz.png','image/png',X'02','',1,NULL);
 CREATE TABLE cfg_PulseProfile(HubInstanceCode TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_PulseProfile VALUES('INST1',1);
 CREATE TABLE cfg_PulseHttpPolicy(ApplicationCode TEXT,IsEnabled INTEGER);
@@ -226,6 +232,9 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'PREVIEW leaves managed filesystem byte-identical' ($before -ceq $after)
     Check 'catalog build time is INFO only' (@($result.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' -and $_.status -ceq 'INFO' }).Count -eq 1)
     Check 'normalized result arithmetic is valid' (([int]$result.summary.succeededTargets + [int]$result.summary.failedTargets) -le [int]$result.summary.targetCount -and [int]$result.summary.errorCount -eq 0)
+    Check 'an optional file that is not deployed is not reported as missing (cfg_ConfigFile.IsRequired)' (@($result.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+    Check 'an unassigned QR asset is INFO, as in the original review' (@($result.results | Where-Object { $_.object -ceq 'QR_ASSET_UNASSIGNED:QR_CHANNEL_ZZ' -and $_.status -ceq 'INFO' }).Count -eq 1)
+    Check 'an instance whose customer has its QR_CHANNEL_<CustomerCode> asset has no missing-asset issue' (@($result.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' }).Count -eq 0)
     $serialized = $result | ConvertTo-Json -Compress -Depth 30
     Check 'canary A absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST1'],[StringComparison]::Ordinal))
     Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST2'],[StringComparison]::Ordinal))
@@ -238,6 +247,23 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
 
     Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
+
+    # All instances: INST1 is fine; INST2 (PT), INST3 (ES) and INST4 (BR) have no instance root. INST2 and INST3 have no QR asset, INST4 is not PT or ES.
+    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
+    Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only' ($qrMissing.Count -eq 2 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
+    $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
+    Check 'failedTargets counts every instance with an error, not just one' ([int]$all.summary.targetCount -eq 4 -and [int]$all.summary.failedTargets -eq 3 -and [int]$all.summary.succeededTargets -eq 1) $summaryText
+
+    # A catalog module changed on disk after the manifest was made is not imported: the engine compares it with the manifest before it imports it.
+    $moduleFile = Join-Path $package 'runtime/Sisqual.Runtime.Catalog.Core.ps1'
+    $moduleOriginal = [IO.File]::ReadAllText($moduleFile)
+    try {
+        [IO.File]::WriteAllText($moduleFile, $moduleOriginal + "`n# changed after the manifest was made`n", [Text.UTF8Encoding]::new($false))
+        $tampered = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0) ([string]$tampered.errorMessage)
+    }
+    finally { [IO.File]::WriteAllText($moduleFile, $moduleOriginal, [Text.UTF8Encoding]::new($false)) }
 
     $invalidInfo = [Diagnostics.ProcessStartInfo]::new()
     $invalidInfo.FileName = (Get-Process -Id $PID).Path
