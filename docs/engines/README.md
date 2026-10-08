@@ -22,13 +22,19 @@ This table is derived from the `Host contract` section in each engine specificat
 | `ENVIRONMENT_STATE_PROBE` | 7 | `OBSERVATIONAL` | none | none |
 | `STORAGE_SIZE_SCAN` | 7 | `OBSERVATIONAL` | none | none |
 | `MODEL_REVIEW` | 7 | `READ_ONLY` | none | none |
-| `LINKS_VISIBILITY` | 8 | `MUTATING` [PENDING] | none | none |
+| `LINKS_VISIBILITY` | 8 | `OBSERVATIONAL` [PROPOSED] | none | none |
 | `V8_KEYCLOAK_CONFIG` | 8 (retired) | `RETIRED` (not active) | none | none |
 | `DATABASE_COPY` | 9 | `MUTATING` | none | none |
 
 ## Classification rule and LINKS_VISIBILITY evidence
 
-An engine is `READ_ONLY` only when every converted `ops_Action` row that uses that engine has `ModePolicy = NONE`; if any such action has another mode policy, the engine is `MUTATING`.
+`READ_ONLY` is mechanical: every converted `ops_Action` row that uses the engine must have `ModePolicy = NONE`. This is the only engine-class distinction the host uses for its timeout kill policy.
+
+If any action that uses the engine has a mode policy other than `NONE`, `ModePolicy` does not distinguish `MUTATING` from `OBSERVATIONAL`. That distinction comes from the approved specification and decisions log:
+
+- `MUTATING`: apply changes a managed target, including files, services, IIS, databases, scheduled tasks or the catalog.
+- `OBSERVATIONAL`: apply only measures or produces reports or proposals outside managed targets.
+- If the approved specification is insufficient to decide, mark the class `[PENDING]` and use `MUTATING` provisionally.
 
 Third-party evidence supplied by the reviewer on 2026-10-08, not independently verified in this change, used this query:
 
@@ -45,8 +51,8 @@ Across all six converted catalogs from the 29516382-byte snapshot (`BR_DEMO`, `E
 LINKS_VISIBILITY | LINKS_VISIBILITY | PREVIEW_APPLY | 1
 ```
 
-That result matches the raw snapshot SQL row checked separately. Under the rule above, the current executable classification is therefore `MUTATING`.
+The non-`NONE` mode means `LINKS_VISIBILITY` is not `READ_ONLY`. It does not make the engine `MUTATING`. The owner decision of 2026-10-06 Q9 selects option A: a read-only effective visibility matrix, with changes made by an owner editing and resealing the catalog. Section 7 of `docs/engines/LINKS_VISIBILITY.md` says there is no apply that changes the catalog; apply produces a text proposal file and performs no database write. The approved port therefore has class `OBSERVATIONAL` [PROPOSED]. `PREVIEW_APPLY` is consistent with that proposal-producing apply.
 
-[PENDING] This conflicts with the `LINKS_VISIBILITY` specification and the owner decision of 2026-10-06, which describe a read-only visibility matrix/proposal flow with catalog changes performed by owner edit plus a new seal. If the owner wants the executable classification to be `READ_ONLY`, the `LINKS_VISIBILITY` action must be changed to `ModePolicy = NONE` by catalog edit and the catalog must be sealed again. Until then the matrix records `MUTATING`.
+Because its `ModePolicy` is not `NONE`, the host does not kill `LINKS_VISIBILITY` when its timeout expires.
 
-`V8_KEYCLOAK_CONFIG` is retired as an autonomous engine and is not an active host target; its behaviour is absorbed by `CONFIG_REPAIR`.
+The remaining engine classes were rechecked against their current specifications with this rule. No other class changes are required: `DEPLOYMENT_PREFLIGHT` and `MODEL_REVIEW` remain `READ_ONLY`; `ENVIRONMENT_STATE_PROBE` and `STORAGE_SIZE_SCAN` remain `OBSERVATIONAL`; every other active engine in the table remains `MUTATING` because its approved side effects change managed targets. `V8_KEYCLOAK_CONFIG` remains retired and is not an active host target; its behaviour is absorbed by `CONFIG_REPAIR`.

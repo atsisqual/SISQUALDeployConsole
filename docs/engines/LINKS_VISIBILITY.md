@@ -81,9 +81,10 @@ The console menus (reading numbers and ranges from the keyboard) become browser 
 
 ## Host contract
 
-- Engine class: `MUTATING`.
-- Classification rule: an engine is `READ_ONLY` only when every converted `ops_Action` row that uses it has `ModePolicy = NONE`; if any such action has another mode policy, the engine is `MUTATING`.
+- Engine class: `OBSERVATIONAL` [PROPOSED].
+- Classification rule: `READ_ONLY` requires every converted `ops_Action` row that uses this engine to have `ModePolicy = NONE`. When any action is non-`NONE`, `MUTATING` versus `OBSERVATIONAL` is derived from the approved port side effects, not from `ModePolicy`.
 - Third-party evidence (reviewer, 2026-10-08; not independently verified in this change): `SELECT ActionCode, EngineCode, ModePolicy, IsEnabled FROM ops_Action WHERE EngineCode = 'LINKS_VISIBILITY' ORDER BY ActionCode;` returned exactly `LINKS_VISIBILITY | LINKS_VISIBILITY | PREVIEW_APPLY | 1` in each of the six converted catalogs from the 29516382-byte snapshot (`BR_DEMO`, `ES_DEMO`, `PRESALES`, `PT_DEMO`, `SANDBOX_HUB`, `TENDERS`). This matches the raw snapshot SQL row checked separately.
-- [PENDING] The specification above and the owner decision of 2026-10-06 describe a read-only matrix/proposal flow, but the current converted catalog still says `PREVIEW_APPLY`. If the owner wants `READ_ONLY`, the action must be changed to `ModePolicy = NONE` by catalog edit and the catalog must be sealed again. Until then the executable classification is `MUTATING`.
+- Approved-port evidence: the owner decision of 2026-10-06 Q9 selects option A, a read-only visibility matrix with changes made by owner catalog edit plus a new seal. Section 7 above says there is no apply that changes the catalog; apply produces a text proposal file and performs no database write. The proposal is outside the managed targets, so the port is `OBSERVATIONAL` [PROPOSED]. `PREVIEW_APPLY` is consistent with a proposal-producing apply.
+- Host timeout effect: because `ModePolicy` is not `NONE`, the host does not kill this engine when its timeout expires.
 - Intended credential references: none.
 - Executable host acceptance today: none.
