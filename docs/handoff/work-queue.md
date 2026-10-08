@@ -46,11 +46,13 @@ Each port is one PR: the engine, its tests (conformance, mutation, one per issue
 
 ## 4. Owner decisions
 
+These are proposals. None is approved until the owner answers and `docs/decisions-log.md` records it.
+
 | ID | Decision | Recommendation |
 |---|---|---|
-| O1 | Stop ignoring `runtime/` in `.gitignore` (it is production code now) | Yes: ignore only the local state folders |
-| O2 | Add `[DECIDED]` and `[CLOSED]` to the status tokens of `AGENTS.md` (the repository already uses them 65 times) | Yes |
-| O3 | Approve the verified package state design once D4 exists | Decide after reading D4 |
-| O4 | Mapping of the three stale adapter codes, once D2 exists | Decide after reading D2 |
-| O5 | Fate of `OBJECT_AUDIT`, `EXECUTION_HISTORY`, `LINKS_VISIBILITY_MATRIX`, once D3 exists | Decide after reading D3 |
-| O6 | Revoke the old GitHub token (full access to four repositories) and issue a narrow one | Now |
+| O1 | Stop ignoring `runtime/` in `.gitignore` (it is production code now) | [PROPOSED] Yes: ignore only the local state folders |
+| O2 | Add `[DECIDED]` and `[CLOSED]` to the status tokens of `AGENTS.md` (the repository already uses them 65 times) | [PROPOSED] Yes |
+| O3 | Approve the verified package state design once D4 exists | [PENDING] Decide after reading D4 |
+| O4 | Mapping of the three stale adapter codes, once D2 exists | [PENDING] Decide after reading D2 |
+| O5 | Fate of `OBJECT_AUDIT`, `EXECUTION_HISTORY`, `LINKS_VISIBILITY_MATRIX`, once D3 exists | [PENDING] Decide after reading D3 |
+| O6 | Revoke the old GitHub token (full access to four repositories) and issue a narrow one | [PROPOSED] Now |
