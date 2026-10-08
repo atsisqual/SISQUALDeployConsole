@@ -21,7 +21,9 @@ function Check([string]$Name,[bool]$Condition) {
 }
 function Throws([string]$Name,[scriptblock]$Action,[string]$Expected='') {
     $ok = $false
-    try { & $Action } catch { $ok = [string]::IsNullOrEmpty($Expected) -or $_.Exception.Message -like ('*' + $Expected + '*') }
+    $caught = ''
+    try { & $Action } catch { $caught = [string]$_.Exception.Message; $ok = [string]::IsNullOrEmpty($Expected) -or $caught -like ('*' + $Expected + '*') }
+    if (-not $ok) { Write-Host ('DIAG  {0}: exception={1}' -f $Name,$caught) }
     Check $Name $ok
 }
 function Write-SafeResultDiagnostic {
@@ -63,6 +65,28 @@ function Invoke-NonQuery($Connection,[string]$Sql) {
     try { $command.CommandText = $Sql; [void]$command.ExecuteNonQuery() } finally { $command.Dispose() }
 }
 function SqlLiteral([string]$Value) { return "'" + $Value.Replace("'","''") + "'" }
+function Invoke-DirectPreflightRequest {
+    param([Parameter(Mandatory)][string]$Pwsh,[Parameter(Mandatory)][string]$EnginePath,[Parameter(Mandatory)][object]$Request)
+    $info = [Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = $Pwsh
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    foreach ($arg in @('-NoLogo','-NoProfile','-NonInteractive','-File',$EnginePath)) { [void]$info.ArgumentList.Add($arg) }
+    $process = [Diagnostics.Process]::new(); $process.StartInfo = $info
+    try {
+        [void]$process.Start()
+        $process.StandardInput.Write(($Request | ConvertTo-Json -Compress -Depth 30))
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode=$process.ExitCode; Stdout=$stdout; Stderr=$stderr }
+    }
+    finally { $process.Dispose() }
+}
 
 $temp = Join-Path $env:TEMP ('sisqual-preflight-' + [guid]::NewGuid().ToString('N'))
 try {
@@ -160,13 +184,32 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     }
     [IO.File]::WriteAllText((Join-Path $package 'package-manifest.json'),($manifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
 
+    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!' }
+    $declared = @('IIS_IDENTITY.INST1','WEB_ACCESS.INST1')
+    $directResultPath = Join-Path $temp 'direct-preview-result.json'
+    $directRequest = [ordered]@{
+        contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000301'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
+        catalogPath=$catalog; planFingerprint=$null; deadlineUtc=[DateTime]::UtcNow.AddMinutes(15).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        cancelPath=(Join-Path $temp 'direct-preview.cancel'); resultPath=$directResultPath; secrets=$secrets
+    }
+    $directJson = $directRequest | ConvertTo-Json -Compress -Depth 30
+    $directRoundTrip = $directJson | ConvertFrom-Json -Depth 30
+    $requiredEnvelope = @('contractVersion','operationId','engineCode','mode','catalogPath','deadlineUtc','cancelPath','resultPath','secrets')
+    Check 'direct valid PREVIEW JSON retains every required request field' (@($requiredEnvelope | Where-Object { $null -eq $directRoundTrip.PSObject.Properties[$_] }).Count -eq 0)
+    Check 'direct valid PREVIEW JSON stays below the request limit' ([Text.UTF8Encoding]::new($false).GetByteCount($directJson) -lt 1MB)
+    Check 'synthetic catalog path is fully qualified and exists before child launch' ([IO.Path]::IsPathFullyQualified($catalog) -and (Test-Path -LiteralPath $catalog -PathType Leaf))
+    $direct = Invoke-DirectPreflightRequest -Pwsh (Get-Process -Id $PID).Path -EnginePath (Join-Path $engines 'Invoke-DeploymentPreflight.ps1') -Request $directRequest
+    Check 'direct valid PREVIEW envelope is accepted by the engine' ($direct.ExitCode -ne 2)
+    Check 'direct valid PREVIEW keeps stdout and stderr silent' ([string]::IsNullOrEmpty($direct.Stdout) -and [string]::IsNullOrEmpty($direct.Stderr))
+    $directResult = $null
+    if (Test-Path -LiteralPath $directResultPath -PathType Leaf) { try { $directResult = [IO.File]::ReadAllText($directResultPath) | ConvertFrom-Json -Depth 30 } catch {} }
+    if ($direct.ExitCode -eq 2 -or $null -eq $directResult) { Write-Host ('DIAG  direct-preview: processExitCode={0}; resultPresent={1}' -f $direct.ExitCode,($null -ne $directResult)) }
+
     Initialize-SisqualEngineHostCatalogStub
     Import-Module $hostModule -Force
     $session = New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName ([Environment]::MachineName)
     $engine = [pscustomobject]@{ EngineCode='DEPLOYMENT_PREFLIGHT'; EngineVersion='1.0.0'; SourceFileName='Invoke-DeploymentPreflight.ps1'; IsEnabled=1; MinimumPowerShell='7.0'; RequiresAdministrator=0 }
     $action = [pscustomobject]@{ ActionCode='DEPLOYMENT_PREFLIGHT'; ActionType='ENGINE'; EngineCode='DEPLOYMENT_PREFLIGHT'; IsEnabled=1; ModePolicy='NONE'; RequiresInstanceSelection=1; AllowAllInstances=1; PassInstanceCode=1; PassApply=0; CommandTimeoutSeconds=0; ConfirmationText='' }
-    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!' }
-    $declared = @('IIS_IDENTITY.INST1','WEB_ACCESS.INST1')
     $before = TreeFingerprint $servicesRoot
     $result = Invoke-SisqualEngineHost -Engine $engine -Action $action -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets -DeclaredSecretReferences $declared
     $after = TreeFingerprint $servicesRoot
