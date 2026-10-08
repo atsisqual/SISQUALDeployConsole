@@ -99,5 +99,6 @@ The job queue and its tables (`app.Job`, `JobStep`, `JobLog`, `JobTarget`, claim
 
 ## Host contract
 
-- Engine class: `MUTATING`.
-- Credential references: none.
+- Engine class: `N/A - COMPOSITE / orchestrator`.
+- `FULL_DEPLOYMENT` is not an engine and has no engine script. Engine-host class gates do not apply to this action; its side effects are the union of the enabled child-engine side effects and are orchestrator semantics.
+- Credential references: none at the orchestrator level. Each child engine declares and receives its own approved credential references; the orchestrator passes only `credentialRef` values and does not consume child credentials itself.
