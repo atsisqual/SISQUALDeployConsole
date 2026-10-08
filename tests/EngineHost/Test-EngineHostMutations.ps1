@@ -17,8 +17,13 @@ $script:Passed = 0
 $script:Failed = 0
 $script:Roots = [Collections.Generic.List[string]]::new()
 
+function Show-HostLogTail {
+    if ($env:SISQUAL_ENGINEHOST_TEST_LOG -and (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG)) {
+        foreach ($line in @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 3)) { Write-Host ('      host log: ' + $line) }
+    }
+}
 function Check([string]$Name, [bool]$Condition) {
-    if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) } else { $script:Failed++; Write-Host ('FAIL  ' + $Name) }
+    if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) } else { $script:Failed++; Write-Host ('FAIL  ' + $Name); Show-HostLogTail }
 }
 function Throws-Code([scriptblock]$Script, [string]$Code) {
     try { & $Script | Out-Null; return $false } catch { return $_.Exception.Message -ceq $Code }

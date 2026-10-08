@@ -7,9 +7,22 @@ Import-Module (Join-Path $repoRoot 'runtime\Sisqual.Runtime.EngineHost.psm1') -F
 . (Join-Path $PSScriptRoot 'TestCatalogSessionStub.ps1')
 Initialize-SisqualEngineHostCatalogStub
 
+$env:SISQUAL_ENGINEHOST_TEST_LOG = Join-Path ([IO.Path]::GetTempPath()) ('sisqual-enginehost-contract-log-' + [guid]::NewGuid().ToString('N') + '.jsonl')
+function global:Write-SisqualRuntimeLog {
+    param([string]$Level,[string]$EventCode,[string]$Message,[hashtable]$Properties)
+    $entry = [ordered]@{ level = $Level; eventCode = $EventCode; message = $Message; properties = $Properties }
+    Add-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Value ($entry | ConvertTo-Json -Compress -Depth 10) -Encoding utf8
+    return $env:SISQUAL_ENGINEHOST_TEST_LOG
+}
 $script:Passed = 0
 $script:Failed = 0
 $script:TempRoots = [Collections.Generic.List[string]]::new()
+
+function Show-HostLogTail {
+    if ($env:SISQUAL_ENGINEHOST_TEST_LOG -and (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG)) {
+        foreach ($line in @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 3)) { Write-Host ('      host log: ' + $line) }
+    }
+}
 
 function Check {
     param([string]$Name, [bool]$Condition, [string]$Detail = '')
@@ -20,6 +33,7 @@ function Check {
     else {
         $script:Failed++
         Write-Host ('FAIL  ' + $Name + $(if ($Detail) { ' - ' + $Detail } else { '' }))
+        Show-HostLogTail
     }
 }
 

@@ -66,6 +66,21 @@ namespace Sisqual.Runtime.EngineHost {
 
         // A child counts only if it started at or after its parent: a recorded parent id alone is not enough, because Windows reuses
         // process ids and an unrelated or orphaned process can name a dead engine's id as its parent.
+        // Names of the processes killed by the last KillDescendants call, for the audit log.
+        public static string LastKilled = "";
+
+        // The console host of the engine's own console (System32\\conhost.exe) is part of the engine's console, not a process the engine left behind.
+        private static bool IsSystemConsoleHost(int pid) {
+            try {
+                using (var process = Process.GetProcessById(pid)) {
+                    if (!process.ProcessName.Equals("conhost", StringComparison.OrdinalIgnoreCase)) return false;
+                    var file = process.MainModule.FileName;
+                    return string.Equals(Path.GetDirectoryName(file), Environment.SystemDirectory, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch { return false; }
+        }
+
         public static bool IsPlausibleChild(long parentStartUtcTicks, long childStartUtcTicks) {
             return childStartUtcTicks >= parentStartUtcTicks;
         }
@@ -81,6 +96,7 @@ namespace Sisqual.Runtime.EngineHost {
         }
 
         public static int KillDescendants(int rootProcessId, long rootStartUtcTicks) {
+            LastKilled = "";
             var snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if (snapshot == INVALID_HANDLE_VALUE) return 0;
             try {
@@ -110,6 +126,7 @@ namespace Sisqual.Runtime.EngineHost {
                         long childStart;
                         if (!TryGetStartTicks(child, out childStart)) continue;
                         if (!IsPlausibleChild(parent.Value, childStart)) continue;
+                        if (IsSystemConsoleHost(child)) continue;
                         var item = new KeyValuePair<int, long>(child, childStart);
                         ordered.Add(item);
                         queue.Enqueue(item);
@@ -122,6 +139,7 @@ namespace Sisqual.Runtime.EngineHost {
                         using (var process = Process.GetProcessById(ordered[i].Key)) {
                             if (process.StartTime.ToUniversalTime().Ticks != ordered[i].Value) continue;
                             if (!process.HasExited) {
+                                try { LastKilled += process.ProcessName + ";"; } catch { }
                                 process.Kill(true);
                                 process.WaitForExit(2000);
                                 killed++;
@@ -468,13 +486,14 @@ function New-SisqualLoggedEngineFailureResult {
         [datetime]$StartedAt = ([DateTime]::UtcNow),
         [System.Collections.IDictionary]$Secrets = @{},
         [AllowNull()][string]$PlanFingerprint,
-        [string[]]$LockKeys = @()
+        [string[]]$LockKeys = @(),
+        [string]$Reason = ''
     )
     $result = New-SisqualEngineFailureResult $OperationId $EngineCode $Mode $ErrorCode $EngineVersion $ExitCode
     Write-SisqualEngineHostLog -EventCode 'ENGINE.FAIL' -Message 'Engine run failed.' -Properties @{
         operationId = $OperationId; engine = $EngineCode; mode = $Mode
         durationMs = [int]([DateTime]::UtcNow - $StartedAt).TotalMilliseconds
-        exitCode = $ExitCode; succeeded = $false; error = $ErrorCode
+        exitCode = $ExitCode; succeeded = $false; error = $ErrorCode; reason = $Reason
         planFingerprint = [string]$PlanFingerprint; locks = (@($LockKeys) -join ',')
         targetCount = [int]$result.summary.targetCount; succeededTargets = [int]$result.summary.succeededTargets
         failedTargets = [int]$result.summary.failedTargets; warningCount = [int]$result.summary.warningCount; errorCount = [int]$result.summary.errorCount
@@ -634,17 +653,17 @@ function Invoke-SisqualEngineHost {
             try { $process.StandardOutput.Close() } catch { }
             try { $process.StandardError.Close() } catch { }
             [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks)
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stream_deadline' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         try { $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult() }
         catch [IO.InvalidDataException] { throw }
         catch { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         $exitCode = $process.ExitCode
         if ($descendantsKilled -gt 0) {
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason ('descendants_killed:' + [Sisqual.Runtime.EngineHost.ProcessTree]::LastKilled) -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         if ($stdinWriteFailed) {
-            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -Reason 'stdin_write_failed' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         $rawResultText = ''
         if (Test-Path -LiteralPath $resultPath -PathType Leaf) {

@@ -30,7 +30,9 @@ $anchors = @(
     [pscustomobject]@{ Name = 'invalid UTF8 result is mapped'; Text = 'catch [Text.DecoderFallbackException]' },
     [pscustomobject]@{ Name = 'descendants must start after their parent'; Text = 'if (!IsPlausibleChild(parent.Value, childStart)) continue;' },
     [pscustomobject]@{ Name = 'descendant start time re-checked before the kill'; Text = 'process.StartTime.ToUniversalTime().Ticks != ordered[i].Value' },
-    [pscustomobject]@{ Name = 'root start time captured while the engine runs'; Text = '$rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks' }
+    [pscustomobject]@{ Name = 'root start time captured while the engine runs'; Text = '$rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks' },
+    [pscustomobject]@{ Name = 'system console host is not a surviving descendant'; Text = 'if (IsSystemConsoleHost(child)) continue;' },
+    [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason' }
 )
 
 $passed = 0
