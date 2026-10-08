@@ -108,6 +108,19 @@ try {
     Check 'SourceFileName from catalog is honored' ($result.engineCode -ceq 'FAKE_ENGINE' -and $result.succeeded) ([string]$result.errorMessage)
     Check 'host does not derive target counts from result row count' ($result.summary.targetCount -eq 1 -and @($result.results).Count -eq 2 -and $result.succeeded) ([string]$result.errorMessage)
 
+    $rapidExitStable = $true
+    $rapidExitDetail = ''
+    for ($iteration = 0; $iteration -lt 8; $iteration++) {
+        $rapid = New-TestContext -Scenario ('GOOD_FAST_{0}' -f $iteration)
+        $rapidResult = Invoke-TestHost -Context $rapid
+        if (-not $rapidResult.succeeded -or -not [string]::IsNullOrEmpty([string]$rapidResult.errorMessage)) {
+            $rapidExitStable = $false
+            $rapidExitDetail = [string]$rapidResult.errorMessage
+            break
+        }
+    }
+    Check 'rapid successful child exits do not race stdin delivery' $rapidExitStable $rapidExitDetail
+
     $foreignMachine = New-TestContext
     Set-SisqualTestCatalogMachineName -Session $foreignMachine.CatalogSession -MachineName 'NOT-THIS-MACHINE'
     $foreignMachine.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue $env:COMPUTERNAME -Force
