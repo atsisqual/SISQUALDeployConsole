@@ -84,3 +84,8 @@ The plan, model-review and context procedures disappear with the database: [PROP
 3. [PENDING] Backup retention and the folder ACL. Recommendation: administrators only, keep the last 10 runs, never delete the latest per file.
 4. [PENDING] One secret value per rule for all instances is how the data is. Recommendation: keep, and review per-instance secrets when `KEYCLOAK_CLIENT_SECRETS` is specified (wave 4).
 5. [PENDING] Bounded retry for just-written files: keep it (recommended), with the limit in the catalog.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `RULE_SECRET.*`.
