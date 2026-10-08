@@ -96,3 +96,8 @@ The job queue and its tables (`app.Job`, `JobStep`, `JobLog`, `JobTarget`, claim
 4. [PENDING] Stop the whole run or only that instance when one instance fails. Recommendation: stop the instance, continue the others, and fail at the end with the counts.
 5. [PENDING] Whether to require a successful preview before apply (none was ever run). Recommendation: yes, via the fingerprint.
 6. [PENDING] The Keycloak and software update path (Keycloak files, application files) is not a step: it belongs to the update operation outside the 19 engines (analysis of copy operations, PR #28).
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: none.
