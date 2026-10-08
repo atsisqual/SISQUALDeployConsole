@@ -308,6 +308,8 @@ function Invoke-ReviewWebAccess {
         $user = [string](Get-Field $instance 'WebAccessUserName' '')
         if ([string]::IsNullOrWhiteSpace($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_USERNAME_MISSING $code $code }
         elseif ($users.ContainsKey($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $user $code } else { $users[$user] = $true }
+        # The original review reads the per-instance password from the database (WEB_ACCESS_PASSWORD_MISSING, ERROR); here it lives in the credential package.
+        if (-not (Test-SecretPresent ('WEB_ACCESS.' + $code))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PASSWORD_MISSING $code $code }
     }
     foreach ($policy in @(Get-EnabledRows 'cfg_WebAccessPolicy')) {
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }

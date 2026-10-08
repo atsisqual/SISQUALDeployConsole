@@ -191,7 +191,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     New-Item -ItemType Directory -Path (Join-Path $package 'runtime') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $hostModule) 'Invoke-SisqualEngineLauncher.ps1') -Destination (Join-Path $package 'runtime/Invoke-SisqualEngineLauncher.ps1')
     New-Item -ItemType Directory -Path (Join-Path $package 'contracts') -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $package 'contracts/engine-secret-references.json'),'{"contractVersion":"0.1-proposed","engines":{"DEPLOYMENT_PREFLIGHT":["IIS_IDENTITY.*"]}}',[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $package 'contracts/engine-secret-references.json'),'{"contractVersion":"0.1-proposed","engines":{"DEPLOYMENT_PREFLIGHT":["IIS_IDENTITY.*","WEB_ACCESS.*"]}}',[Text.UTF8Encoding]::new($false))
     $entries = PackageEntries $package
     $manifest = [ordered]@{
         contractVersion='0.1-proposed'; packageId='00000000-0000-4000-8000-000000000111'; productVersion='0.0.0-test'; builtAt='2026-10-08T06:01:00Z'
@@ -201,7 +201,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     }
     [IO.File]::WriteAllText((Join-Path $package 'package-manifest.json'),($manifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
 
-    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'IIS_IDENTITY.INST2'='canary-preflight-secret-B!' }
+    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!' }
     $directResultPath = Join-Path $temp 'direct-preview-result.json'
     $directRequest = [ordered]@{
         contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000301'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
@@ -243,13 +243,15 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'an instance whose customer has its QR_CHANNEL_<CustomerCode> asset has no missing-asset issue' (@($result.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' }).Count -eq 0)
     $serialized = $result | ConvertTo-Json -Compress -Depth 30
     Check 'canary A absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST1'],[StringComparison]::Ordinal))
-    Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST2'],[StringComparison]::Ordinal))
+    Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['WEB_ACCESS.INST1'],[StringComparison]::Ordinal))
 
-    $missingSecret = @{ 'IIS_IDENTITY.INST2'='another-canary-value' }
+    $missingSecret = @{ 'WEB_ACCESS.INST1'='another-canary-value' }
     $missing = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret
     $missingHasExpectedError = (-not [bool]$missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
     if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
     Check 'missing IIS identity credential is an ERROR' $missingHasExpectedError
+    $noWeb = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!' }
+    Check 'a missing Web Access credential is WEB_ACCESS_PASSWORD_MISSING, an ERROR for that instance (as in the original review)' (@($noWeb.results | Where-Object { $_.object -ceq 'WEB_ACCESS_PASSWORD_MISSING:INST1' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
     Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
 
     Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
