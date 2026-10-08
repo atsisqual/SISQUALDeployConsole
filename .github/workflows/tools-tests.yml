@@ -129,7 +129,10 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Publish the logs to a temporary results branch
-        if: always()
+        # A pull request from a fork or from Dependabot gets a read-only token, so the push would fail and turn the checks red.
+        if: ${{ always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        # Diagnostics only: a failure to publish the logs must not turn the real checks red.
+        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -149,10 +152,10 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $stage 'unit.log'), (Get-CleanLog (Join-Path $env:RUNNER_TEMP 'unit.log') 'no unit log was produced'), $utf8)
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          $branch = 'results/integration-' + $env:GITHUB_RUN_ID
+          $branch = 'results/integration-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
           git checkout --orphan $branch
           git rm -rf -q --ignore-unmatch .
-          $dest = 'docs/phase1/evidence/integration-' + $env:GITHUB_RUN_ID
+          $dest = 'docs/phase1/evidence/integration-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           Copy-Item -LiteralPath (Join-Path $stage 'integration.log') -Destination (Join-Path $dest 'integration.log')
           Copy-Item -LiteralPath (Join-Path $stage 'unit.log') -Destination (Join-Path $dest 'unit.log')

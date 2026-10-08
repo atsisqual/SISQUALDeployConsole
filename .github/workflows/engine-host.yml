@@ -1,0 +1,103 @@
+name: engine-host
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'tests/EngineHost/**'
+      - '.github/workflows/engine-host.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'tests/EngineHost/**'
+      - '.github/workflows/engine-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only to publish the test logs to a temporary results/ branch
+
+concurrency:
+  group: engine-host-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-host:
+    name: engine host on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run fake-engine direct conformance
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-FakeEngineDirect.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-1-direct.log')
+          exit $LASTEXITCODE
+
+      - name: Run EngineHost fingerprint tests
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostFingerprints.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-2-fingerprints.log')
+          exit $LASTEXITCODE
+
+      - name: Run EngineHost contract tests
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHost.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-3-contract.log')
+          exit $LASTEXITCODE
+
+      - name: Run EngineHost input mutation matrix
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-4-mutations.log')
+          exit $LASTEXITCODE
+
+      - name: Verify EngineHost source mutation anchors
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostSourceMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-5-source-mutations.log')
+          exit $LASTEXITCODE
+
+      - name: Publish the logs to a temporary results branch
+        # A pull request from a fork or from Dependabot gets a read-only token, so the push would fail and turn the checks red.
+        if: ${{ always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        # Diagnostics only: a failure to publish the logs must not turn the real checks red.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'stage-log'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          foreach ($f in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter 'eh-*.log') {
+              $text = [IO.File]::ReadAllText($f.FullName)
+              $text = [regex]::Replace($text, '[^\x09\x0A\x20-\x7E]', '?')
+              if ($text.Length -gt 200000) { $text = $text.Substring(0, 200000) }
+              [IO.File]::WriteAllText((Join-Path $stage $f.Name), ($text -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+          }
+          if (-not (Get-ChildItem -LiteralPath $stage -Filter '*.log')) { [IO.File]::WriteAllText((Join-Path $stage 'eh-none.log'), 'no log was produced', [Text.UTF8Encoding]::new($false)) }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $tag = $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '-' + ('${{ matrix.os }}' -replace '[^a-z0-9]', '')
+          $branch = 'results/engine-host-' + $tag
+          git checkout --orphan $branch
+          git rm -rf -q --ignore-unmatch .
+          $dest = 'docs/phase1/evidence/engine-host-' + $tag
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item -Path (Join-Path $stage '*.log') -Destination $dest
+          git add -A
+          git commit -q -m ('results: engine host logs of run ' + $tag)
+          git push origin $branch

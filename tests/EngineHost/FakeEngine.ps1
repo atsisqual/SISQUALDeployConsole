@@ -1,0 +1,279 @@
+#requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Get-Fingerprint {
+    param([string]$InstanceCode)
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes('fake-plan|' + [string]$InstanceCode)
+    return ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))).ToLowerInvariant()
+}
+
+function New-Result {
+    param(
+        [object]$Request,
+        [bool]$Succeeded,
+        [int]$FailedTargets = 0,
+        [int]$ErrorCount = 0,
+        [string]$ErrorMessage = '',
+        [string]$Details = 'SAFE',
+        [string]$ModeOverride = '',
+        [switch]$InvalidArithmetic,
+        [switch]$OmitSummary,
+        [switch]$InvalidBackup
+    )
+    $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $mode = if ([string]::IsNullOrEmpty($ModeOverride)) { [string]$Request.mode } else { $ModeOverride }
+    $result = [ordered]@{
+        contractVersion = '0.1-proposed'
+        operationId = [string]$Request.operationId
+        engineCode = [string]$Request.engineCode
+        engineVersion = 'test-1.0'
+        mode = $mode
+        startedAt = $now
+        completedAt = $now
+        succeeded = $Succeeded
+        exitCode = if ($Succeeded) { 0 } else { 1 }
+        errorMessage = $ErrorMessage
+        summary = [ordered]@{ targetCount = 1; succeededTargets = if ($Succeeded) { 1 } else { 0 }; failedTargets = $FailedTargets; warningCount = 0; errorCount = $ErrorCount }
+        results = @(
+            [ordered]@{ timestamp = $now; instanceCode = [string]$Request.instanceCode; operationType = 'TEST_OBJECT'; object = 'ONE'; status = if ($Succeeded) { 'MATCHED' } else { 'ERROR' }; details = $Details },
+            [ordered]@{ timestamp = $now; instanceCode = [string]$Request.instanceCode; operationType = 'TEST_OBJECT'; object = 'TWO'; status = 'INFO'; details = 'SECOND_ROW' }
+        )
+    }
+    if ([string]$Request.mode -in @('PREVIEW','APPLY')) { $result.planFingerprint = Get-Fingerprint ([string]$Request.instanceCode) }
+    if ($InvalidArithmetic) { $result.succeeded = $true; $result.summary.failedTargets = 1; $result.summary.errorCount = 1 }
+    if ($OmitSummary) { [void]$result.Remove('summary') }
+    if ($InvalidBackup) { $result.backup = [ordered]@{ created = 'yes'; unexpected = $true } }
+    return $result
+}
+
+function Write-ResultFile {
+    param([object]$Request, [object]$Result)
+    [IO.File]::WriteAllText([string]$Request.resultPath, ($Result | ConvertTo-Json -Compress -Depth 30), [Text.UTF8Encoding]::new($false))
+}
+
+# Test hook: start a helper during initialisation, before the request is read (what the launcher gate must keep inside the job object).
+$earlyFlag = Join-Path $PSScriptRoot 'early-helper.flag'
+if (Test-Path -LiteralPath $earlyFlag -PathType Leaf) {
+    $earlyInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+    $earlyInfo.UseShellExecute = $false
+    $earlyInfo.CreateNoWindow = $true
+    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',('Start-Sleep -Seconds 40 # ' + ([IO.File]::ReadAllText($earlyFlag)).Trim()))) { [void]$earlyInfo.ArgumentList.Add($argument) }
+    [void][Diagnostics.Process]::Start($earlyInfo)
+}
+# The test hook is a file next to the engine, not an environment variable: the host starts engines with a minimal environment.
+$delayFile = Join-Path $PSScriptRoot 'delay-stdin.ms'
+$delayText = if (Test-Path -LiteralPath $delayFile -PathType Leaf) { ([IO.File]::ReadAllText($delayFile)).Trim() } else { '' }
+if ($delayText -match '^\d{1,5}$') { Start-Sleep -Milliseconds ([Math]::Min([int]$delayText,15000)) }
+$raw = [Console]::In.ReadToEnd()
+try {
+    if ([string]::IsNullOrWhiteSpace($raw) -or [Text.UTF8Encoding]::new($false).GetByteCount($raw) -gt 1MB) { exit 2 }
+    $request = $raw | ConvertFrom-Json -Depth 30
+    foreach ($name in @('contractVersion','operationId','engineCode','mode','catalogPath','deadlineUtc','cancelPath','resultPath','secrets')) { if ($null -eq $request.PSObject.Properties[$name]) { exit 2 } }
+    if ([string]$request.contractVersion -cne '0.1-proposed') { exit 2 }
+    if ([string]$request.operationId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { exit 2 }
+    if ([string]$request.engineCode -notmatch '^[A-Z][A-Z0-9_]{1,59}$' -or [string]$request.mode -notin @('PREVIEW','APPLY')) { exit 2 }
+    if ([string]::IsNullOrWhiteSpace([string]$request.resultPath)) { exit 2 }
+}
+catch { exit 2 }
+
+$scenario = [string]$request.instanceCode
+if ([string]::IsNullOrWhiteSpace($scenario)) { $scenario = 'GOOD' }
+$secretValue = ''
+if ($null -ne $request.secrets) {
+    $firstSecret = @($request.secrets.PSObject.Properties | Select-Object -First 1)
+    if ($firstSecret.Count -eq 1) { $secretValue = [string]$firstSecret[0].Value }
+}
+
+if ($request.mode -eq 'APPLY') {
+    $expected = Get-Fingerprint ([string]$request.instanceCode)
+    if ([string]$request.planFingerprint -cne $expected) {
+        Write-ResultFile $request (New-Result $request $false 1 1 'PLAN_CHANGED')
+        exit 1
+    }
+}
+
+switch ($scenario) {
+    'SECRET_STDOUT' {
+        [Console]::Out.WriteLine($secretValue)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_STDERR' {
+        [Console]::Error.WriteLine($secretValue)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_RESULT' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $true -Details $secretValue)
+        exit 0
+    }
+    'SECRET_BASE64' {
+        [Console]::Out.WriteLine([Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($secretValue)))
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_URL' {
+        [Console]::Error.WriteLine([Uri]::EscapeDataString($secretValue))
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_URL_FORM' {
+        [Console]::Error.WriteLine([System.Net.WebUtility]::UrlEncode($secretValue))
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_URL_LOWERHEX' {
+        $encoded = [Uri]::EscapeDataString($secretValue)
+        $encoded = [regex]::Replace($encoded, '%[0-9A-F]{2}', { param($match) $match.Value.ToLowerInvariant() })
+        [Console]::Error.WriteLine($encoded)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_RESULT_ALT_ESCAPE' {
+        if ($secretValue -cne 'pass') { exit 2 }
+        $result = New-Result -Request $request -Succeeded $true -Details $secretValue
+        $json = $result | ConvertTo-Json -Compress -Depth 30
+        $json = $json.Replace('"details":"pass"', '"details":"p\u0061ss"')
+        [IO.File]::WriteAllText([string]$request.resultPath, $json, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
+    'INVALID_BACKUP_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.backup = [ordered]@{ created = $true; name = 42; location = $true; restoreHint = @{} }
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'INVALID_TOP_STRING_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.engineVersion = 42
+        $result.errorMessage = 42
+        $result.planFingerprint = 42
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'INVALID_ROW_STRING_TYPES' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.results[0].timestamp = 42
+        $result.results[0].instanceCode = 42
+        $result.results[0].operationType = 42
+        $result.results[0].object = 42
+        $result.results[0].status = 42
+        $result.results[0].details = 42
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'INVALID_ARITHMETIC' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $true -InvalidArithmetic)
+        exit 0
+    }
+    'INVALID_MODE_ECHO' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $true -ModeOverride 'APPLY')
+        exit 0
+    }
+    'INVALID_SHAPE' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $true -OmitSummary)
+        exit 0
+    }
+    'INVALID_BACKUP' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $true -InvalidBackup)
+        exit 0
+    }
+    'FAILED_PREVIEW' {
+        Write-ResultFile $request (New-Result -Request $request -Succeeded $false -FailedTargets 1 -ErrorCount 1 -ErrorMessage 'EXPECTED_PREVIEW_FAILURE')
+        exit 1
+    }
+    'UNEXPECTED_EXIT' {
+        $result = New-Result $request $true
+        $result.exitCode = 99
+        Write-ResultFile $request $result
+        exit 99
+    }
+    'NO_RESULT' { exit 0 }
+    'INVALID_UTF8_RESULT' {
+        [IO.File]::WriteAllBytes([string]$request.resultPath, [byte[]](0xC3,0x28))
+        exit 0
+    }
+    'DESCENDANT_PIPE' {
+        $childInfo = [Diagnostics.ProcessStartInfo]::new()
+        $childInfo.FileName = (Get-Process -Id $PID).Path
+        $childInfo.UseShellExecute = $false
+        $childInfo.CreateNoWindow = $true
+        foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 15')) { [void]$childInfo.ArgumentList.Add($argument) }
+        [void][Diagnostics.Process]::Start($childInfo)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'STREAM_FLOOD' {
+        # Far more than the limit and more than a pipe holds: a reader that stops at the limit leaves this engine blocked on a full pipe.
+        $chunk = 'X' * 65536
+        for ($i = 0; $i -lt 64; $i++) { [Console]::Out.Write($chunk) }
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'RESULT_ROOT_ARRAY' {
+        $json = '[' + ((New-Result $request $true) | ConvertTo-Json -Compress -Depth 30) + ']'
+        [IO.File]::WriteAllText([string]$request.resultPath, $json, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
+    'STREAM_LIMIT' { [Console]::Out.Write(('X' * (1MB + 64KB))); exit 0 }
+    'HANG_COOPERATIVE' {
+        $limit = [DateTime]::UtcNow.AddSeconds(15)
+        while (-not (Test-Path -LiteralPath ([string]$request.cancelPath)) -and [DateTime]::UtcNow -lt $limit) { Start-Sleep -Milliseconds 50 }
+        if (Test-Path -LiteralPath ([string]$request.cancelPath)) {
+            Write-ResultFile $request (New-Result -Request $request -Succeeded $false -FailedTargets 1 -ErrorCount 1 -ErrorMessage 'CANCELLED')
+            exit 1
+        }
+        exit 1
+    }
+    'GRANDCHILD' {
+        # The engine starts a child that starts a grandchild and exits: the grandchild is an orphan whose recorded parent is dead.
+        $marker = [string]$request.operationId
+        $childInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+        $childInfo.UseShellExecute = $false
+        $childInfo.CreateNoWindow = $true
+        $launcher = "Start-Process -FilePath (Get-Process -Id `$PID).Path -ArgumentList '-NoLogo','-NoProfile','-Command','Start-Sleep -Seconds 40 # $marker' -WindowStyle Hidden; Start-Sleep -Milliseconds 400"
+        foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',$launcher)) { [void]$childInfo.ArgumentList.Add($argument) }
+        $child = [Diagnostics.Process]::Start($childInfo)
+        [void]$child.WaitForExit(15000)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'NULL_RESULT_ROW' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.results = @($null)
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'ENV_CLEAN' {
+        $leaked = -not [string]::IsNullOrEmpty($env:SISQUAL_TEST_CANARY_ENV)
+        Write-ResultFile $request (New-Result -Request $request -Succeeded (-not $leaked) -FailedTargets $(if ($leaked) { 1 } else { 0 }) -ErrorCount $(if ($leaked) { 1 } else { 0 }) -ErrorMessage $(if ($leaked) { 'ENV_LEAK' } else { '' }))
+        if ($leaked) { exit 1 } else { exit 0 }
+    }
+    'CANCEL_BLOCKED' {
+        [void][IO.Directory]::CreateDirectory([string]$request.cancelPath)
+        Start-Sleep -Seconds 15
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'HANG_IGNORE' {
+        Start-Sleep -Seconds 15
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'ARGS_ENV_SAFE' {
+        $leaked = $false
+        if (-not [string]::IsNullOrEmpty($secretValue)) {
+            if ([Environment]::CommandLine.Contains($secretValue, [StringComparison]::Ordinal)) { $leaked = $true }
+            foreach ($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+                if ([string]$entry.Value -and ([string]$entry.Value).Contains($secretValue, [StringComparison]::Ordinal)) { $leaked = $true; break }
+            }
+        }
+        Write-ResultFile $request (New-Result -Request $request -Succeeded (-not $leaked) -FailedTargets $(if ($leaked) { 1 } else { 0 }) -ErrorCount $(if ($leaked) { 1 } else { 0 }) -ErrorMessage $(if ($leaked) { 'ARG_ENV_LEAK' } else { '' }) -Details $(if ($leaked) { 'ARGS_ENV_LEAK' } else { 'ARGS_ENV_SAFE' }))
+        if ($leaked) { exit 1 } else { exit 0 }
+    }
+    default {
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+}

@@ -222,3 +222,106 @@ WHERE meta_id = $metaId;
         throw
     }
 }
+
+function Get-SisqualRuntimeCatalogMachineName {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session)
+
+    $sessionIdProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionIdProperty -or [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value)) { throw 'Catalog session is invalid.' }
+    $sessionId = [string]$sessionIdProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) { throw 'Catalog session is not active.' }
+    $entry = $script:CatalogSessions[$sessionId]
+    $command = $entry.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'SELECT MachineName FROM dbo_ManagedServer;'
+        $reader = $command.ExecuteReader()
+        try {
+            if (-not $reader.Read() -or $reader.IsDBNull(0)) { throw 'dbo_ManagedServer must contain exactly one MachineName.' }
+            $machineName = [string]$reader.GetString(0)
+            if ($reader.Read() -or [string]::IsNullOrWhiteSpace($machineName)) { throw 'dbo_ManagedServer must contain exactly one MachineName.' }
+            return $machineName
+        }
+        finally { $reader.Dispose() }
+    }
+    finally { $command.Dispose() }
+}
+
+function Get-SisqualRuntimeCatalogInstance {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session, [Parameter(Mandatory)][string]$InstanceCode)
+
+    $sessionIdProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionIdProperty -or [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value)) { throw 'Catalog session is invalid.' }
+    $sessionId = [string]$sessionIdProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) { throw 'Catalog session is not active.' }
+    $entry = $script:CatalogSessions[$sessionId]
+    $command = $entry.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'SELECT InstanceCode, IsEnabled FROM dbo_ManagedInstance WHERE InstanceCode = $code;'
+        $parameter = $command.CreateParameter()
+        $parameter.ParameterName = '$code'
+        $parameter.Value = $InstanceCode
+        [void]$command.Parameters.Add($parameter)
+        $reader = $command.ExecuteReader()
+        try {
+            if (-not $reader.Read()) { return $null }
+            $found = [pscustomobject]@{ InstanceCode = [string]$reader.GetString(0); IsEnabled = [int]$reader.GetInt64(1) }
+            if ($reader.Read()) { throw 'dbo_ManagedInstance must not repeat an InstanceCode.' }
+            return $found
+        }
+        finally { $reader.Dispose() }
+    }
+    finally { $command.Dispose() }
+}
+
+function Get-SisqualRuntimeCatalogRow {
+    # One row of ops_Engine or ops_Action by its key, from the active verified session. The table and the key column come from a closed set
+    # and the key value is a bound parameter. NULL columns are $null; an absent key is $null.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Session,
+        [Parameter(Mandatory)][ValidateSet('ops_Engine', 'ops_Action')][string]$Table,
+        [Parameter(Mandatory)][ValidateSet('EngineCode', 'ActionCode')][string]$KeyColumn,
+        [Parameter(Mandatory)][string]$Key
+    )
+    $sessionIdProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionIdProperty -or [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value)) { throw 'Catalog session is invalid.' }
+    $sessionId = [string]$sessionIdProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) { throw 'Catalog session is not active.' }
+    $entry = $script:CatalogSessions[$sessionId]
+    $command = $entry.Connection.CreateCommand()
+    try {
+        $command.CommandText = ('SELECT * FROM {0} WHERE {1} = $key;' -f $Table, $KeyColumn)
+        $parameter = $command.CreateParameter()
+        $parameter.ParameterName = '$key'
+        $parameter.Value = $Key
+        [void]$command.Parameters.Add($parameter)
+        $reader = $command.ExecuteReader()
+        try {
+            if (-not $reader.Read()) { return $null }
+            $row = [ordered]@{}
+            for ($i = 0; $i -lt $reader.FieldCount; $i++) {
+                if ($reader.IsDBNull($i)) { $row[$reader.GetName($i)] = $null } else { $row[$reader.GetName($i)] = $reader.GetValue($i) }
+            }
+            if ($reader.Read()) { throw ('{0} must not repeat a key.' -f $Table) }
+            return [pscustomobject]$row
+        }
+        finally { $reader.Dispose() }
+    }
+    finally { $command.Dispose() }
+}
+
+function Get-SisqualRuntimeCatalogEngine {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session, [Parameter(Mandatory)][string]$EngineCode)
+    return (Get-SisqualRuntimeCatalogRow -Session $Session -Table ops_Engine -KeyColumn EngineCode -Key $EngineCode)
+}
+
+function Get-SisqualRuntimeCatalogAction {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session, [Parameter(Mandatory)][string]$ActionCode)
+    return (Get-SisqualRuntimeCatalogRow -Session $Session -Table ops_Action -KeyColumn ActionCode -Key $ActionCode)
+}
+
+Export-ModuleMember -Function Get-SisqualRuntimeCatalogMachineName, Get-SisqualRuntimeCatalogInstance, Get-SisqualRuntimeCatalogEngine, Get-SisqualRuntimeCatalogAction

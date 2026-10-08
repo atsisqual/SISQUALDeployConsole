@@ -9,12 +9,14 @@ on:
       - Start.cmd
       - runtime/**
       - tests/Integration/Test-RuntimeBootstrap.ps1
+      - tests/EngineHost/**
       - .github/workflows/phase3-runtime-bootstrap.yml
   pull_request:
     paths:
       - Start.cmd
       - runtime/**
       - tests/Integration/Test-RuntimeBootstrap.ps1
+      - tests/EngineHost/**
       - .github/workflows/phase3-runtime-bootstrap.yml
 
 permissions:
@@ -48,6 +50,22 @@ jobs:
           Expand-Archive -LiteralPath $zip -DestinationPath $destination -Force
           $version = & (Join-Path $destination 'pwsh.exe') -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
           if ([string]$version -cne '7.6.6') { throw "Unexpected portable PowerShell version: $version" }
+
+      - name: Run EngineHost conformance and mutations
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pwsh = Join-Path $PWD 'runtime\pwsh\pwsh.exe'
+          foreach ($test in @(
+              '.\tests\EngineHost\Test-FakeEngineDirect.ps1',
+              '.\tests\EngineHost\Test-EngineHostFingerprints.ps1',
+              '.\tests\EngineHost\Test-EngineHost.ps1',
+              '.\tests\EngineHost\Test-EngineHostMutations.ps1',
+              '.\tests\EngineHost\Test-EngineHostSourceMutations.ps1'
+          )) {
+              & $pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $test
+              if ($LASTEXITCODE -ne 0) { throw "EngineHost test failed: $test (exit $LASTEXITCODE)." }
+          }
 
       - name: Run runtime bootstrap tests
         shell: powershell
