@@ -52,3 +52,16 @@ Facts from the source snapshot (`ManagementSync.sql`, nightly of 2026-10-07):
 4. [DECIDED 2026-10-07] When `CommandTimeoutSeconds` is 0 the host applies 900 seconds; an engine that needs longer sets it in the catalog. Recommendation: accept.
 5. [DECIDED 2026-10-07] The console runs elevated only if an enabled engine requires administrator; otherwise those engines are listed as unavailable. [V] Check on a real server.
 6. [DECIDED 2026-10-07] A mutable engine that times out is never killed by the host (item 10). Recommendation: accept.
+
+## Amendments awaiting owner approval (2026-10-08)
+
+These were added while the host was reviewed. They change what an engine receives or sees, and `AGENTS.md` requires approval before an engine input or result contract changes, so until the owner approves them they are `[PROPOSED]` and are not part of the accepted decision above (the text above describes what the code now does).
+
+1. [PROPOSED] The credential references an engine may receive are declared in the package contract `contracts/engine-secret-references.json`, verified against the signed manifest, not by an argument of the caller (item 3).
+2. [PROPOSED] The engine is started through a host-owned launcher: the first line on standard input is `GO`, sent only after the process is in the job object, and the request follows as before. An engine must end with an explicit `exit` (items 1 and 2).
+3. [PROPOSED] The engine starts with a minimal allowlisted environment, not the console's own (item 2).
+4. [PROPOSED] What the host may kill on a timeout follows the action's `ModePolicy` (`NONE` only), not a class declared by the caller (item 10).
+
+## Trust boundary of the host
+
+[PENDING] The host receives the manifest entries from its caller, the in-process adapter, as the runtime catalog opener already does with its expected hash and size. The bootstrap does not yet hold a verified package state, so the host cannot tell entries that were verified from entries that were not. A caller inside the process is already inside the trust boundary (it can read the vault, the secrets and the engines); the risk this leaves is a mis-bound call by the adapter, not a hostile caller. The hardening is a verified package state held by the bootstrap, immutable once set, that the host and the runtime catalog read instead of taking entries or expected hashes as arguments. It belongs to the phase 3 runtime together with the manifest counter (K3) and changes the trust bootstrap and the package integrity model, so it needs the owner's approval.
