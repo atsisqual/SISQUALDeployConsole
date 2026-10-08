@@ -52,7 +52,9 @@ function Write-ResultFile {
     [IO.File]::WriteAllText([string]$Request.resultPath, ($Result | ConvertTo-Json -Compress -Depth 30), [Text.UTF8Encoding]::new($false))
 }
 
-$delayText = [string]$env:SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS
+# The test hook is a file next to the engine, not an environment variable: the host starts engines with a minimal environment.
+$delayFile = Join-Path $PSScriptRoot 'delay-stdin.ms'
+$delayText = if (Test-Path -LiteralPath $delayFile -PathType Leaf) { ([IO.File]::ReadAllText($delayFile)).Trim() } else { '' }
 if ($delayText -match '^\d{1,5}$') { Start-Sleep -Milliseconds ([Math]::Min([int]$delayText,15000)) }
 $raw = [Console]::In.ReadToEnd()
 try {
@@ -197,6 +199,17 @@ switch ($scenario) {
             exit 1
         }
         exit 1
+    }
+    'NULL_RESULT_ROW' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.results = @($null)
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'ENV_CLEAN' {
+        $leaked = -not [string]::IsNullOrEmpty($env:SISQUAL_TEST_CANARY_ENV)
+        Write-ResultFile $request (New-Result -Request $request -Succeeded (-not $leaked) -FailedTargets $(if ($leaked) { 1 } else { 0 }) -ErrorCount $(if ($leaked) { 1 } else { 0 }) -ErrorMessage $(if ($leaked) { 'ENV_LEAK' } else { '' }))
+        if ($leaked) { exit 1 } else { exit 0 }
     }
     'CANCEL_BLOCKED' {
         [void][IO.Directory]::CreateDirectory([string]$request.cancelPath)

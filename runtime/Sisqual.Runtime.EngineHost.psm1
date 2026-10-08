@@ -6,6 +6,8 @@ $script:EngineHostContractVersion = '0.1-proposed'
 $script:RequestLimitBytes = 1MB
 $script:ResultLimitBytes = 4MB
 $script:StreamLimitBytes = 1MB
+# The engine starts with a minimal environment, never the console's own: tokens, proxy credentials and other variables stay behind.
+$script:EngineEnvironmentAllowlist = @('SystemRoot','SystemDrive','windir','ComSpec','PATHEXT','PATH','TEMP','TMP','TMPDIR','USERPROFILE','HOME','APPDATA','LOCALAPPDATA','ProgramData','ProgramFiles','ProgramFiles(x86)','ProgramW6432','CommonProgramFiles','CommonProgramFiles(x86)','CommonProgramW6432','USERNAME','USERDOMAIN','COMPUTERNAME','NUMBER_OF_PROCESSORS','PROCESSOR_ARCHITECTURE','OS','PSModulePath','LANG','LC_ALL','DOTNET_CLI_TELEMETRY_OPTOUT','POWERSHELL_TELEMETRY_OPTOUT')
 $script:PreviewFingerprints = @{}
 $script:TimedOutProcesses = @{}
 
@@ -416,6 +418,7 @@ function Test-SisqualEngineResultObject {
 
     if ($Result.results -isnot [System.Collections.IEnumerable] -or $Result.results -is [string]) { return $false }
     foreach ($row in @($Result.results)) {
+        if ($null -eq $row -or $row -isnot [System.Management.Automation.PSCustomObject]) { return $false }
         $rowRequired = @('timestamp','instanceCode','operationType','object','status')
         $rowAllowed = @($rowRequired + @('details'))
         foreach ($name in $rowRequired) { if ($null -eq $row.PSObject.Properties[$name]) { return $false } }
@@ -429,6 +432,16 @@ function Test-SisqualEngineResultObject {
         if ($null -ne $row.PSObject.Properties['details'] -and ($row.details -isnot [string] -or $row.details.Length -gt 2000)) { return $false }
     }
     return $true
+}
+
+function Test-SisqualEngineResultSafe {
+    # Any exception while validating a result from the child means the result is invalid, never an escape from the host.
+    param([object]$Result, [string]$OperationId, [string]$EngineCode, [string]$Mode, [int]$ExitCode)
+    try {
+        if (-not (Test-SisqualEngineResultObject $Result $OperationId $EngineCode $Mode)) { return $false }
+        return ([long]$Result.exitCode -eq [long]$ExitCode)
+    }
+    catch { return $false }
 }
 
 function Test-SisqualAdministrator {
@@ -540,8 +553,10 @@ function Invoke-SisqualEngineHost {
     if (($modePolicy -ceq 'NONE' -or $EngineClass -ceq 'READ_ONLY') -and $Mode -cne 'PREVIEW') { throw 'READ_ONLY_APPLY_NOT_ALLOWED' }
 
     $requiresInstance = [int](Get-SisqualMemberValue $Action 'RequiresInstanceSelection' 0) -eq 1
-    if ($requiresInstance -and [string]::IsNullOrWhiteSpace($InstanceCode)) { throw 'INSTANCE_REQUIRED' }
+    $allowAllInstances = [int](Get-SisqualMemberValue $Action 'AllowAllInstances' 0) -eq 1
+    if ($requiresInstance -and [string]::IsNullOrWhiteSpace($InstanceCode) -and -not $allowAllInstances) { throw 'INSTANCE_REQUIRED' }
     if (-not $requiresInstance -and [int](Get-SisqualMemberValue $Action 'PassInstanceCode' 0) -ne 1) { $InstanceCode = $null }
+    if ([string]::IsNullOrWhiteSpace($InstanceCode)) { $InstanceCode = $null }
 
     if ($Mode -ceq 'APPLY') {
         $expectedConfirmation = [string](Get-SisqualMemberValue $Action 'ConfirmationText' '')
@@ -563,6 +578,17 @@ function Invoke-SisqualEngineHost {
     catch { throw 'CATALOG_SESSION_INVALID' }
     if ([string]::IsNullOrWhiteSpace($catalogMachineName)) { throw 'CATALOG_SESSION_INVALID' }
     if (-not [string]::Equals($catalogMachineName, [Environment]::MachineName, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
+    # ADR-0008 item 7: a selected instance must exist and be enabled in the verified catalog, and the action must allow a selection.
+    if (-not [string]::IsNullOrWhiteSpace($InstanceCode)) {
+        if ([string](Get-SisqualMemberValue $Action 'InstanceSelectionPolicy' '') -ceq 'NONE') { throw 'INSTANCE_SELECTION_NOT_ALLOWED' }
+        if ($InstanceCode -cnotmatch '^[A-Z0-9_-]{1,60}$') { throw 'INSTANCE_INVALID' }
+        $instanceReader = Get-Command -Name 'Get-SisqualRuntimeCatalogInstance' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+        if ($null -eq $instanceReader) { throw 'CATALOG_SESSION_REQUIRED' }
+        try { $catalogInstance = & $instanceReader -Session $CatalogSession -InstanceCode $InstanceCode }
+        catch { throw 'CATALOG_SESSION_INVALID' }
+        if ($null -eq $catalogInstance) { throw 'INSTANCE_NOT_FOUND' }
+        if ([int]$catalogInstance.IsEnabled -ne 1) { throw 'INSTANCE_DISABLED' }
+    }
     # ADR-0008 item 3: the request carries only the credential references the engine specification declares. Anything else is a caller error and nothing is started.
     if ($null -ne $Secrets) {
         foreach ($secretReference in @($Secrets.Keys)) {
@@ -599,6 +625,11 @@ function Invoke-SisqualEngineHost {
     $startInfo.RedirectStandardInput = $true; $startInfo.RedirectStandardOutput = $true; $startInfo.RedirectStandardError = $true
     $startInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false); $startInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false); $startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-File',$enginePath)) { [void]$startInfo.ArgumentList.Add($argument) }
+    $startInfo.Environment.Clear()
+    foreach ($variableName in $script:EngineEnvironmentAllowlist) {
+        $variableValue = [Environment]::GetEnvironmentVariable($variableName)
+        if ($null -ne $variableValue) { $startInfo.Environment[$variableName] = $variableValue }
+    }
 
     $process = [Diagnostics.Process]::new(); $process.StartInfo = $startInfo
     $started = [DateTime]::UtcNow; $keepRunDirectory = $false
@@ -690,7 +721,7 @@ function Invoke-SisqualEngineHost {
         try { $result = $rawResultText | ConvertFrom-Json -Depth 50 -DateKind String }
         catch { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         if (Find-SisqualDecodedSecretLeak -Value $result -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-        if (-not (Test-SisqualEngineResultObject $result $OperationId $engineCode $Mode) -or [int]$result.exitCode -ne $exitCode) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        if (-not (Test-SisqualEngineResultSafe -Result $result -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ExitCode $exitCode)) { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
 
         if ($Mode -ceq 'PREVIEW' -and $modePolicy -ceq 'PREVIEW_APPLY') {
             if ($null -eq $result.PSObject.Properties['planFingerprint'] -or [string]$result.planFingerprint -notmatch '^[0-9a-f]{64}$') { return New-SisqualLoggedEngineFailureResult -InstanceCode $InstanceCode -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }

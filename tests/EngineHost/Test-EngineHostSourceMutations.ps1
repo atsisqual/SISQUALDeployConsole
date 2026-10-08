@@ -35,7 +35,10 @@ $anchors = @(
     [pscustomobject]@{ Name = 'failure audit carries a reason'; Text = 'error = $ErrorCode; reason = $Reason; instance = [string]$InstanceCode' },
     [pscustomobject]@{ Name = 'machine ownership uses the operating system name'; Text = '[Environment]::MachineName' },
     [pscustomobject]@{ Name = 'only declared secrets are forwarded'; Text = "throw 'SECRET_NOT_DECLARED'" },
-    [pscustomobject]@{ Name = 'cancel signal failure does not stop timeout handling'; Text = 'catch { $cancelSignalFailed = $true }' }
+    [pscustomobject]@{ Name = 'cancel signal failure does not stop timeout handling'; Text = 'catch { $cancelSignalFailed = $true }' },
+    [pscustomobject]@{ Name = 'selected instance must exist in the verified catalog'; Text = "throw 'INSTANCE_NOT_FOUND'" },
+    [pscustomobject]@{ Name = 'engine environment is cleared and allowlisted'; Text = '$startInfo.Environment.Clear()' },
+    [pscustomobject]@{ Name = 'result validation cannot throw out of the host'; Text = 'function Test-SisqualEngineResultSafe' }
 )
 
 $passed = 0

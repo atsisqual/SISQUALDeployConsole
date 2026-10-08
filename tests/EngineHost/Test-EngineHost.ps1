@@ -112,10 +112,11 @@ function Invoke-TestHost {
         [string]$PlanFingerprint = $null,
         [string]$ConfirmationText = $null,
         [hashtable]$Secrets = @{},
-        [string[]]$Declared = $null
+        [string[]]$Declared = $null,
+        [string]$Instance = $null
     )
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
+    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $(if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { $Context.Scenario }) -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -198,14 +199,15 @@ try {
     Check 'timeout writes cancel request and cooperative engine exits' ($result.errorMessage -ceq 'CANCELLED' -and $watch.Elapsed.TotalSeconds -lt 8) ([string]$result.errorMessage)
 
     $asyncInput = New-TestContext -TimeoutSeconds 1
-    $env:SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS = '6000'
+    $delayHook = Join-Path (Join-Path $asyncInput.Root 'engines') 'delay-stdin.ms'
+    [IO.File]::WriteAllText($delayHook, '6000')
     try {
         $watch = [Diagnostics.Stopwatch]::StartNew()
         $result = Invoke-TestHost -Context $asyncInput -Secrets @{ BULK = ('Z' * 262144) }
         $watch.Stop()
         Check 'large stdin cannot block timeout enforcement' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 5) ([string]$result.errorMessage)
     }
-    finally { Remove-Item Env:\SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS -ErrorAction SilentlyContinue }
+    finally { Remove-Item -LiteralPath $delayHook -Force -ErrorAction SilentlyContinue }
 
     $pipeDescendant = New-TestContext -Scenario 'DESCENDANT_PIPE' -TimeoutSeconds 2
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -240,6 +242,24 @@ try {
 
     $secretCtx = New-TestContext
     Check 'an undeclared secret is rejected by the host before launch' (Throws-Code { Invoke-TestHost -Context $secretCtx -Secrets @{ TEST_SECRET = 'a'; OTHER_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
+
+    # ADR-0008 item 7: the selected instance is resolved through the verified catalog.
+    $instCtx = New-TestContext
+    Set-SisqualTestCatalogInstances -Session $instCtx.CatalogSession -Instances @{ GOOD = 1; PT01 = 1; PT02 = 0 }
+    Check 'an enabled instance of the catalog is accepted' ([bool](Invoke-TestHost -Context $instCtx -Instance 'PT01').succeeded)
+    Check 'an instance that is not in the catalog is rejected before launch' (Throws-Code { Invoke-TestHost -Context $instCtx -Instance 'PT99' } 'INSTANCE_NOT_FOUND')
+    Check 'a disabled instance is rejected before launch' (Throws-Code { Invoke-TestHost -Context $instCtx -Instance 'PT02' } 'INSTANCE_DISABLED')
+    Check 'an instance code with the wrong shape is rejected before the catalog is asked' (Throws-Code { Invoke-TestHost -Context $instCtx -Instance 'pt01' } 'INSTANCE_INVALID')
+    Check 'AllowAllInstances lets the instance stay empty (the engine expands it from the catalog)' ([bool](Invoke-TestHost -Context $instCtx -Instance '').succeeded)
+    $noAll = New-TestContext; $noAll.Action.AllowAllInstances = 0
+    Check 'without AllowAllInstances an empty instance is still required' (Throws-Code { Invoke-TestHost -Context $noAll -Instance '' } 'INSTANCE_REQUIRED')
+    $policyNone = New-TestContext; $policyNone.Action.InstanceSelectionPolicy = 'NONE'
+    Check 'an action whose selection policy is NONE refuses a selected instance' (Throws-Code { Invoke-TestHost -Context $policyNone -Instance 'PT01' } 'INSTANCE_SELECTION_NOT_ALLOWED')
+    # The engine starts with a minimal environment, not the console's own.
+    $env:SISQUAL_TEST_CANARY_ENV = 'canary-env-value'
+    try { $envResult = Invoke-TestHost -Context (New-TestContext -Scenario 'ENV_CLEAN') }
+    finally { Remove-Item Env:\SISQUAL_TEST_CANARY_ENV -ErrorAction SilentlyContinue }
+    Check 'a variable of the console process does not reach the engine' ([bool]$envResult.succeeded -and [string]$envResult.errorMessage -cne 'ENV_LEAK') ([string]$envResult.errorMessage)
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()

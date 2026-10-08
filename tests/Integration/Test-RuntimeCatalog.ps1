@@ -101,6 +101,8 @@ INSERT INTO catalog_meta(meta_id,schema_version,server_code,source_kind,source_r
 VALUES(1,$SchemaVersion,$(ConvertTo-SqliteLiteral $ServerCode),$(ConvertTo-SqliteLiteral $SourceKind),$(ConvertTo-SqliteLiteral $SourceReference),$(ConvertTo-SqliteLiteral $BuiltAtUtc),$CutRuleVersion);
 CREATE TABLE dbo_ManagedServer(MachineName TEXT NOT NULL);
 INSERT INTO dbo_ManagedServer(MachineName) VALUES('CATALOG-MACHINE');
+CREATE TABLE dbo_ManagedInstance(InstanceCode TEXT NOT NULL PRIMARY KEY, IsEnabled INTEGER NOT NULL);
+INSERT INTO dbo_ManagedInstance(InstanceCode, IsEnabled) VALUES('PT01', 1), ('PT02', 0);
 CREATE TABLE sample(code TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO sample(code,value) VALUES('A','alpha'),('B','beta');
 "@
@@ -188,6 +190,11 @@ try {
     Test-Check 'catalog session records guarded trust evidence' ($session.VerifiedSha256 -ceq $validTrust.Sha256 -and $session.VerifiedSize -eq $validTrust.Size)
     Test-Check 'catalog session does not expose raw SQLite connection' ($null -eq $session.PSObject.Properties['Connection'])
     Test-Check 'active verified catalog session reads machine ownership from dbo_ManagedServer' ((Get-SisqualRuntimeCatalogMachineName -Session $session) -ceq 'CATALOG-MACHINE')
+    Test-Check 'active verified catalog session reads an enabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT01').IsEnabled) -eq 1)
+    Test-Check 'active verified catalog session reads a disabled instance' (((Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT02').IsEnabled) -eq 0)
+    Test-Check 'an instance that is not in the catalog is null' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode 'PT99'))
+    Test-Check 'the instance code is a bound parameter (an injection attempt matches nothing)' ($null -eq (Get-SisqualRuntimeCatalogInstance -Session $session -InstanceCode ""PT01' OR '1'='1""))
+    Test-Throws 'forged catalog session cannot read instances' { Get-SisqualRuntimeCatalogInstance -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) -InstanceCode 'PT01' }
     Test-Throws 'forged catalog session cannot read machine ownership' { Get-SisqualRuntimeCatalogMachineName -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) | Out-Null }
 
     $catalogRenameBlocked = $false

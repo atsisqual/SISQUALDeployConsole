@@ -88,7 +88,7 @@ jobs:
           if (-not (Get-ChildItem -LiteralPath $stage -Filter '*.log')) { [IO.File]::WriteAllText((Join-Path $stage 'eh-none.log'), 'no log was produced', [Text.UTF8Encoding]::new($false)) }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          $tag = $env:GITHUB_RUN_ID + '-' + ('${{ matrix.os }}' -replace '[^a-z0-9]', '')
+          $tag = $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '-' + ('${{ matrix.os }}' -replace '[^a-z0-9]', '')
           $branch = 'results/engine-host-' + $tag
           git checkout --orphan $branch
           git rm -rf -q --ignore-unmatch .

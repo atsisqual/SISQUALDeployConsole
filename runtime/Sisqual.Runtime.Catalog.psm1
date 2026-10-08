@@ -247,4 +247,32 @@ function Get-SisqualRuntimeCatalogMachineName {
     finally { $command.Dispose() }
 }
 
-Export-ModuleMember -Function Get-SisqualRuntimeCatalogMachineName
+function Get-SisqualRuntimeCatalogInstance {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session, [Parameter(Mandatory)][string]$InstanceCode)
+
+    $sessionIdProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionIdProperty -or [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value)) { throw 'Catalog session is invalid.' }
+    $sessionId = [string]$sessionIdProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) { throw 'Catalog session is not active.' }
+    $entry = $script:CatalogSessions[$sessionId]
+    $command = $entry.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'SELECT InstanceCode, IsEnabled FROM dbo_ManagedInstance WHERE InstanceCode = $code;'
+        $parameter = $command.CreateParameter()
+        $parameter.ParameterName = '$code'
+        $parameter.Value = $InstanceCode
+        [void]$command.Parameters.Add($parameter)
+        $reader = $command.ExecuteReader()
+        try {
+            if (-not $reader.Read()) { return $null }
+            $found = [pscustomobject]@{ InstanceCode = [string]$reader.GetString(0); IsEnabled = [int]$reader.GetInt64(1) }
+            if ($reader.Read()) { throw 'dbo_ManagedInstance must not repeat an InstanceCode.' }
+            return $found
+        }
+        finally { $reader.Dispose() }
+    }
+    finally { $command.Dispose() }
+}
+
+Export-ModuleMember -Function Get-SisqualRuntimeCatalogMachineName, Get-SisqualRuntimeCatalogInstance

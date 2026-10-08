@@ -149,6 +149,9 @@ try {
     $auditTail = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 4) -join "`n" } else { '' }
     Check 'mutation: the failure audit record carries the instance and the reason is a field' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $auditTail.Contains('"instance":"NO_RESULT"') -and $auditTail.Contains('"reason"'))
 
+    $ctx = New-Ctx -Scenario 'NULL_RESULT_ROW'; $result = Run $ctx
+    Check 'mutation: a null result row becomes ENGINE_INVALID_RESULT without throwing out of the host' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
+
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
@@ -170,7 +173,7 @@ try {
     Check 'mutation setup: failed preview carries fingerprint but remains failed' (-not $preview.succeeded -and [string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
     Check 'mutation: failed preview fingerprint is not cached for APPLY' (Throws-Code { Run $failedPreview -Class MUTATING -Mode APPLY -PlanFingerprint ([string]$preview.planFingerprint) -Confirmation 'CONFIRM' } 'PLAN_CHANGED')
 
-    $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1
+    $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1; $ctx.Action.AllowAllInstances = 0
     Check 'mutation: required instance cannot be omitted' (Throws-Code {
         Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
