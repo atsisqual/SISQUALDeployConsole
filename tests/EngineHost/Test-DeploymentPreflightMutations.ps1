@@ -24,7 +24,8 @@ function Test-SourceContract([string]$Text) {
     if ($Text -notmatch "SERVICE_ACCOUNT_PASSWORD_MISSING") { return $false }
     if ($Text -notmatch "CATALOG_BUILT_AT") { return $false }
     if ($Text -notmatch "PRAGMA query_only=ON") { return $false }
-    if ($Text -notmatch "sqlite_master WHERE type=''table'' AND name=\$name") { return $false }
+    $tableLookupNeedle = "sqlite_master WHERE type=''table'' AND name=`$name"
+    if (-not $Text.Contains($tableLookupNeedle,[StringComparison]::Ordinal)) { return $false }
     foreach ($review in $reviewNames) {
         $needle = $review + ' = ${function:'
         if (-not $Text.Contains($needle,[StringComparison]::Ordinal)) { return $false }
