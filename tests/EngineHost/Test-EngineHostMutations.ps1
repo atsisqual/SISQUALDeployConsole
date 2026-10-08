@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Import-Module (Join-Path $repoRoot 'runtime\Sisqual.Runtime.EngineHost.psm1') -Force
+. (Join-Path $PSScriptRoot 'TestCatalogSessionStub.ps1')
+Initialize-SisqualEngineHostCatalogStub
 $env:SISQUAL_ENGINEHOST_TEST_LOG = Join-Path ([IO.Path]::GetTempPath()) ('sisqual-enginehost-log-' + [guid]::NewGuid().ToString('N') + '.jsonl')
 function global:Write-SisqualRuntimeLog {
     param([string]$Level,[string]$EventCode,[string]$Message,[hashtable]$Properties)
@@ -30,7 +32,7 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     $catalog = Join-Path $catalogDir 'catalog-TEST.db'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     return [pscustomobject]@{
-        Root = $root; Catalog = $catalog; Scenario = $Scenario
+        Root = $root; Catalog = $catalog; Scenario = $Scenario; CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName $env:COMPUTERNAME)
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
         Action = [pscustomobject]@{ ActionCode = 'FAKE_ACTION'; EngineCode = 'FAKE_ENGINE'; IsEnabled = 1; ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
         Manifest = @(
@@ -40,8 +42,8 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     }
 }
 function Run {
-    param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$MachineName = $env:COMPUTERNAME, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY')
-    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogMachineName $MachineName -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
+    param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY')
+    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
@@ -64,7 +66,13 @@ try {
     Check 'mutation: unsupported minimum PowerShell is rejected' (Throws-Code { Run $ctx } 'POWERSHELL_VERSION_UNAVAILABLE')
 
     $ctx = New-Ctx
-    Check 'mutation: foreign catalog machine is rejected' (Throws-Code { Run $ctx -MachineName 'NOT-THIS-MACHINE' } 'CATALOG_MACHINE_MISMATCH')
+    Set-SisqualTestCatalogMachineName -Session $ctx.CatalogSession -MachineName 'NOT-THIS-MACHINE'
+    $ctx.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue $env:COMPUTERNAME -Force
+    Check 'mutation: foreign catalog machine is rejected from authenticated session metadata' (Throws-Code { Run $ctx } 'CATALOG_MACHINE_MISMATCH')
+
+    $ctx = New-Ctx
+    $ctx.CatalogSession = [pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N'); CatalogPath = $ctx.Catalog }
+    Check 'mutation: forged catalog session is rejected' (Throws-Code { Run $ctx } 'CATALOG_SESSION_INVALID')
 
     $ctx = New-Ctx; $ctx.Engine.SourceFileName = '..\FakeEngine.ps1'
     Check 'mutation: path traversal SourceFileName is rejected' (Throws-Code { Run $ctx } 'ENGINE_SOURCE_FILENAME_INVALID')
@@ -97,6 +105,13 @@ try {
     $ctx = New-Ctx -Scenario 'STREAM_LIMIT'; $result = Run $ctx
     Check 'mutation: stdout above 1 MiB is bounded' ($result.errorMessage -ceq 'ENGINE_STREAM_LIMIT')
 
+    $ctx = New-Ctx -Scenario 'DESCENDANT_PIPE'; $ctx.Action.CommandTimeoutSeconds = 2
+    $watch = [Diagnostics.Stopwatch]::StartNew(); $result = Run $ctx; $watch.Stop()
+    Check 'mutation: inherited descendant pipe cannot block redirected stream drain' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 6)
+
+    $ctx = New-Ctx -Scenario 'INVALID_UTF8_RESULT'; $result = Run $ctx
+    Check 'mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
+
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
@@ -120,7 +135,7 @@ try {
 
     $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1
     Check 'mutation: required instance cannot be omitted' (Throws-Code {
-        Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
+        Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
 }
 finally {

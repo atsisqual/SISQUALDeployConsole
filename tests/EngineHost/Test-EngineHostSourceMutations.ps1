@@ -24,7 +24,10 @@ $anchors = @(
     [pscustomobject]@{ Name = 'catalog path verification'; Text = 'Get-SisqualVerifiedCatalogPath -PackageRoot' },
     [pscustomobject]@{ Name = 'action enabled guard'; Text = "throw 'ACTION_DISABLED'" },
     [pscustomobject]@{ Name = 'action engine mapping guard'; Text = "throw 'ACTION_ENGINE_MISMATCH'" },
-    [pscustomobject]@{ Name = 'completion summary audit'; Text = 'targetCount = [int]$result.summary.targetCount' }
+    [pscustomobject]@{ Name = 'completion summary audit'; Text = 'targetCount = [int]$result.summary.targetCount' },
+    [pscustomobject]@{ Name = 'machine ownership comes from active catalog session'; Text = "Get-Command -Name 'Get-SisqualRuntimeCatalogMachineName' -Module 'Sisqual.Runtime.Catalog'" },
+    [pscustomobject]@{ Name = 'redirected stream drain is deadline bounded'; Text = 'Wait-SisqualEngineTaskUntil -Task $stdoutTask -DeadlineUtc $deadlineAt' },
+    [pscustomobject]@{ Name = 'invalid UTF8 result is mapped'; Text = 'catch [Text.DecoderFallbackException]' }
 )
 
 $passed = 0

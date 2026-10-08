@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Import-Module (Join-Path $repoRoot 'runtime\Sisqual.Runtime.EngineHost.psm1') -Force
+. (Join-Path $PSScriptRoot 'TestCatalogSessionStub.ps1')
+Initialize-SisqualEngineHostCatalogStub
 
 $script:Passed = 0
 $script:Failed = 0
@@ -83,6 +85,7 @@ function New-TestContext {
         Engine = $engine
         Action = $action
         Manifest = $manifest
+        CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalogPath -MachineName $env:COMPUTERNAME)
         Class = $EngineClass
         Scenario = $Scenario
     }
@@ -96,7 +99,7 @@ function Invoke-TestHost {
         [string]$ConfirmationText = $null,
         [hashtable]$Secrets = @{}
     )
-    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
+    return Invoke-SisqualEngineHost -Engine $Context.Engine -Action $Context.Action -EngineClass $Context.Class -PackageRoot $Context.Root -CatalogPath $Context.Catalog -CatalogSession $Context.CatalogSession -ManifestEntries $Context.Manifest -Mode $Mode -InstanceCode $Context.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $ConfirmationText -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Context.Scenario) -CancellationGraceSeconds 2
 }
 
 try {
@@ -104,6 +107,11 @@ try {
     $result = Invoke-TestHost -Context $good
     Check 'SourceFileName from catalog is honored' ($result.engineCode -ceq 'FAKE_ENGINE' -and $result.succeeded) ([string]$result.errorMessage)
     Check 'host does not derive target counts from result row count' ($result.summary.targetCount -eq 1 -and @($result.results).Count -eq 2 -and $result.succeeded) ([string]$result.errorMessage)
+
+    $foreignMachine = New-TestContext
+    Set-SisqualTestCatalogMachineName -Session $foreignMachine.CatalogSession -MachineName 'NOT-THIS-MACHINE'
+    $foreignMachine.CatalogSession | Add-Member -NotePropertyName MachineName -NotePropertyValue $env:COMPUTERNAME -Force
+    Check 'machine ownership is read from active catalog session, not caller properties' (Throws-Code { Invoke-TestHost -Context $foreignMachine } 'CATALOG_MACHINE_MISMATCH')
 
     $argsSafe = New-TestContext -Scenario 'ARGS_ENV_SAFE'
     $canary = 'CANARY-HOST-9f4d7e1b'
@@ -170,6 +178,12 @@ try {
     }
     finally { Remove-Item Env:\SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS -ErrorAction SilentlyContinue }
 
+    $pipeDescendant = New-TestContext -Scenario 'DESCENDANT_PIPE' -TimeoutSeconds 2
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $result = Invoke-TestHost -Context $pipeDescendant
+    $watch.Stop()
+    Check 'descendant inheriting redirected pipes cannot block the host' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $watch.Elapsed.TotalSeconds -lt 6) ([string]$result.errorMessage)
+
     $killable = New-TestContext -Scenario 'HANG_IGNORE' -TimeoutSeconds 1
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $result = Invoke-TestHost -Context $killable
@@ -178,7 +192,7 @@ try {
 
     $timedMutable = New-TestContext -Scenario 'HANG_IGNORE' -ModePolicy 'PREVIEW_APPLY' -EngineClass 'MUTATING' -TimeoutSeconds 1
     $operationId = [guid]::NewGuid().ToString()
-    $result = Invoke-SisqualEngineHost -Engine $timedMutable.Engine -Action $timedMutable.Action -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogMachineName $env:COMPUTERNAME -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
+    $result = Invoke-SisqualEngineHost -Engine $timedMutable.Engine -Action $timedMutable.Action -EngineClass MUTATING -PackageRoot $timedMutable.Root -CatalogPath $timedMutable.Catalog -CatalogSession $timedMutable.CatalogSession -ManifestEntries $timedMutable.Manifest -Mode PREVIEW -InstanceCode $timedMutable.Scenario -OperationId $operationId -CancellationGraceSeconds 1
     Check 'mutable timeout stays running and is not killed by host' ($result.errorMessage -ceq 'TIMED_OUT_RUNNING') ([string]$result.errorMessage)
     Check 'explicit operator action can terminate retained timed-out test process' (Stop-SisqualTimedOutEngineProcess -OperationId $operationId -Confirm:$false)
 }

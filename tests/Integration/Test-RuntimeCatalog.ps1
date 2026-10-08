@@ -99,6 +99,8 @@ CREATE TABLE catalog_meta(
 );
 INSERT INTO catalog_meta(meta_id,schema_version,server_code,source_kind,source_reference,built_at_utc,cut_rule_version)
 VALUES(1,$SchemaVersion,$(ConvertTo-SqliteLiteral $ServerCode),$(ConvertTo-SqliteLiteral $SourceKind),$(ConvertTo-SqliteLiteral $SourceReference),$(ConvertTo-SqliteLiteral $BuiltAtUtc),$CutRuleVersion);
+CREATE TABLE dbo_ManagedServer(MachineName TEXT NOT NULL);
+INSERT INTO dbo_ManagedServer(MachineName) VALUES('CATALOG-MACHINE');
 CREATE TABLE sample(code TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO sample(code,value) VALUES('A','alpha'),('B','beta');
 "@
@@ -185,6 +187,8 @@ try {
     Test-Check 'catalog metadata is exact and case-sensitive' ($session.Metadata.ServerCode -ceq 'DEMO' -and $session.Metadata.SourceKind -ceq 'conversion-tool' -and $session.Metadata.SchemaVersion -eq 1)
     Test-Check 'catalog session records guarded trust evidence' ($session.VerifiedSha256 -ceq $validTrust.Sha256 -and $session.VerifiedSize -eq $validTrust.Size)
     Test-Check 'catalog session does not expose raw SQLite connection' ($null -eq $session.PSObject.Properties['Connection'])
+    Test-Check 'active verified catalog session reads machine ownership from dbo_ManagedServer' ((Get-SisqualRuntimeCatalogMachineName -Session $session) -ceq 'CATALOG-MACHINE')
+    Test-Throws 'forged catalog session cannot read machine ownership' { Get-SisqualRuntimeCatalogMachineName -Session ([pscustomobject]@{ SessionId = [guid]::NewGuid().ToString('N') }) | Out-Null }
 
     $catalogRenameBlocked = $false
     try {

@@ -12,7 +12,10 @@ $script:TimedOutProcesses = @{}
 if ($null -eq ('Sisqual.Runtime.EngineHost.BoundedReader' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 namespace Sisqual.Runtime.EngineHost {
@@ -32,8 +35,100 @@ namespace Sisqual.Runtime.EngineHost {
             return builder.ToString();
         }
     }
+
+    public static class ProcessTree {
+        private const uint TH32CS_SNAPPROCESS = 0x00000002;
+        private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct PROCESSENTRY32 {
+            public uint dwSize;
+            public uint cntUsage;
+            public uint th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID;
+            public uint cntThreads;
+            public uint th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szExeFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        public static int KillDescendants(int rootProcessId) {
+            var snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snapshot == INVALID_HANDLE_VALUE) return 0;
+            try {
+                var parentMap = new Dictionary<int, List<int>>();
+                var entry = new PROCESSENTRY32();
+                entry.dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>();
+                if (Process32First(snapshot, ref entry)) {
+                    do {
+                        int parent = unchecked((int)entry.th32ParentProcessID);
+                        int pid = unchecked((int)entry.th32ProcessID);
+                        if (!parentMap.TryGetValue(parent, out var children)) {
+                            children = new List<int>();
+                            parentMap[parent] = children;
+                        }
+                        children.Add(pid);
+                        entry.dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>();
+                    } while (Process32Next(snapshot, ref entry));
+                }
+
+                var ordered = new List<int>();
+                var queue = new Queue<int>();
+                queue.Enqueue(rootProcessId);
+                while (queue.Count > 0) {
+                    int parent = queue.Dequeue();
+                    if (!parentMap.TryGetValue(parent, out var children)) continue;
+                    foreach (var child in children) {
+                        ordered.Add(child);
+                        queue.Enqueue(child);
+                    }
+                }
+
+                int killed = 0;
+                for (int i = ordered.Count - 1; i >= 0; i--) {
+                    try {
+                        using (var process = Process.GetProcessById(ordered[i])) {
+                            if (!process.HasExited) {
+                                process.Kill(true);
+                                process.WaitForExit(2000);
+                                killed++;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                return killed;
+            }
+            finally { CloseHandle(snapshot); }
+        }
+    }
 }
 '@
+}
+
+function Wait-SisqualEngineTaskUntil {
+    param([Parameter(Mandatory)][System.Threading.Tasks.Task]$Task,[Parameter(Mandatory)][datetime]$DeadlineUtc)
+    while (-not $Task.IsCompleted -and [DateTime]::UtcNow -lt $DeadlineUtc) { Start-Sleep -Milliseconds 10 }
+    return $Task.IsCompleted
+}
+
+function Stop-SisqualEngineDescendants {
+    param([Parameter(Mandatory)][int]$RootProcessId)
+    if (-not $IsWindows) { return 0 }
+    try { return [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($RootProcessId) }
+    catch { return 0 }
 }
 
 function Get-SisqualMemberValue {
@@ -374,7 +469,7 @@ function Invoke-SisqualEngineHost {
         [Parameter(Mandatory)][ValidateSet('READ_ONLY','OBSERVATIONAL','MUTATING')][string]$EngineClass,
         [Parameter(Mandatory)][string]$PackageRoot,
         [Parameter(Mandatory)][string]$CatalogPath,
-        [Parameter(Mandatory)][string]$CatalogMachineName,
+        [Parameter(Mandatory)][object]$CatalogSession,
         [Parameter(Mandatory)][object[]]$ManifestEntries,
         [ValidateSet('PREVIEW','APPLY')][string]$Mode = 'PREVIEW',
         [AllowNull()][string]$InstanceCode,
@@ -417,8 +512,15 @@ function Invoke-SisqualEngineHost {
     $minimumPowerShell = [string](Get-SisqualMemberValue $Engine 'MinimumPowerShell' '')
     if (-not [string]::IsNullOrWhiteSpace($minimumPowerShell) -and $PSVersionTable.PSVersion -lt [version]$minimumPowerShell) { throw 'POWERSHELL_VERSION_UNAVAILABLE' }
     if ([int](Get-SisqualMemberValue $Engine 'RequiresAdministrator' 0) -eq 1 -and -not (Test-SisqualAdministrator)) { throw 'ADMINISTRATOR_REQUIRED' }
-    if (-not [string]::Equals($CatalogMachineName, $env:COMPUTERNAME, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
     $CatalogPath = Get-SisqualVerifiedCatalogPath -PackageRoot $PackageRoot -CatalogPath $CatalogPath -ManifestEntries $ManifestEntries
+    $sessionPath = [string](Get-SisqualMemberValue $CatalogSession 'CatalogPath' '')
+    if ([string]::IsNullOrWhiteSpace($sessionPath) -or -not [IO.Path]::GetFullPath($sessionPath).Equals($CatalogPath,[StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_SESSION_MISMATCH' }
+    $catalogReader = Get-Command -Name 'Get-SisqualRuntimeCatalogMachineName' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+    if ($null -eq $catalogReader) { throw 'CATALOG_SESSION_REQUIRED' }
+    try { $catalogMachineName = [string](& $catalogReader -Session $CatalogSession) }
+    catch { throw 'CATALOG_SESSION_INVALID' }
+    if ([string]::IsNullOrWhiteSpace($catalogMachineName)) { throw 'CATALOG_SESSION_INVALID' }
+    if (-not [string]::Equals($catalogMachineName, $env:COMPUTERNAME, [StringComparison]::OrdinalIgnoreCase)) { throw 'CATALOG_MACHINE_MISMATCH' }
     [string[]]$normalizedLocks = @($LockKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)
 
     $engineLeaf = [string](Get-SisqualMemberValue $Engine 'SourceFileName' '')
@@ -502,7 +604,22 @@ function Invoke-SisqualEngineHost {
             $stdinClosed = $true
         }
 
-        $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult(); $exitCode = $process.ExitCode
+        $descendantsKilled = Stop-SisqualEngineDescendants -RootProcessId $process.Id
+        $stdoutReady = Wait-SisqualEngineTaskUntil -Task $stdoutTask -DeadlineUtc $deadlineAt
+        $stderrReady = Wait-SisqualEngineTaskUntil -Task $stderrTask -DeadlineUtc $deadlineAt
+        if (-not $stdoutReady -or -not $stderrReady) {
+            try { $process.StandardOutput.Close() } catch { }
+            try { $process.StandardError.Close() } catch { }
+            [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id)
+            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+        }
+        try { $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult() }
+        catch [IO.InvalidDataException] { throw }
+        catch { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
+        $exitCode = $process.ExitCode
+        if ($descendantsKilled -gt 0) {
+            return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
+        }
         if ($stdinWriteFailed) {
             return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
@@ -510,7 +627,8 @@ function Invoke-SisqualEngineHost {
         if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
             $resultInfo = Get-Item -LiteralPath $resultPath
             if ($resultInfo.Length -gt $script:ResultLimitBytes) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_RESULT_LIMIT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
-            $rawResultText = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false, $true))
+            try { $rawResultText = [IO.File]::ReadAllText($resultPath, [Text.UTF8Encoding]::new($false, $true)) }
+            catch [Text.DecoderFallbackException] { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_INVALID_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         }
         if (Find-SisqualSecretLeak -Texts @($rawResultText,$stdout,$stderr) -Secrets $Secrets) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'SECRET_LEAK' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }
         if ($exitCode -notin @(0,1,2,3)) { return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode $exitCode -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks }

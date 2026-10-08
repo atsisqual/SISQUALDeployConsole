@@ -222,3 +222,29 @@ WHERE meta_id = $metaId;
         throw
     }
 }
+
+function Get-SisqualRuntimeCatalogMachineName {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Session)
+
+    $sessionIdProperty = $Session.PSObject.Properties['SessionId']
+    if ($null -eq $sessionIdProperty -or [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value)) { throw 'Catalog session is invalid.' }
+    $sessionId = [string]$sessionIdProperty.Value
+    if (-not $script:CatalogSessions.ContainsKey($sessionId)) { throw 'Catalog session is not active.' }
+    $entry = $script:CatalogSessions[$sessionId]
+    $command = $entry.Connection.CreateCommand()
+    try {
+        $command.CommandText = 'SELECT MachineName FROM dbo_ManagedServer;'
+        $reader = $command.ExecuteReader()
+        try {
+            if (-not $reader.Read() -or $reader.IsDBNull(0)) { throw 'dbo_ManagedServer must contain exactly one MachineName.' }
+            $machineName = [string]$reader.GetString(0)
+            if ($reader.Read() -or [string]::IsNullOrWhiteSpace($machineName)) { throw 'dbo_ManagedServer must contain exactly one MachineName.' }
+            return $machineName
+        }
+        finally { $reader.Dispose() }
+    }
+    finally { $command.Dispose() }
+}
+
+Export-ModuleMember -Function Get-SisqualRuntimeCatalogMachineName

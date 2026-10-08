@@ -174,6 +174,20 @@ switch ($scenario) {
         exit 99
     }
     'NO_RESULT' { exit 0 }
+    'INVALID_UTF8_RESULT' {
+        [IO.File]::WriteAllBytes([string]$request.resultPath, [byte[]](0xC3,0x28))
+        exit 0
+    }
+    'DESCENDANT_PIPE' {
+        $childInfo = [Diagnostics.ProcessStartInfo]::new()
+        $childInfo.FileName = (Get-Process -Id $PID).Path
+        $childInfo.UseShellExecute = $false
+        $childInfo.CreateNoWindow = $true
+        foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 15')) { [void]$childInfo.ArgumentList.Add($argument) }
+        [void][Diagnostics.Process]::Start($childInfo)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
     'STREAM_LIMIT' { [Console]::Out.Write(('X' * (1MB + 64KB))); exit 0 }
     'HANG_COOPERATIVE' {
         $limit = [DateTime]::UtcNow.AddSeconds(15)
