@@ -52,7 +52,18 @@ function Write-ResultFile {
     [IO.File]::WriteAllText([string]$Request.resultPath, ($Result | ConvertTo-Json -Compress -Depth 30), [Text.UTF8Encoding]::new($false))
 }
 
-$delayText = [string]$env:SISQUAL_FAKE_ENGINE_DELAY_STDIN_MS
+# Test hook: start a helper during initialisation, before the request is read (what the launcher gate must keep inside the job object).
+$earlyFlag = Join-Path $PSScriptRoot 'early-helper.flag'
+if (Test-Path -LiteralPath $earlyFlag -PathType Leaf) {
+    $earlyInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+    $earlyInfo.UseShellExecute = $false
+    $earlyInfo.CreateNoWindow = $true
+    foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',('Start-Sleep -Seconds 40 # ' + ([IO.File]::ReadAllText($earlyFlag)).Trim()))) { [void]$earlyInfo.ArgumentList.Add($argument) }
+    [void][Diagnostics.Process]::Start($earlyInfo)
+}
+# The test hook is a file next to the engine, not an environment variable: the host starts engines with a minimal environment.
+$delayFile = Join-Path $PSScriptRoot 'delay-stdin.ms'
+$delayText = if (Test-Path -LiteralPath $delayFile -PathType Leaf) { ([IO.File]::ReadAllText($delayFile)).Trim() } else { '' }
 if ($delayText -match '^\d{1,5}$') { Start-Sleep -Milliseconds ([Math]::Min([int]$delayText,15000)) }
 $raw = [Console]::In.ReadToEnd()
 try {
@@ -104,6 +115,11 @@ switch ($scenario) {
     }
     'SECRET_URL' {
         [Console]::Error.WriteLine([Uri]::EscapeDataString($secretValue))
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'SECRET_URL_FORM' {
+        [Console]::Error.WriteLine([System.Net.WebUtility]::UrlEncode($secretValue))
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
@@ -188,6 +204,18 @@ switch ($scenario) {
         Write-ResultFile $request (New-Result $request $true)
         exit 0
     }
+    'STREAM_FLOOD' {
+        # Far more than the limit and more than a pipe holds: a reader that stops at the limit leaves this engine blocked on a full pipe.
+        $chunk = 'X' * 65536
+        for ($i = 0; $i -lt 64; $i++) { [Console]::Out.Write($chunk) }
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'RESULT_ROOT_ARRAY' {
+        $json = '[' + ((New-Result $request $true) | ConvertTo-Json -Compress -Depth 30) + ']'
+        [IO.File]::WriteAllText([string]$request.resultPath, $json, [Text.UTF8Encoding]::new($false))
+        exit 0
+    }
     'STREAM_LIMIT' { [Console]::Out.Write(('X' * (1MB + 64KB))); exit 0 }
     'HANG_COOPERATIVE' {
         $limit = [DateTime]::UtcNow.AddSeconds(15)
@@ -197,6 +225,30 @@ switch ($scenario) {
             exit 1
         }
         exit 1
+    }
+    'GRANDCHILD' {
+        # The engine starts a child that starts a grandchild and exits: the grandchild is an orphan whose recorded parent is dead.
+        $marker = [string]$request.operationId
+        $childInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+        $childInfo.UseShellExecute = $false
+        $childInfo.CreateNoWindow = $true
+        $launcher = "Start-Process -FilePath (Get-Process -Id `$PID).Path -ArgumentList '-NoLogo','-NoProfile','-Command','Start-Sleep -Seconds 40 # $marker' -WindowStyle Hidden; Start-Sleep -Milliseconds 400"
+        foreach ($argument in @('-NoLogo','-NoProfile','-NonInteractive','-Command',$launcher)) { [void]$childInfo.ArgumentList.Add($argument) }
+        $child = [Diagnostics.Process]::Start($childInfo)
+        [void]$child.WaitForExit(15000)
+        Write-ResultFile $request (New-Result $request $true)
+        exit 0
+    }
+    'NULL_RESULT_ROW' {
+        $result = New-Result -Request $request -Succeeded $true
+        $result.results = @($null)
+        Write-ResultFile $request $result
+        exit 0
+    }
+    'ENV_CLEAN' {
+        $leaked = -not [string]::IsNullOrEmpty($env:SISQUAL_TEST_CANARY_ENV)
+        Write-ResultFile $request (New-Result -Request $request -Succeeded (-not $leaked) -FailedTargets $(if ($leaked) { 1 } else { 0 }) -ErrorCount $(if ($leaked) { 1 } else { 0 }) -ErrorMessage $(if ($leaked) { 'ENV_LEAK' } else { '' }))
+        if ($leaked) { exit 1 } else { exit 0 }
     }
     'CANCEL_BLOCKED' {
         [void][IO.Directory]::CreateDirectory([string]$request.cancelPath)

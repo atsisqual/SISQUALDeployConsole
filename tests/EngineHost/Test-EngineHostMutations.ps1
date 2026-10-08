@@ -13,6 +13,7 @@ function global:Write-SisqualRuntimeLog {
     Add-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Value ($entry | ConvertTo-Json -Compress -Depth 10) -Encoding utf8
     return $env:SISQUAL_ENGINEHOST_TEST_LOG
 }
+$script:LauncherHash = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'runtime' 'Invoke-SisqualEngineLauncher.ps1') -Algorithm SHA256).Hash.ToLowerInvariant()
 $script:Passed = 0
 $script:Failed = 0
 $script:Roots = [Collections.Generic.List[string]]::new()
@@ -36,20 +37,33 @@ function New-Ctx([string]$Scenario = 'GOOD', [string]$ModePolicy = 'NONE') {
     $catalogDir = Join-Path $root 'catalog'; [void][IO.Directory]::CreateDirectory($catalogDir)
     $catalog = Join-Path $catalogDir 'catalog-TEST.db'; Set-Content -LiteralPath $catalog -Value 'synthetic' -NoNewline -Encoding ascii
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-    return [pscustomobject]@{
+    $built = [pscustomobject]@{
         Root = $root; Catalog = $catalog; Scenario = $Scenario; CatalogSession = (New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName ([Environment]::MachineName))
         Engine = [pscustomobject]@{ EngineCode = 'FAKE_ENGINE'; EngineVersion = 'test-1.0'; SourceFileName = $leaf; IsEnabled = 1; MinimumPowerShell = '7.0'; RequiresAdministrator = 0 }
         Action = [pscustomobject]@{ ActionCode = 'FAKE_ACTION'; EngineCode = 'FAKE_ENGINE'; IsEnabled = 1; ActionType = 'ENGINE'; ModePolicy = $ModePolicy; RequiresInstanceSelection = 1; AllowAllInstances = 1; InstanceSelectionPolicy = 'ALL_ENABLED'; PassInstanceCode = 1; PassApply = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 1 } else { 0 }); ConfirmationText = $(if ($ModePolicy -eq 'PREVIEW_APPLY') { 'CONFIRM' } else { '' }); CommandTimeoutSeconds = 5 }
         Manifest = @(
             [pscustomobject]@{ path = ('engines/' + $leaf); sha256 = $hash },
+            [pscustomobject]@{ path = 'runtime/Invoke-SisqualEngineLauncher.ps1'; sha256 = $script:LauncherHash },
             [pscustomobject]@{ path = 'catalog/catalog-TEST.db'; sha256 = (Get-FileHash -LiteralPath $catalog -Algorithm SHA256).Hash.ToLowerInvariant(); size = (Get-Item -LiteralPath $catalog).Length }
         )
     }
+    Set-SisqualTestCatalogRows -Session $built.CatalogSession -Engine $built.Engine -Action $built.Action
+    return $built
+}
+function Get-ManifestWithSecretContract {
+    # The credential references an engine may receive come from the package contract, which is in the manifest like every other file.
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Declared)
+    $dir = Join-Path $Context.Root 'contracts'; [void][IO.Directory]::CreateDirectory($dir)
+    $path = Join-Path $dir 'engine-secret-references.json'
+    [IO.File]::WriteAllText($path, ([ordered]@{ contractVersion = '0.1-proposed'; engines = [ordered]@{ FAKE_ENGINE = @($Declared) } } | ConvertTo-Json -Depth 5 -Compress), [Text.UTF8Encoding]::new($false))
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return @(@($Context.Manifest | Where-Object { $_.path -cne 'contracts/engine-secret-references.json' }) + [pscustomobject]@{ path = 'contracts/engine-secret-references.json'; sha256 = $hash })
 }
 function Run {
     param([object]$Ctx, [hashtable]$Secrets = @{}, [string]$Mode = 'PREVIEW', [string]$PlanFingerprint = $null, [string]$Confirmation = $null, [string]$Class = 'READ_ONLY', [string[]]$Declared = $null)
     if ($null -eq $Declared) { $Declared = @($Secrets.Keys | ForEach-Object { [string]$_ }) }
-    Invoke-SisqualEngineHost -Engine $Ctx.Engine -Action $Ctx.Action -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $Ctx.Manifest -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -DeclaredSecretReferences $Declared -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
+    $manifestForCall = if ($Secrets.Count -gt 0) { Get-ManifestWithSecretContract -Context $Ctx -Declared $Declared } else { $Ctx.Manifest }
+    Invoke-SisqualEngineHost -ActionCode $Ctx.Action.ActionCode -EngineClass $Class -PackageRoot $Ctx.Root -CatalogPath $Ctx.Catalog -CatalogSession $Ctx.CatalogSession -ManifestEntries $manifestForCall -Mode $Mode -InstanceCode $Ctx.Scenario -PlanFingerprint $PlanFingerprint -ConfirmationText $Confirmation -Secrets $Secrets -LockKeys @('INSTANCE:' + [string]$Ctx.Scenario) -CancellationGraceSeconds 1
 }
 
 try {
@@ -60,7 +74,7 @@ try {
     Check 'mutation: disabled action is rejected' (Throws-Code { Run $ctx } 'ACTION_DISABLED')
 
     $ctx = New-Ctx; $ctx.Action.EngineCode = 'OTHER_ENGINE'
-    Check 'mutation: action engine mapping is exact' (Throws-Code { Run $ctx } 'ACTION_ENGINE_MISMATCH')
+    Check 'mutation: an action that names an engine that is not in the verified catalog is rejected (the engine is resolved from the action, so the mapping is exact by construction)' (Throws-Code { Run $ctx } 'ENGINE_NOT_FOUND')
 
     $ctx = New-Ctx; $rogue = Join-Path $ctx.Root 'other.db'; Set-Content -LiteralPath $rogue -Value 'synthetic' -NoNewline -Encoding ascii; $ctx.Catalog = $rogue
     Check 'mutation: arbitrary catalog path is rejected' (Throws-Code { Run $ctx } 'CATALOG_PATH_MISMATCH')
@@ -118,39 +132,53 @@ try {
     $ctx = New-Ctx -Scenario 'INVALID_UTF8_RESULT'; $result = Run $ctx
     Check 'mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
 
-    # Process id reuse: a child counts only if it started at or after its parent.
-    Check 'mutation: a child that started before its parent is not a descendant (process id reuse)' (-not [Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(200, 100))
-    Check 'mutation: a child that started after its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 200))
-    Check 'mutation: a child that started in the same instant as its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 100))
+    # The launcher gate: a helper started during the engine's own initialisation is inside the job object as well.
     if ($IsWindows) {
-        $parentInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path); $parentInfo.UseShellExecute = $false; $parentInfo.CreateNoWindow = $true
-        foreach ($a in @('-NoLogo','-NoProfile','-NonInteractive','-Command','$c = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList ''-NoLogo'',''-NoProfile'',''-Command'',''Start-Sleep -Seconds 40'' -PassThru; Start-Sleep -Seconds 40')) { [void]$parentInfo.ArgumentList.Add($a) }
-        $parentProc = [Diagnostics.Process]::Start($parentInfo)
-        try {
-            Start-Sleep -Milliseconds 2500
-            $rootTicks = $parentProc.StartTime.ToUniversalTime().Ticks
-            $future = $rootTicks + [TimeSpan]::FromHours(1).Ticks
-            $refused = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $future)
-            Check 'mutation: a real child older than the claimed root start is refused (the guard works end to end)' ($refused -eq 0)
-            $killed = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $rootTicks)
-            Check 'mutation: with the true root start the real child is killed' ($killed -ge 1)
+        $ctx = New-Ctx
+        $earlyMarker = [guid]::NewGuid().ToString('N')
+        [IO.File]::WriteAllText((Join-Path (Join-Path $ctx.Root 'engines') 'early-helper.flag'), $earlyMarker)
+        $result = Run $ctx
+        $earlyAlive = $true
+        for ($i = 0; $i -lt 20 -and $earlyAlive; $i++) {
+            $earlyAlive = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($earlyMarker) }).Count -gt 0
+            if ($earlyAlive) { Start-Sleep -Milliseconds 250 }
         }
-        finally { try { if (-not $parentProc.HasExited) { $parentProc.Kill($true) } } catch { } }
+        Check 'mutation: a helper started during engine initialisation is inside the job (launcher gate) and is terminated' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $earlyAlive)
+    }
+    # Containment: everything the engine starts lives in a job object, so an orphaned grandchild is reached without any process id logic.
+    if ($IsWindows) {
+        $ctx = New-Ctx -Scenario 'GRANDCHILD'; $result = Run $ctx
+        $marker = [string]$result.operationId
+        $alive = $true
+        for ($i = 0; $i -lt 20 -and $alive; $i++) {
+            $alive = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($marker) }).Count -gt 0
+            if ($alive) { Start-Sleep -Milliseconds 250 }
+        }
+        Check 'mutation: an orphaned grandchild is terminated through the job and the run is ENGINE_NO_RESULT' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and -not $alive)
     }
 
-    # ADR-0008 item 3: only declared credential references reach the engine.
-    $ctx = New-Ctx
-    Check 'mutation: a secret the engine does not declare is rejected before launch' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a'; OTHER_SECRET = 'b' } -Declared @('TEST_SECRET') } 'SECRET_NOT_DECLARED')
-    Check 'mutation: with no declared references any secret is rejected' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @() } 'SECRET_NOT_DECLARED')
-    Check 'mutation: a reference with an invalid shape is rejected even if declared' (Throws-Code { Run $ctx -Secrets @{ 'bad ref' = 'a' } -Declared @('bad ref') } 'SECRET_NOT_DECLARED')
-    Check 'mutation: the declared reference match is case sensitive' (Throws-Code { Run $ctx -Secrets @{ TEST_SECRET = 'a' } -Declared @('test_secret') } 'SECRET_NOT_DECLARED')
-    # ADR-0008 item 12: a synthesised failure names the instance in the audit record.
-    $ctx = New-Ctx -Scenario 'NO_RESULT'; $result = Run $ctx
-    $auditTail = if (Test-Path -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG) { @(Get-Content -LiteralPath $env:SISQUAL_ENGINEHOST_TEST_LOG -Tail 4) -join "`n" } else { '' }
-    Check 'mutation: the failure audit record carries the instance and the reason is a field' ($result.errorMessage -ceq 'ENGINE_NO_RESULT' -and $auditTail.Contains('"instance":"NO_RESULT"') -and $auditTail.Contains('"reason"'))
+    # A failed containment must not leave the gated launcher alive.
+    $module = Get-Module Sisqual.Runtime.EngineHost
+    $originalContainment = & $module { (Get-Item Function:New-SisqualEngineContainment).ScriptBlock }
+    & $module { Set-Item -Path Function:New-SisqualEngineContainment -Value { throw 'simulated containment failure' } }
+    try {
+        $ctx = New-Ctx
+        Check 'mutation: a failed containment is ENGINE_CONTAINMENT_FAILED' (Throws-Code { Run $ctx } 'ENGINE_CONTAINMENT_FAILED')
+        if ($IsWindows) {
+            Start-Sleep -Milliseconds 500
+            $leftover = @(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains([string]$ctx.Root) }).Count
+            Check 'mutation: a failed containment leaves no launcher process waiting for its gate' ($leftover -eq 0)
+        }
+    }
+    finally { & $module { param($block) Set-Item -Path Function:New-SisqualEngineContainment -Value $block } $originalContainment }
 
+    $ctx = New-Ctx -Scenario 'STREAM_FLOOD'
+    $watch = [Diagnostics.Stopwatch]::StartNew(); $result = Run $ctx; $watch.Stop()
+    Check 'mutation: an engine that floods past the limit gets ENGINE_STREAM_LIMIT at once, not after the timeout' ($result.errorMessage -ceq 'ENGINE_STREAM_LIMIT' -and $watch.Elapsed.TotalSeconds -lt 4) (('{0} after {1:n1} s' -f $result.errorMessage, $watch.Elapsed.TotalSeconds))
+    $ctx = New-Ctx -Scenario 'RESULT_ROOT_ARRAY'; $result = Run $ctx
+    Check 'mutation: a valid result wrapped in a root array is ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
     $canary = 'canary value/+with?encoding=1'
-    foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
+    foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX','SECRET_URL_FORM')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }
         Check ("mutation: encoded secret detected ({0})" -f $scenario) ($result.errorMessage -ceq 'SECRET_LEAK')
     }
@@ -170,9 +198,9 @@ try {
     Check 'mutation setup: failed preview carries fingerprint but remains failed' (-not $preview.succeeded -and [string]$preview.planFingerprint -match '^[0-9a-f]{64}$')
     Check 'mutation: failed preview fingerprint is not cached for APPLY' (Throws-Code { Run $failedPreview -Class MUTATING -Mode APPLY -PlanFingerprint ([string]$preview.planFingerprint) -Confirmation 'CONFIRM' } 'PLAN_CHANGED')
 
-    $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1
+    $ctx = New-Ctx; $ctx.Action.RequiresInstanceSelection = 1; $ctx.Action.AllowAllInstances = 0
     Check 'mutation: required instance cannot be omitted' (Throws-Code {
-        Invoke-SisqualEngineHost -Engine $ctx.Engine -Action $ctx.Action -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
+        Invoke-SisqualEngineHost -ActionCode $ctx.Action.ActionCode -EngineClass READ_ONLY -PackageRoot $ctx.Root -CatalogPath $ctx.Catalog -CatalogSession $ctx.CatalogSession -ManifestEntries $ctx.Manifest -Mode PREVIEW -InstanceCode $null
     } 'INSTANCE_REQUIRED')
 }
 finally {

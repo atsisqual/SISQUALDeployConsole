@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # only to publish the test logs to a temporary results/ branch
 
 concurrency:
   group: phase3-runtime-catalog-${{ github.ref }}
@@ -100,9 +100,9 @@ jobs:
         run: |
           $report = Join-Path $env:GITHUB_WORKSPACE 'runtime-catalog-${{ matrix.os }}.json'
           $sidecarReport = Join-Path $env:GITHUB_WORKSPACE 'runtime-catalog-sidecars-${{ matrix.os }}.json'
-          & $env:PORTABLE_PWSH -NoLogo -NoProfile -NonInteractive -File '.\tests\Integration\Test-RuntimeCatalog.ps1' -ProviderRoot $env:PROVIDER_ROOT -SqliteCli $env:SQLITE3_PATH -ReportPath $report
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -NonInteractive -File '.\tests\Integration\Test-RuntimeCatalog.ps1' -ProviderRoot $env:PROVIDER_ROOT -SqliteCli $env:SQLITE3_PATH -ReportPath $report *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'rc-1-catalog.log')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:PORTABLE_PWSH -NoLogo -NoProfile -NonInteractive -File '.\tests\Integration\Test-RuntimeCatalog-Sidecars.ps1' -ProviderRoot $env:PROVIDER_ROOT -SqliteCli $env:SQLITE3_PATH -ReportPath $sidecarReport
+          & $env:PORTABLE_PWSH -NoLogo -NoProfile -NonInteractive -File '.\tests\Integration\Test-RuntimeCatalog-Sidecars.ps1' -ProviderRoot $env:PROVIDER_ROOT -SqliteCli $env:SQLITE3_PATH -ReportPath $sidecarReport *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'rc-2-sidecars.log')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload runtime catalog evidence
@@ -114,3 +114,33 @@ jobs:
             runtime-catalog-${{ matrix.os }}.json
             runtime-catalog-sidecars-${{ matrix.os }}.json
           if-no-files-found: warn
+
+      - name: Publish the logs to a temporary results branch
+        # A pull request from a fork or from Dependabot gets a read-only token, so the push would fail and turn the checks red.
+        if: ${{ always() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        # Diagnostics only: a failure to publish the logs must not turn the real checks red.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'stage-log'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          foreach ($f in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter 'rc-*.log') {
+              $text = [IO.File]::ReadAllText($f.FullName)
+              $text = [regex]::Replace($text, '[^\x09\x0A\x20-\x7E]', '?')
+              if ($text.Length -gt 200000) { $text = $text.Substring(0, 200000) }
+              [IO.File]::WriteAllText((Join-Path $stage $f.Name), ($text -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+          }
+          if (-not (Get-ChildItem -LiteralPath $stage -Filter '*.log')) { [IO.File]::WriteAllText((Join-Path $stage 'rc-none.log'), 'no log was produced', [Text.UTF8Encoding]::new($false)) }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $tag = $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '-' + ('${{ matrix.os }}' -replace '[^a-z0-9]', '')
+          $branch = 'results/runtime-catalog-' + $tag
+          git checkout --orphan $branch
+          git rm -rf -q --ignore-unmatch .
+          $dest = 'docs/phase1/evidence/runtime-catalog-' + $tag
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item -Path (Join-Path $stage '*.log') -Destination $dest
+          git add -A
+          git commit -q -m ('results: runtime catalog logs of run ' + $tag)
+          git push origin $branch
