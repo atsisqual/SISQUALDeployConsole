@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'engines/Invoke-DeploymentPreflight.ps1'
       - 'tests/EngineHost/**'
       - '.github/workflows/engine-host.yml'
   push:
@@ -11,6 +12,7 @@ on:
       - main
     paths:
       - 'runtime/Sisqual.Runtime.EngineHost.psm1'
+      - 'engines/Invoke-DeploymentPreflight.ps1'
       - 'tests/EngineHost/**'
       - '.github/workflows/engine-host.yml'
   workflow_dispatch:
@@ -26,7 +28,7 @@ jobs:
   engine-host:
     name: engine host on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +39,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up exact .NET SDK for CI-only SQLite provider materialization
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.100'
+
+      - name: Materialize exact locked SQLite provider payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:RUNNER_TEMP 'preflight-provider-source'
+          $output = Join-Path $env:RUNNER_TEMP 'preflight-provider'
+          New-Item -ItemType Directory -Path $source, $output -Force | Out-Null
+          Copy-Item -LiteralPath '.\spikes\phase1B\sqlite-provider\ProviderProbe.csproj' -Destination (Join-Path $source 'ProviderProbe.csproj')
+          Copy-Item -LiteralPath '.\docs\phase1\evidence\phase1b-sqlite-provider-37392036026\packages.lock.json' -Destination (Join-Path $source 'packages.lock.json')
+          Push-Location $source
+          try {
+            dotnet restore .\ProviderProbe.csproj --locked-mode --no-cache --force
+            if ($LASTEXITCODE -ne 0) { throw 'Locked provider restore failed.' }
+            dotnet build .\ProviderProbe.csproj -c Release -r win-x64 --no-restore -o $output
+            if ($LASTEXITCODE -ne 0) { throw 'Provider materialization failed.' }
+          }
+          finally { Pop-Location }
+          "PREFLIGHT_PROVIDER_ROOT=$output" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Run fake-engine direct conformance
         shell: pwsh
@@ -70,6 +96,20 @@ jobs:
         shell: pwsh
         run: |
           pwsh -NoProfile -File .\tests\EngineHost\Test-EngineHostSourceMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-5-source-mutations.log')
+          exit $LASTEXITCODE
+
+      - name: Run DEPLOYMENT_PREFLIGHT READ_ONLY conformance
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-DeploymentPreflight.ps1 -ProviderRoot $env:PREFLIGHT_PROVIDER_ROOT *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-6-deployment-preflight.log')
+          exit $LASTEXITCODE
+
+      - name: Run DEPLOYMENT_PREFLIGHT mutation checks
+        if: success() || failure()
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\tests\EngineHost\Test-DeploymentPreflightMutations.ps1 *>&1 | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'eh-7-deployment-preflight-mutations.log')
           exit $LASTEXITCODE
 
       - name: Publish the logs to a temporary results branch
