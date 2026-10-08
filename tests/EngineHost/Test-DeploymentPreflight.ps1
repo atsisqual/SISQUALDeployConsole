@@ -216,8 +216,9 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $engine = [pscustomobject]@{ EngineCode='DEPLOYMENT_PREFLIGHT'; EngineVersion='1.0.0'; SourceFileName='Invoke-DeploymentPreflight.ps1'; IsEnabled=1; MinimumPowerShell='7.0'; RequiresAdministrator=0 }
     $action = [pscustomobject]@{ ActionCode='DEPLOYMENT_PREFLIGHT'; ActionType='ENGINE'; EngineCode='DEPLOYMENT_PREFLIGHT'; IsEnabled=1; ModePolicy='NONE'; RequiresInstanceSelection=1; AllowAllInstances=1; PassInstanceCode=1; PassApply=0; CommandTimeoutSeconds=0; ConfirmationText='' }
     Set-SisqualTestCatalogRows -Session $session -Engine $engine -Action $action
+    $preflightActionCode = [string]$action.ActionCode   # not read as $action inside Throws blocks: the helper has a parameter of that name
     $before = TreeFingerprint $servicesRoot
-    $result = Invoke-SisqualEngineHost -ActionCode $action.ActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $result = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     $after = TreeFingerprint $servicesRoot
     if (-not [bool]$result.succeeded) { Write-SafeResultDiagnostic -Label 'complete-model' -Result $result }
 
@@ -231,13 +232,13 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['WEB_ACCESS.INST1'],[StringComparison]::Ordinal))
 
     $missingSecret = @{ 'WEB_ACCESS.INST1'='another-canary-value' }
-    $missing = Invoke-SisqualEngineHost -ActionCode $action.ActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret
+    $missing = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret
     $missingHasExpectedError = (-not [bool]$missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
     if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
     Check 'missing IIS identity credential is an ERROR' $missingHasExpectedError
     Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
 
-    Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $action.ActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
+    Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
 
     $invalidInfo = [Diagnostics.ProcessStartInfo]::new()
     $invalidInfo.FileName = (Get-Process -Id $PID).Path
