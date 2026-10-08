@@ -87,3 +87,8 @@ Not applicable (read-only).
 4. [DECIDED 2026-10-07] Add a check that the catalog build time is not older than a limit (risk R-044)? Recommendation: report it as `INFO` with the date, no limit.
 
 The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026-10-07, covering this engine and the other wave 1 engine); see `docs/decisions-log.md`.
+
+## Host contract
+
+- Engine class: `READ_ONLY`.
+- Credential references: `IIS_IDENTITY.*`.
