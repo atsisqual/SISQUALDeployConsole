@@ -27,7 +27,10 @@ $anchors = @(
     [pscustomobject]@{ Name = 'completion summary audit'; Text = 'targetCount = [int]$result.summary.targetCount' },
     [pscustomobject]@{ Name = 'machine ownership comes from active catalog session'; Text = "Get-Command -Name 'Get-SisqualRuntimeCatalogMachineName' -Module 'Sisqual.Runtime.Catalog'" },
     [pscustomobject]@{ Name = 'redirected stream drain is deadline bounded'; Text = 'Wait-SisqualEngineTaskUntil -Task $stdoutTask -DeadlineUtc $deadlineAt' },
-    [pscustomobject]@{ Name = 'invalid UTF8 result is mapped'; Text = 'catch [Text.DecoderFallbackException]' }
+    [pscustomobject]@{ Name = 'invalid UTF8 result is mapped'; Text = 'catch [Text.DecoderFallbackException]' },
+    [pscustomobject]@{ Name = 'descendants must start after their parent'; Text = 'if (!IsPlausibleChild(parent.Value, childStart)) continue;' },
+    [pscustomobject]@{ Name = 'descendant start time re-checked before the kill'; Text = 'process.StartTime.ToUniversalTime().Ticks != ordered[i].Value' },
+    [pscustomobject]@{ Name = 'root start time captured while the engine runs'; Text = '$rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks' }
 )
 
 $passed = 0

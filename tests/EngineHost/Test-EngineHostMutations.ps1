@@ -112,6 +112,26 @@ try {
     $ctx = New-Ctx -Scenario 'INVALID_UTF8_RESULT'; $result = Run $ctx
     Check 'mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT' ($result.errorMessage -ceq 'ENGINE_INVALID_RESULT')
 
+    # Process id reuse: a child counts only if it started at or after its parent.
+    Check 'mutation: a child that started before its parent is not a descendant (process id reuse)' (-not [Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(200, 100))
+    Check 'mutation: a child that started after its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 200))
+    Check 'mutation: a child that started in the same instant as its parent is a descendant' ([Sisqual.Runtime.EngineHost.ProcessTree]::IsPlausibleChild(100, 100))
+    if ($IsWindows) {
+        $parentInfo = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path); $parentInfo.UseShellExecute = $false; $parentInfo.CreateNoWindow = $true
+        foreach ($a in @('-NoLogo','-NoProfile','-NonInteractive','-Command','$c = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList ''-NoLogo'',''-NoProfile'',''-Command'',''Start-Sleep -Seconds 40'' -PassThru; Start-Sleep -Seconds 40')) { [void]$parentInfo.ArgumentList.Add($a) }
+        $parentProc = [Diagnostics.Process]::Start($parentInfo)
+        try {
+            Start-Sleep -Milliseconds 2500
+            $rootTicks = $parentProc.StartTime.ToUniversalTime().Ticks
+            $future = $rootTicks + [TimeSpan]::FromHours(1).Ticks
+            $refused = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $future)
+            Check 'mutation: a real child older than the claimed root start is refused (the guard works end to end)' ($refused -eq 0)
+            $killed = [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($parentProc.Id, $rootTicks)
+            Check 'mutation: with the true root start the real child is killed' ($killed -ge 1)
+        }
+        finally { try { if (-not $parentProc.HasExited) { $parentProc.Kill($true) } } catch { } }
+    }
+
     $canary = 'canary value/+with?encoding=1'
     foreach ($scenario in @('SECRET_BASE64','SECRET_URL','SECRET_URL_LOWERHEX')) {
         $ctx = New-Ctx -Scenario $scenario; $result = Run $ctx -Secrets @{ TEST_SECRET = $canary }

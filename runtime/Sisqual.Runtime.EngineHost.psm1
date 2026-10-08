@@ -64,7 +64,23 @@ namespace Sisqual.Runtime.EngineHost {
         [DllImport("kernel32.dll")]
         private static extern bool CloseHandle(IntPtr hObject);
 
-        public static int KillDescendants(int rootProcessId) {
+        // A child counts only if it started at or after its parent: a recorded parent id alone is not enough, because Windows reuses
+        // process ids and an unrelated or orphaned process can name a dead engine's id as its parent.
+        public static bool IsPlausibleChild(long parentStartUtcTicks, long childStartUtcTicks) {
+            return childStartUtcTicks >= parentStartUtcTicks;
+        }
+
+        private static bool TryGetStartTicks(int pid, out long ticks) {
+            try {
+                using (var process = Process.GetProcessById(pid)) {
+                    ticks = process.StartTime.ToUniversalTime().Ticks;
+                    return true;
+                }
+            }
+            catch { ticks = 0; return false; }
+        }
+
+        public static int KillDescendants(int rootProcessId, long rootStartUtcTicks) {
             var snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if (snapshot == INVALID_HANDLE_VALUE) return 0;
             try {
@@ -84,22 +100,27 @@ namespace Sisqual.Runtime.EngineHost {
                     } while (Process32Next(snapshot, ref entry));
                 }
 
-                var ordered = new List<int>();
-                var queue = new Queue<int>();
-                queue.Enqueue(rootProcessId);
+                var ordered = new List<KeyValuePair<int, long>>();
+                var queue = new Queue<KeyValuePair<int, long>>();
+                queue.Enqueue(new KeyValuePair<int, long>(rootProcessId, rootStartUtcTicks));
                 while (queue.Count > 0) {
-                    int parent = queue.Dequeue();
-                    if (!parentMap.TryGetValue(parent, out var children)) continue;
+                    var parent = queue.Dequeue();
+                    if (!parentMap.TryGetValue(parent.Key, out var children)) continue;
                     foreach (var child in children) {
-                        ordered.Add(child);
-                        queue.Enqueue(child);
+                        long childStart;
+                        if (!TryGetStartTicks(child, out childStart)) continue;
+                        if (!IsPlausibleChild(parent.Value, childStart)) continue;
+                        var item = new KeyValuePair<int, long>(child, childStart);
+                        ordered.Add(item);
+                        queue.Enqueue(item);
                     }
                 }
 
                 int killed = 0;
                 for (int i = ordered.Count - 1; i >= 0; i--) {
                     try {
-                        using (var process = Process.GetProcessById(ordered[i])) {
+                        using (var process = Process.GetProcessById(ordered[i].Key)) {
+                            if (process.StartTime.ToUniversalTime().Ticks != ordered[i].Value) continue;
                             if (!process.HasExited) {
                                 process.Kill(true);
                                 process.WaitForExit(2000);
@@ -125,9 +146,9 @@ function Wait-SisqualEngineTaskUntil {
 }
 
 function Stop-SisqualEngineDescendants {
-    param([Parameter(Mandatory)][int]$RootProcessId)
+    param([Parameter(Mandatory)][int]$RootProcessId,[Parameter(Mandatory)][long]$RootStartUtcTicks)
     if (-not $IsWindows) { return 0 }
-    try { return [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($RootProcessId) }
+    try { return [Sisqual.Runtime.EngineHost.ProcessTree]::KillDescendants($RootProcessId, $RootStartUtcTicks) }
     catch { return 0 }
 }
 
@@ -556,6 +577,7 @@ function Invoke-SisqualEngineHost {
     $started = [DateTime]::UtcNow; $keepRunDirectory = $false
     try {
         if (-not $process.Start()) { throw 'ENGINE_START_FAILED' }
+        $rootStartUtcTicks = $process.StartTime.ToUniversalTime().Ticks
         $stdoutTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardOutput, $script:StreamLimitBytes)
         $stderrTask = [Sisqual.Runtime.EngineHost.BoundedReader]::ReadAsync($process.StandardError, $script:StreamLimitBytes)
         $deadlineAt = $started.AddSeconds($timeoutSeconds)
@@ -604,13 +626,13 @@ function Invoke-SisqualEngineHost {
             $stdinClosed = $true
         }
 
-        $descendantsKilled = Stop-SisqualEngineDescendants -RootProcessId $process.Id
+        $descendantsKilled = Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks
         $stdoutReady = Wait-SisqualEngineTaskUntil -Task $stdoutTask -DeadlineUtc $deadlineAt
         $stderrReady = Wait-SisqualEngineTaskUntil -Task $stderrTask -DeadlineUtc $deadlineAt
         if (-not $stdoutReady -or -not $stderrReady) {
             try { $process.StandardOutput.Close() } catch { }
             try { $process.StandardError.Close() } catch { }
-            [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id)
+            [void](Stop-SisqualEngineDescendants -RootProcessId $process.Id -RootStartUtcTicks $rootStartUtcTicks)
             return New-SisqualLoggedEngineFailureResult -OperationId $OperationId -EngineCode $engineCode -Mode $Mode -ErrorCode 'ENGINE_NO_RESULT' -EngineVersion $engineVersion -ExitCode 1 -StartedAt $started -Secrets $Secrets -PlanFingerprint $PlanFingerprint -LockKeys $normalizedLocks
         }
         try { $stdout = $stdoutTask.GetAwaiter().GetResult(); $stderr = $stderrTask.GetAwaiter().GetResult() }
