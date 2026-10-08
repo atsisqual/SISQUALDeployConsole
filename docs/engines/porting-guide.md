@@ -11,7 +11,7 @@ For anyone who ports an engine (ADR-0008, `runtime/Sisqual.Runtime.EngineHost.ps
 - The **result is written to the file named in `resultPath`**, never to standard output. Standard output and standard error must stay silent (the host captures, scans and may refuse them).
 - **End every path with an explicit `exit`**: 0 finished with a result, 1 finished with a failure result, 2 invalid request, 3 precondition not met. The launcher passes that code on; without `exit` the code is undefined.
 - The result follows `contracts/engine-result.schema.json`. `mode` is `PREVIEW` or `APPLY`; a read-only engine always reports `PREVIEW`.
-- The engine does not call the HTTP layer, another engine, or the network.
+- The engine does not call the HTTP layer or another engine. It uses the network only where its specification approves it (for example HTTPS health checks for `PULSE_STATUS`, loopback calls for `WEB_ACCESS`, local SQL connections). Anything the specification does not name is not allowed.
 
 ## 3. PowerShell 7 traps that already cost us
 - `ConvertFrom-Json` turns ISO date strings into `DateTime`. Always use `-DateKind String` for the request and for any file with dates, or an exact date parse will fail on a valid request (this is why `DEPLOYMENT_PREFLIGHT` rejected valid requests for days).
@@ -22,7 +22,7 @@ For anyone who ports an engine (ADR-0008, `runtime/Sisqual.Runtime.EngineHost.ps
 - Use `git add -f` for files under `runtime/`: `.gitignore` ignores that folder and a plain `git add` can stop a command chain without a message.
 
 ## 4. Secrets
-- Secrets reach the engine only in the request field `secrets`. Never in arguments, environment, files, logs, or the result.
+- Secrets reach the engine only in the request field `secrets`. Never in arguments, environment, logs, or the result, and never written to a file except the managed target that the engine's specification explicitly approves (for example the repaired application configuration of `CONFIG_REPAIR`, the machine-protected credential file of `WEB_ACCESS`, or the database row that `KEYCLOAK_CLIENT_SECRETS` updates).
 - Declare the references the engine reads in `contracts/engine-secret-references.json`, in the same PR, as exact references or per kind (`IIS_IDENTITY.*`, `WEB_ACCESS.*`, `MOBILE_APP_TOKEN.*`, `RULE_SECRET.*`). Declare only what the specification says the engine needs. An engine that reads a credential its specification does not mention is a defect, not a convenience.
 - The host scans the result, standard output and standard error for every secret value it passed (plain, base64, URL and form encodings). Test with canary values that are long and unique (a one-character value is found everywhere).
 

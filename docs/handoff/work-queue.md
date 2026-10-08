@@ -4,11 +4,11 @@ One writer: the reviewer updates the status column when a PR is merged, so nobod
 
 Who: **GPT** = the ChatGPT agent, **Claude** = the reviewer and integrator, **Owner** = decisions only the project owner can make.
 
-## 1. Documentation tasks for GPT (independent, small, in any order)
+## 1. Documentation tasks for GPT (small; independent unless the task names a dependency)
 
 | ID | Task | Files allowed | Done when |
 |---|---|---|---|
-| D1 | Propose the shape of a `results` row and its status vocabulary, derived from what `engines/Invoke-DeploymentPreflight.ps1` emits, as `[PROPOSED]` text for the owner | `contracts/engine-result-rows.md` (new) | A table of fields, an allowed status list with one-line meanings, 3 examples taken from the preflight tests, and the questions the owner must answer. The schema file is not changed. |
+| D1 | **Needs E0 merged (PR #67).** Propose the shape of a `results` row and its status vocabulary, derived from what `engines/Invoke-DeploymentPreflight.ps1` emits, as `[PROPOSED]` text for the owner | `contracts/engine-result-rows.md` (new) | A table of fields, an allowed status list with one-line meanings, 3 examples taken from the preflight tests, and the questions the owner must answer. The schema file is not changed. |
 | D2 | Decision brief on the six `action-xref` failures (adapter action codes `DATABASE_SETTING`, `HOUSEKEEPING`, `WINDOWS_SERVICE` that no `ops_Action` row resolves) | `docs/handoff/decision-brief-action-xref.md` (new) | Facts from the converted real catalog (which adapter rows, which action codes exist), 2 or 3 options with the effect of each on the verifier and the engines, one recommendation. |
 | D3 | Decision brief on the three `SQL`-type actions the host refuses (`EXECUTION_HISTORY`, `LINKS_VISIBILITY_MATRIX`, `OBJECT_AUDIT`) | `docs/handoff/decision-brief-sql-actions.md` (new) | For each: what it does today, what replaces it, the wave that would own it, and a recommendation (engine, read-only report, or retire). |
 | D4 | Design proposal for a verified package state held by the bootstrap and read by the host and the runtime catalog (ADR-0008 "Trust boundary of the host") | `docs/architecture/ADR-0010-verified-package-state.md` (new, status Proposed) | Problem, the data held, how it is set once and read, how the manifest counter fits, effect on the catalog opener and the host, alternatives, and the approvals needed (`AGENTS.md`: trust bootstrap, package integrity). No code. |
@@ -36,13 +36,13 @@ Each port is one PR: the engine, its tests (conformance, mutation, one per issue
 
 | ID | Task | Status |
 |---|---|---|
-| C1 | Finish `DEPLOYMENT_PREFLIGHT` (#67): remove the unspecified `WEB_ACCESS` credential check, Codex review, run on the real converted catalogs, merge | in progress |
-| C2 | Merge #68 (engine host contract per specification) after CI and review | waiting for CI |
-| C3 | Host: verified package state (D4) after the owner approves the design | blocked on Owner O3 |
-| C4 | B6.4: issue the credential package per machine | not started |
-| C5 | Runtime wiring: manifest verification with the counter (K3), operation coordinator, the engine registry that builds the host call | not started |
-| C6 | Real-snapshot proof (conversion, verifier, engines) for every PR that touches them | every PR |
-| C7 | Clean the branches that nobody needs (`proof/*`, `results/*`) | after C1 |
+| C1 | Finish `DEPLOYMENT_PREFLIGHT` (#67): the unspecified `WEB_ACCESS` credential check is removed and the engine reads the real catalog schema; behavioural tests for four review fixes, Codex review, run on the real converted catalogs, merge | [PENDING] in progress |
+| C2 | Merge #68 (engine host contract per specification) after CI and review | [PENDING] waiting for CI and review |
+| C3 | Host: verified package state (D4) after the owner approves the design | [PENDING] blocked on Owner O3 |
+| C4 | B6.4: issue the credential package per machine | [PENDING] not started |
+| C5 | Runtime wiring: manifest verification with the counter (K3), operation coordinator, the engine registry that builds the host call | [PENDING] not started |
+| C6 | Real-snapshot proof (conversion, verifier, engines) for every PR that touches them | [PROPOSED] every PR that touches them |
+| C7 | Clean the branches that nobody needs (`proof/*`, `results/*`) | [PENDING] after C1 |
 
 ## 4. Owner decisions
 
