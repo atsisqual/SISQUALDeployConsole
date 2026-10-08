@@ -18,7 +18,8 @@ $reviewNames = @(
 )
 function Test-SourceContract([string]$Text) {
     if ($Text -notmatch "-cne 'PREVIEW'\) \{ Exit-InvalidRequest \}") { return $false }
-    if ($Text -match '(?i)Invoke-Expression|ScriptBlock\]::Create|\.CommandText\b') { return $false }
+    if ($Text -match '(?i)Invoke-Expression|ScriptBlock\]::Create') { return $false }
+    if ($Text -match '(?is)ops_ReviewDefinition.{0,240}CommandText|CommandText.{0,240}ops_ReviewDefinition') { return $false }
     if ($Text -notmatch "IIS_IDENTITY_PASSWORD_PENDING") { return $false }
     if ($Text -notmatch "SERVICE_ACCOUNT_PASSWORD_MISSING") { return $false }
     if ($Text -notmatch "CATALOG_BUILT_AT") { return $false }
@@ -33,7 +34,7 @@ function Test-SourceContract([string]$Text) {
 
 Check 'unmodified preflight source satisfies the local contract anchors' (Test-SourceContract $source)
 Check 'all 12 local reviews are registered exactly once' (@($reviewNames | Where-Object { ([regex]::Matches($source,[regex]::Escape($_ + ' = ${function:'))).Count -eq 1 }).Count -eq 12)
-Check 'catalog review CommandText is never read as executable code' ($source -notmatch '(?i)ops_ReviewDefinition.*CommandText|CommandText.*ops_ReviewDefinition')
+Check 'catalog review CommandText is never read as executable code' ($source -notmatch '(?is)ops_ReviewDefinition.{0,240}CommandText|CommandText.{0,240}ops_ReviewDefinition')
 
 $mutatedMode = $source.Replace("if ([string](Get-Field `$script:Request 'mode' '') -cne 'PREVIEW') { Exit-InvalidRequest }",'# mutation: READ_ONLY mode guard removed')
 Check 'MUTATION remove READ_ONLY PREVIEW guard is detected' (-not (Test-SourceContract $mutatedMode))
@@ -49,6 +50,9 @@ Check 'MUTATION suppress catalog build-time INFO is detected' (-not (Test-Source
 
 $mutatedSql = $source + "`nInvoke-Expression 'SELECT 1'"
 Check 'MUTATION introduce executable text primitive is detected' (-not (Test-SourceContract $mutatedSql))
+
+$mutatedCatalogCommandText = $source + "`n`$rows = Get-CatalogRows 'ops_ReviewDefinition'; `$unsafe = `$rows[0].CommandText"
+Check 'MUTATION read catalog review CommandText is detected' (-not (Test-SourceContract $mutatedCatalogCommandText))
 
 Write-Host ("SUMMARY: {0} passed, {1} failed" -f $script:Passed,$script:Failed)
 if ($script:Failed -gt 0) { exit 1 }
