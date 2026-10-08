@@ -74,3 +74,8 @@ None: requests are unauthenticated and results hold states and URLs. [CONFIRMED,
 1. [PENDING] Persist the state? Recommendation: no database; keep the latest probe in a status file per instance in the log folder, plus one log line per probe, and let the screen run a probe on demand.
 2. [PENDING] Probe through the public name (what a user sees, but exposed to hairpin and DNS issues) or through loopback with the host header. Recommendation: public name by default, loopback as an option.
 3. [PENDING] One shared HTTP check module for this engine and `PULSE_STATUS`. Recommendation: yes.
+
+## Host contract
+
+- Engine class: `OBSERVATIONAL`.
+- Credential references: none.
