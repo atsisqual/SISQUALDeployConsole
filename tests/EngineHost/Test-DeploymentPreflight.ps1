@@ -24,6 +24,20 @@ function Throws([string]$Name,[scriptblock]$Action,[string]$Expected='') {
     try { & $Action } catch { $ok = [string]::IsNullOrEmpty($Expected) -or $_.Exception.Message -like ('*' + $Expected + '*') }
     Check $Name $ok
 }
+function Write-SafeResultDiagnostic {
+    param([Parameter(Mandatory)][string]$Label,[AllowNull()][object]$Result)
+    if ($null -eq $Result) {
+        Write-Host ('DIAG  {0}: errorMessage=<no-result>; exitCode=-1; summary={{}}' -f $Label)
+        return
+    }
+    $errorMessage = ''
+    if ($null -ne $Result.PSObject.Properties['errorMessage']) { $errorMessage = [string]$Result.errorMessage }
+    $exitCode = -1
+    if ($null -ne $Result.PSObject.Properties['exitCode']) { $exitCode = [int]$Result.exitCode }
+    $summary = '{}'
+    if ($null -ne $Result.PSObject.Properties['summary'] -and $null -ne $Result.summary) { $summary = $Result.summary | ConvertTo-Json -Compress -Depth 5 }
+    Write-Host ('DIAG  {0}: errorMessage={1}; exitCode={2}; summary={3}' -f $Label,$errorMessage,$exitCode,$summary)
+}
 function FileEntry([string]$PackageRoot,[string]$Path) {
     $item = Get-Item -LiteralPath $Path -Force
     return [pscustomobject]@{
@@ -156,6 +170,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $before = TreeFingerprint $servicesRoot
     $result = Invoke-SisqualEngineHost -Engine $engine -Action $action -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets -DeclaredSecretReferences $declared
     $after = TreeFingerprint $servicesRoot
+    if (-not [bool]$result.succeeded) { Write-SafeResultDiagnostic -Label 'complete-model' -Result $result }
 
     Check 'READ_ONLY preflight succeeds on the complete synthetic model' ([bool]$result.succeeded)
     Check 'READ_ONLY preflight returns PREVIEW mode' ([string]$result.mode -ceq 'PREVIEW')
@@ -168,7 +183,9 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
 
     $missingSecret = @{ 'WEB_ACCESS.INST1'='another-canary-value' }
     $missing = Invoke-SisqualEngineHost -Engine $engine -Action $action -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret -DeclaredSecretReferences $declared
-    Check 'missing IIS identity credential is an ERROR' (-not $missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
+    $missingHasExpectedError = (-not [bool]$missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
+    if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
+    Check 'missing IIS identity credential is an ERROR' $missingHasExpectedError
     Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
 
     Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -Engine $engine -Action $action -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets -DeclaredSecretReferences $declared | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
