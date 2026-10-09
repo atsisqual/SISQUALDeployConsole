@@ -2,7 +2,7 @@
 
 **Status:** [CONFIRMED] measured from `tests/Fixtures/preflight-legacy-codes.json` (read from the original review procedures of `ManagementSync.sql`) and `engines/Invoke-DeploymentPreflight.ps1` of PR #67. Owner decision A (2026-10-09): the engine is integrated as an incomplete first slice and the remaining codes are ported in follow-up pull requests.
 
-The original reviews have 59 issue codes. The engine implements 29. 30 are not ported yet. `Test-DeploymentPreflightSchema.ps1` prints this same list in CI (`DIAG  not yet ported from ...`) and fails if the engine declares more coverage than it has.
+The original reviews have 66 issue codes (the first inventory said 59: it only knew one way the procedures write a code, and seven were missing; the corrected list is `tests/Fixtures/preflight-legacy-codes.json` in PR #67). The engine implements 31. 35 are not ported yet. `Test-DeploymentPreflightSchema.ps1` prints this same list in CI (`DIAG  not yet ported from ...`) and fails if the engine declares more coverage than it has.
 
 ## How to port one review
 
@@ -16,6 +16,18 @@ The original reviews have 59 issue codes. The engine implements 29. 30 are not p
 8. Check every new rule against the six real converted catalogs before you push, and say in the pull request how many false positives it gives (the reviewer has them; ask for the query result if you cannot run it).
 
 Map each procedure to the review name of `docs/engines/DEPLOYMENT_PREFLIGHT.md` before you start; the procedure name is the authority for the predicate, the review name is the label.
+
+**The engine's own names.** For the reviews `MANAGEMENT_MODEL`, `APPLICATION_CATALOG`, `MANAGED_ASSETS` and `REPAIR_MODEL` the engine uses code names of its own where the original has other codes (for example `IIS_APPLICATION_MISSING` for the original `IIS_APPLICATION_NOT_IN_CATALOG`), or free-text findings with no code at all (`cfg.ReviewManagementModel`, `cfg.ReviewRepairModel`). The owner decision is all twelve reviews with all their original codes: those four reviews are audited against the original in task D14 (`docs/handoff/preflight-legacy-procedures-implemented.sql.txt`), and their codes renamed where the original has one.
+
+
+## cfg.ReviewApplicationCatalog (4 of 4 not ported)
+
+| Code | Original severity |
+|---|---|
+| `CONFIG_FILE_WITHOUT_APPLICATION` | not stated in the original |
+| `DUPLICATE_IIS_PATH` | not stated in the original |
+| `IIS_APPLICATION_NOT_IN_CATALOG` | not stated in the original |
+| `NON_IIS_COMPONENT_HAS_IIS_PATH` | not stated in the original |
 
 ## cfg.ReviewExtendedApplicationModel (10 of 10 not ported)
 
@@ -56,7 +68,7 @@ Map each procedure to the review name of `docs/engines/DEPLOYMENT_PREFLIGHT.md` 
 | `NO_PUBLISHED_LINK_APPLICATIONS` | ERROR |
 | `PUBLISHED_APPLICATION_URL_UNRESOLVED` | ERROR |
 
-## cfg.ReviewLinksPagePresentationResources (1 of 1 not ported)
+## cfg.ReviewLinksPagePresentationResources (1 of 2 not ported)
 
 | Code | Original severity |
 |---|---|
@@ -72,6 +84,12 @@ Map each procedure to the review name of `docs/engines/DEPLOYMENT_PREFLIGHT.md` 
 | `WEBSITE_BRANDING_ROOT_MISSING` | ERROR |
 | `WEBSITE_BRANDING_TITLE_INVALID` | ERROR |
 
-## Reviews that are complete in the engine
+## ops.ReviewOperationsFramework (1 of 5 not ported)
 
-`cfg.ReviewLinksPageQrCodes` (3 codes), `cfg.ReviewPulseModel` (6 codes), `cfg.ReviewWebAccessModel` (7 codes), `cfg.ReviewWindowsServiceModel` (6 codes), `ops.ReviewOperationsFramework` (4 codes).
+| Code | Original severity |
+|---|---|
+| `OPS_PROFILE_MISSING` | ERROR |
+
+## Reviews that are complete in the engine (by code)
+
+`cfg.ReviewLinksPageQrCodes` (3 codes), `cfg.ReviewManagedAssets` (1 codes), `cfg.ReviewPulseModel` (6 codes), `cfg.ReviewWebAccessModel` (7 codes), `cfg.ReviewWindowsServiceModel` (6 codes).
