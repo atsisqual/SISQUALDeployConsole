@@ -2,11 +2,11 @@
 
 This table is derived from the `Host contract` section in each engine specification. It separates intended port requirements from executable host acceptance.
 
-`Intended credential references` are descriptive reference families or exact references that the ported engine specification expects to need. They are not executable permission. `Host-accepted references today` records only exact references that the executable host contract can accept. Family notation such as `IIS_IDENTITY.*` and `WEB_ACCESS.*` is descriptive only: `*` is not a valid executable credential reference and a family name does not authorize per-instance references. Current `main` declares no accepted references for `DEPLOYMENT_PREFLIGHT`. PR #67 currently carries the two descriptive family labels in its proposed contract; this PR does not treat those labels as executable host acceptance and does not modify that contract. Every engine remains `none` until its port declares exact references that satisfy the host contract.
+`Intended credential references` are the reference families or exact references that the ported engine specification expects to need. `Host-accepted references today` records what the executable host contract accepts. In current `main`, `DEPLOYMENT_PREFLIGHT` has no accepted references: the contract is empty and the host accepts exact references only. After PR #67 is integrated, `DEPLOYMENT_PREFLIGHT` declares `IIS_IDENTITY.*` and `WEB_ACCESS.*`, accepted by family for active catalog instances. PR #67 adds host support for the family wildcard form `TYPE.*` only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, and only for references belonging to active catalog instances. PR #68 documents that transition and does not modify the executable contract or host.
 
 | Engine | Wave | Engine class | Intended credential references | Host-accepted references today |
 |---|---:|---|---|---|
-| `DEPLOYMENT_PREFLIGHT` | 1 | `READ_ONLY` | `IIS_IDENTITY.*`, `WEB_ACCESS.*` | none in current `main`; #67 family labels are descriptive, not executable exact references |
+| `DEPLOYMENT_PREFLIGHT` | 1 | `READ_ONLY` | `IIS_IDENTITY.*`, `WEB_ACCESS.*` | none in current `main`; after #67: `IIS_IDENTITY.*`, `WEB_ACCESS.*`, accepted by family for active catalog instances |
 | `PULSE_STATUS` | 1 | `MUTATING` | `IIS_IDENTITY.*` | none |
 | `CONFIG_REPAIR` | 2 | `MUTATING` | `RULE_SECRET.*` | none |
 | `MANAGED_ASSETS` | 2 | `MUTATING` | none | none |
@@ -68,4 +68,4 @@ The remaining engine classes were rechecked against their current specifications
 
 Reviewer-verified legacy behaviour requires both credential families: `IIS_IDENTITY.*` and `WEB_ACCESS.*`. The old preflight verifies the Web Access password (`WEB_ACCESS_PASSWORD_MISSING`), and the owner decision of 2026-10-07 requires all 12 reviews and all their issue codes to be ported.
 
-The individual `DEPLOYMENT_PREFLIGHT` specification now records both intended families. The executable contract remains outside PR #68. Family labels with `*` are descriptive only; before secrets can be passed, the executable contract must declare exact references accepted by the host.
+The individual `DEPLOYMENT_PREFLIGHT` specification records both families. In current `main`, the executable contract is empty and the host accepts only exact references, so `DEPLOYMENT_PREFLIGHT` has no accepted references. After PR #67 is integrated, the contract declares `IIS_IDENTITY.*` and `WEB_ACCESS.*` and the host accepts those families for active catalog instances.

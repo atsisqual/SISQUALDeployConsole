@@ -92,4 +92,4 @@ The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026
 
 - Engine class: `READ_ONLY`.
 - Intended credential references: `IIS_IDENTITY.*`, `WEB_ACCESS.*`.
-- Executable host acceptance today: none in current `main`. The family labels above are descriptive only; `*` is not an executable credential reference and does not authorize per-instance references. PR #67 currently carries those family labels in its proposed machine-readable contract, but host acceptance requires exact references that satisfy the contract and exact-match validation.
+- Executable host acceptance: in current `main`, none; the contract is empty and the host accepts exact references only. After PR #67 is integrated, `IIS_IDENTITY.*` and `WEB_ACCESS.*` are declared for `DEPLOYMENT_PREFLIGHT` and accepted by family for active catalog instances. PR #67 adds the `TYPE.*` family form only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, limited to active catalog instances.
