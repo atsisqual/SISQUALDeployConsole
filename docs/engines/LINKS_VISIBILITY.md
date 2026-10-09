@@ -41,7 +41,7 @@ The catalog is read-only for the application, and the owner changes it by hand a
 
 | Option | Description | Assessment |
 |---|---|---|
-| A | The engine shows the **effective visibility** and generates a **change proposal** (the rows of `cfg_LinksPageInstanceApplication` to add, change or remove, with a diff against the current ones); the owner applies it to the catalog and seals it (`Seal-Package`, with a baseline), then runs `LINKS_PAGES` | Keeps one source of truth; needs a small catalog-change function in the tools |
+| A | The engine shows the **effective visibility** and generates a **change proposal** (the rows of `cfg.LinksPageInstanceApplication` to add, change or remove, with a diff against the current ones); the owner applies it to the catalog and seals it (`Seal-Package`, with a baseline), then runs `LINKS_PAGES` | Keeps one source of truth; needs a small catalog-change function in the tools |
 | B | The application keeps its own override file outside the catalog | A second source of truth, the risk the architecture removed (R-001); not recommended |
 | C | No engine: the owner edits the 12 rows with the catalog edit and seal flow | Simplest; no preview of the effect |
 
@@ -75,7 +75,7 @@ The console menus (reading numbers and ranges from the keyboard) become browser 
 
 - Runner: effective-visibility fixtures shared with `LINKS_PAGES` (default, profile and override layers; an all-environments instance); proposal generation, empty proposal, each invalid case, the catalog file unchanged by the engine, a proposal applied with the seal tool and the resulting page set.
 - [V] None needed beyond the pilot pages.
-1. [PENDING] Which option (A recommended). A needs a catalog-change function in the tools (a separate PR).
+1. [DECIDED 2026-10-06] The owner chose option A in Q9: a read-only effective visibility matrix, with changes made by owner catalog edit followed by a seal.
 2. [PENDING] Whether per-instance visibility changes are needed in V1 at all: only 1 of 70 instances has an override today. Recommendation: provide the read-only effective matrix first and the proposal generator second.
 3. [PENDING] Who may change visibility and whether a second reader is required (R-047).
 

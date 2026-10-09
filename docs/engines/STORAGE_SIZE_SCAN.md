@@ -7,7 +7,7 @@ Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs
 
 ## 1. Purpose
 
-Measure the real size and number of files of each housekeeping policy's folders, so that a screen can show usage against the ceiling. [CONFIRMED] A read-only scan; the action is in group `HEALTH`, preview and apply, no instance selection, 300 s timeout, hidden from the menu. It does not delete or move anything (cleanup is a separate feature of the old console, outside the 19 engines).
+Measure the real size and number of files of each housekeeping policy's folders, so that a screen can show usage against the ceiling. [CONFIRMED] A read-only scan; the action is in group `HEALTH`, preview and apply, no instance selection, 300 s timeout, hidden from the menu. It does not delete or move anything (cleanup is a separate feature of the old console, outside the 17-engine portable catalog). Reviewer evidence from the six real converted catalogs used `SELECT COUNT(*) AS EngineCount FROM ops_Engine;` and returned `17` in each catalog.
 
 ## 2. Inputs
 
@@ -66,7 +66,7 @@ None: paths, sizes and counts. Folder names can contain customer host names; the
 - The central snapshot table and the context procedure go.
 - [CONFIRMED] A hard-coded folder of the old management console (`management.sisqualwfm.cloud`) is measured as a pseudo-instance in the two log policies: the console does not exist in V1; drop it.
 - The `STORAGE_SNAPSHOTS` policy measures the snapshot table itself: not applicable.
-- Several policies point at folders of features outside the 19 engines (clone snapshots, database-copy artifacts); they can still be measured if the folder exists.
+- Several policies point at folders of features outside the 17-engine portable catalog (clone snapshots, database-copy artifacts); they can still be measured if the folder exists.
 
 ## 12. Test plan
 
