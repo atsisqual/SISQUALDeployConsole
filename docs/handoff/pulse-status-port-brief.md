@@ -231,6 +231,7 @@ Additional integration/security tests after the blocking source questions are an
 - a contained reparse target remains accepted;
 - preview writes nothing;
 - live branding/page/web-config/logo/collector writes use a temporary file and atomic replacement of the live target;
+- unconditional live-target recovery: inject a failure on the later collector write after earlier branding/page/web-config/logo targets have already been replaced; require recovery from the step-8 backups for every production target in the branding/page/web-config/logo/collector set, including all targets already replaced, and verify every target is byte-for-byte identical to its pre-apply state. This recovery test is unconditional and does not depend on A6;
 - bounded parallel checks respect the overall deadline;
 - HTTPS certificate validation is enabled by default;
 - healthy, responding-as-healthy, redirect, timeout/refused and failed responses preserve `HealthyStatusCodes`/`RespondingStatusCodes` semantics;
