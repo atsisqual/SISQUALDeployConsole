@@ -23,7 +23,7 @@ From the machine's catalog (the local machine only; `dbo_ManagedServer` has exac
 | `cfg_ConfigFileRepairPolicy` | `RepairMode` (`PATCH` 7 rows, `REPLACE` 1 row; default `PATCH`) | whether the file itself or only its folder must exist |
 | `cfg_WindowsServiceDefinition` | `ServiceCode`, `ExecutablePathTemplate`, `AccountSource` (1 row) | service executables to check |
 | the review list | one entry per review code (section 3.4) | model reviews |
-| credential package | `credentialRef` of the instance `IIS_IDENTITY` | presence only |
+| credential package | per-instance `IIS_IDENTITY` and `WEB_ACCESS` credential references | presence only for the reviews that require them |
 
 Parameters [PROPOSED]: `InstanceCode` (optional, must be an instance of this machine). No SQL instance or database parameter any more.
 
@@ -91,5 +91,5 @@ The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026
 ## Host contract
 
 - Engine class: `READ_ONLY`.
-- Intended credential references: `IIS_IDENTITY.*` only.
-- Executable host acceptance today: after PR #67 is integrated, the host accepts only the exact `IIS_IDENTITY` references declared there for `DEPLOYMENT_PREFLIGHT`. `IIS_IDENTITY.*` is a descriptive family name here, not a wildcard accepted by the host.
+- Intended credential references: `IIS_IDENTITY.*`, `WEB_ACCESS.*`.
+- Executable host acceptance today: none in current `main`. The family labels above are descriptive only; `*` is not an executable credential reference and does not authorize per-instance references. PR #67 currently carries those family labels in its proposed machine-readable contract, but host acceptance requires exact references that satisfy the contract and exact-match validation.
