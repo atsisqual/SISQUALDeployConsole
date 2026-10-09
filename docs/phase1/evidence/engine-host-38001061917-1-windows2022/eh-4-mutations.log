@@ -1,0 +1,41 @@
+PASS  mutation: disabled engine is rejected?
+PASS  mutation: disabled action is rejected?
+PASS  mutation: an action that names an engine that is not in the verified catalog is rejected (the engine is resolved from the action, so the mapping is exact by construction)?
+PASS  mutation: arbitrary catalog path is rejected?
+PASS  mutation: catalog hash is reverified before launch?
+PASS  mutation: unsupported minimum PowerShell is rejected?
+PASS  mutation: foreign catalog machine is rejected from authenticated session metadata?
+PASS  mutation: forged catalog session is rejected?
+PASS  mutation: path traversal SourceFileName is rejected?
+PASS  mutation: tampered engine hash is rejected?
+PASS  mutation: duplicate manifest engine entry is rejected?
+PASS  mutation: malformed result rejected (INVALID_SHAPE)?
+PASS  mutation: malformed result rejected (INVALID_BACKUP)?
+PASS  mutation: malformed result rejected (INVALID_BACKUP_TYPES)?
+PASS  mutation: malformed result rejected (INVALID_TOP_STRING_TYPES)?
+PASS  mutation: malformed result rejected (INVALID_ROW_STRING_TYPES)?
+PASS  mutation: successful exit without result becomes ENGINE_NO_RESULT?
+PASS  mutation: failed completion is audit logged?
+PASS  mutation: completion audit carries plan locks and summary?
+PASS  mutation: undocumented process exit code becomes ENGINE_NO_RESULT?
+PASS  mutation: stdout above 1 MiB is bounded?
+PASS  mutation: inherited descendant pipe cannot block redirected stream drain?
+PASS  mutation: invalid UTF-8 result becomes ENGINE_INVALID_RESULT?
+PASS  mutation: a helper started during engine initialisation is inside the job (launcher gate) and is terminated?
+PASS  mutation: an orphaned grandchild is terminated through the job and the run is ENGINE_NO_RESULT?
+PASS  mutation: a failed containment is ENGINE_CONTAINMENT_FAILED?
+PASS  mutation: a failed containment leaves no launcher process waiting for its gate?
+PASS  mutation: an engine that floods past the limit gets ENGINE_STREAM_LIMIT at once, not after the timeout?
+PASS  mutation: a valid result wrapped in a root array is ENGINE_INVALID_RESULT?
+PASS  mutation: encoded secret detected (SECRET_BASE64)?
+PASS  mutation: encoded secret detected (SECRET_URL)?
+PASS  mutation: encoded secret detected (SECRET_URL_LOWERHEX)?
+PASS  mutation: encoded secret detected (SECRET_URL_FORM)?
+PASS  mutation: decoded alternate Unicode escape secret in result is detected?
+PASS  mutation: JSON-escaped secret in result is detected?
+PASS  mutation setup: successful preview fingerprint exists?
+PASS  mutation: APPLY requires exact confirmation text?
+PASS  mutation setup: failed preview carries fingerprint but remains failed?
+PASS  mutation: failed preview fingerprint is not cached for APPLY?
+PASS  mutation: required instance cannot be omitted?
+EngineHost mutation matrix: 40 passed / 0 failed?
