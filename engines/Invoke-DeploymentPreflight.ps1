@@ -698,7 +698,7 @@ function Write-EngineResult {
     }
     # Every result says the coverage is incomplete, including one that ends early (manifest, catalog, machine or instance selection failed).
     if (@($script:Issues | Where-Object { $_.Code -ceq 'PREFLIGHT_COVERAGE_INCOMPLETE' }).Count -eq 0) {
-        Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews; a clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
+        Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews by name, and the predicates of the reviews it implements are not all the original ones (audits: docs/handoff/preflight-audit-*.md): its checks are designed for the portable system, not a one-to-one port. A clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
     }
     $errorCount = @($script:Issues | Where-Object Severity -eq 'ERROR').Count
     $warningCount = @($script:Issues | Where-Object Severity -eq 'WARNING').Count
