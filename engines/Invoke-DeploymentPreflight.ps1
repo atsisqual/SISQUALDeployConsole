@@ -191,11 +191,16 @@ function Get-InstanceRoot {
 }
 
 function Test-InstanceRootConfined {
+    # The instance folder must be a real folder under the services root: a junction or symbolic link at ServicesRoot\<HostName> that leaves it is refused.
     param([Parameter(Mandatory)][object]$Server,[Parameter(Mandatory)][object]$Instance)
     $servicesRoot = [string](Get-Field $Server 'ServicesRoot' '')
     $hostName = [string](Get-Field $Instance 'HostName' '')
     if ([string]::IsNullOrWhiteSpace($servicesRoot) -or [string]::IsNullOrWhiteSpace($hostName)) { return $true }
-    return -not [string]::IsNullOrWhiteSpace((Get-InstanceRoot $Server $Instance))
+    $root = Get-InstanceRoot $Server $Instance
+    if ([string]::IsNullOrWhiteSpace($root)) { return $false }
+    $realRoot = (Resolve-RealPath $root).TrimEnd('\','/')
+    $realServices = (Resolve-RealPath $servicesRoot).TrimEnd('\','/')
+    return ((Test-PathUnderRoot -Path $realRoot -Root $realServices) -and -not $realRoot.Equals($realServices,[StringComparison]::OrdinalIgnoreCase))
 }
 
 function Expand-LocalTemplate {
@@ -335,7 +340,8 @@ function Invoke-ReviewWindowsServices {
     param($Context)
     $definitions = @(Get-EnabledRows 'cfg_WindowsServiceDefinition')
     if ($definitions.Count -eq 0) { Add-Issue ERROR WINDOWS_SERVICES WINDOWS_SERVICE_DEFINITION_MISSING }
-    $nameSet = New-IgnoreCaseMap
+    $selectedCodes = New-OrdinalMap
+    foreach ($selected in $Context.SelectedInstances) { $selectedCodes[[string](Get-Field $selected 'InstanceCode' '')] = $true }
     foreach ($instance in $Context.SelectedInstances) {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -346,16 +352,28 @@ function Invoke-ReviewWindowsServices {
             $template = [string](Get-Field $definition 'ServiceNameTemplate' '')
             $name = Expand-LocalTemplate $template $Context.Server $instance
             if ($name.Length -gt 256) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_NAME_TOO_LONG $name $instanceCode }
-            if (-not [string]::IsNullOrWhiteSpace($name)) {
-                if ($nameSet.ContainsKey($name)) { Add-Issue ERROR WINDOWS_SERVICES DUPLICATE_SERVICE_NAME $name $instanceCode } else { $nameSet[$name] = $instanceCode }
-            }
         }
+    }
+    # A service name must be unique among ALL enabled instances of the machine, also when only one instance is run (as FULL_DEPLOYMENT does); it is reported on the selected one.
+    $nameHolders = New-IgnoreCaseMap
+    foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
+        $holderCode = [string](Get-Field $instance 'InstanceCode' '')
+        foreach ($definition in $definitions) {
+            $holderName = Expand-LocalTemplate ([string](Get-Field $definition 'ServiceNameTemplate' '')) $Context.Server $instance
+            if ([string]::IsNullOrWhiteSpace($holderName)) { continue }
+            if (-not $nameHolders.ContainsKey($holderName)) { $nameHolders[$holderName] = [System.Collections.Generic.List[string]]::new() }
+            $nameHolders[$holderName].Add($holderCode)
+        }
+    }
+    foreach ($holderName in @($nameHolders.Keys)) {
+        $holderCodes = @($nameHolders[$holderName])
+        if ($holderCodes.Count -lt 2) { continue }
+        $selectedHolder = @($holderCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Select-Object -First 1)
+        if ($selectedHolder.Count -eq 1) { Add-Issue ERROR WINDOWS_SERVICES DUPLICATE_SERVICE_NAME $holderName $selectedHolder[0] }
     }
     # An account shared by several enabled instances must have one password. The selected instances are compared with EVERY enabled instance of the machine
     # (a run for one instance of FULL_DEPLOYMENT included); the credentials of the others come in the request, never from the catalog, so an account whose other
     # instances have no credential in the request cannot be verified, and that is an ERROR: the reconciliation that follows could reset the shared account.
-    $selectedCodes = New-OrdinalMap
-    foreach ($selected in $Context.SelectedInstances) { $selectedCodes[[string](Get-Field $selected 'InstanceCode' '')] = $true }
     $accounts = New-IgnoreCaseMap
     foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -386,14 +404,28 @@ function Invoke-ReviewWebAccess {
     param($Context)
     if (@(Get-EnabledRows 'cfg_WebAccessPolicy').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_POLICY_MISSING }
     if (@(Get-EnabledRows 'cfg_WebAccessTemplate').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_TEMPLATE_MISSING }
-    $users = New-IgnoreCaseMap
+    $selectedCodes = New-OrdinalMap
+    foreach ($selected in $Context.SelectedInstances) { $selectedCodes[[string](Get-Field $selected 'InstanceCode' '')] = $true }
     foreach ($instance in $Context.SelectedInstances) {
         $code = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'WebAccessUserName' '')
         if ([string]::IsNullOrWhiteSpace($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_USERNAME_MISSING $code $code }
-        elseif ($users.ContainsKey($user)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $user $code } else { $users[$user] = $true }
         # The original review reads the per-instance password from the database (WEB_ACCESS_PASSWORD_MISSING, ERROR); here it lives in the credential package.
         if (-not (Test-SecretPresent ('WEB_ACCESS.' + $code))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PASSWORD_MISSING $code $code }
+    }
+    # A local Windows user name (compared without case) must belong to one enabled instance of the machine, also when only one instance is run.
+    $userHolders = New-IgnoreCaseMap
+    foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
+        $holderUser = [string](Get-Field $instance 'WebAccessUserName' '')
+        if ([string]::IsNullOrWhiteSpace($holderUser)) { continue }
+        if (-not $userHolders.ContainsKey($holderUser)) { $userHolders[$holderUser] = [System.Collections.Generic.List[string]]::new() }
+        $userHolders[$holderUser].Add([string](Get-Field $instance 'InstanceCode' ''))
+    }
+    foreach ($holderUser in @($userHolders.Keys)) {
+        $userCodes = @($userHolders[$holderUser])
+        if ($userCodes.Count -lt 2) { continue }
+        $selectedUserHolder = @($userCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Select-Object -First 1)
+        if ($selectedUserHolder.Count -eq 1) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $holderUser $selectedUserHolder[0] }
     }
     foreach ($policy in @(Get-EnabledRows 'cfg_WebAccessPolicy')) {
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }

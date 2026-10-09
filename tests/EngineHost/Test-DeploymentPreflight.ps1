@@ -312,6 +312,29 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $hostEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $hostEscape.Package -CatalogPath $hostEscape.Catalog -CatalogSession $hostEscape.Session -ManifestEntries $hostEscape.Entries -Mode PREVIEW -InstanceCode INST6 -Secrets $secrets
     Check 'a host name that leaves the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT, even if the folder exists' (@($hostEscaped.results | Where-Object { $_.object -ceq 'INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT:INST6' -and $_.status -ceq 'ERROR' }).Count -ge 1 -and @($hostEscaped.results | Where-Object { $_.object -like 'INSTANCE_ROOT_MISSING*' }).Count -eq 0)
 
+    # Uniqueness is checked against every enabled instance of the machine, also when one instance is run: the other instances are not selected.
+    $dupService = New-ScenarioPackage -Name 'dupservice' -ExtraSql "UPDATE cfg_WindowsServiceDefinition SET ServiceNameTemplate = 'shared-service';"
+    $dupServiceRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupService.Package -CatalogPath $dupService.Catalog -CatalogSession $dupService.Session -ManifestEntries $dupService.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a run for one instance finds a service name that another enabled instance also gets (DUPLICATE_SERVICE_NAME on the selected instance)' (@($dupServiceRun.results | Where-Object { $_.object -ceq 'DUPLICATE_SERVICE_NAME:shared-service' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    $dupUser = New-ScenarioPackage -Name 'dupuser' -ExtraSql "UPDATE dbo_ManagedInstance SET WebAccessUserName = 'WEB-USER' WHERE InstanceCode = 'INST2';"
+    $dupUserRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupUser.Package -CatalogPath $dupUser.Catalog -CatalogSession $dupUser.Session -ManifestEntries $dupUser.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a run for one instance finds a Web Access user that another enabled instance also has, without case (web-user and WEB-USER)' (@($dupUserRun.results | Where-Object { $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    Check 'unique service names and Web Access users give no duplicate in the all-instances run' (@($all.results | Where-Object { $_.object -like 'DUPLICATE_SERVICE_NAME*' -or $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER*' }).Count -eq 0)
+
+    # The instance folder is ServicesRoot\<HostName>: if that is a junction that points outside the services root, the lexical path is inside it and the real one is not.
+    if ($IsWindows) {
+        $rootTarget = Join-Path $temp 'junction-root-target'
+        New-Item -ItemType Directory -Path $rootTarget -Force | Out-Null
+        $rootJunction = Join-Path $servicesRoot 'junction-host.invalid'
+        New-Item -ItemType Junction -Path $rootJunction -Target $rootTarget | Out-Null
+        try {
+            $rootLink = New-ScenarioPackage -Name 'rootjunction' -ExtraSql "INSERT INTO dbo_ManagedInstance VALUES('INST7','TESTSERVER','junction-host.invalid','PT','C7','svc-user7','web-user7',X'0102','01',1);"
+            $rootLinkRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $rootLink.Package -CatalogPath $rootLink.Catalog -CatalogSession $rootLink.Session -ManifestEntries $rootLink.Entries -Mode PREVIEW -InstanceCode INST7 -Secrets $secrets
+            Check 'an instance folder that is a junction pointing outside the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT' (@($rootLinkRun.results | Where-Object { $_.object -ceq 'INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT:INST7' -and $_.status -ceq 'ERROR' }).Count -ge 1 -and @($rootLinkRun.results | Where-Object { $_.object -like 'INSTANCE_ROOT_MISSING*' }).Count -eq 0)
+        }
+        finally { [IO.Directory]::Delete($rootJunction) }
+    }
+
     # A service executable that leaves the instance folder is not probed: the file exists, and must not satisfy the check.
     $exeOutside = [IO.Path]::GetFullPath((Join-Path $servicesRoot 'preflight-host.invalid\..\..\evil.exe'))
     [IO.File]::WriteAllText($exeOutside,'x',[Text.UTF8Encoding]::new($false))
