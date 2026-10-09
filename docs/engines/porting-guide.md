@@ -30,7 +30,7 @@ For anyone who ports an engine (ADR-0008, `runtime/Sisqual.Runtime.EngineHost.ps
 ## 5. The tests every engine needs
 - A conformance test that runs the engine through the host on Windows, a mutation test that fails without each piece of engine code, and one test per issue code of the specification.
 - `PREVIEW` must not change the managed system (file-system hash before and after).
-- Classes: `READ_ONLY` only if every action that uses the engine has `ModePolicy` `NONE`; `MUTATING` if it can change the system; `OBSERVATIONAL` only for measurement. When in doubt, `MUTATING`. The host kills a timed-out engine only when its action cannot apply.
+- Classes: `READ_ONLY` only if every action that uses the engine has `ModePolicy` `NONE` (this is the only mechanical rule, and the only one the host uses). If some action is not `NONE`, `ModePolicy` does not tell `MUTATING` from `OBSERVATIONAL`: the approved specification and the decisions log do (`docs/engines/README.md`, section on classes). `MUTATING` if the apply changes a managed target (files, services, IIS, databases, scheduled tasks, the catalog); `OBSERVATIONAL` if the apply only measures, or produces reports or proposals outside the managed targets (`ENVIRONMENT_STATE_PROBE`, `STORAGE_SIZE_SCAN`, `LINKS_VISIBILITY`). When the specification cannot settle it, write `[PENDING]` and use `MUTATING` as the provisional class. The host kills a timed-out engine only when its action cannot apply, whatever the class.
 - Synthetic fixtures only, no real value. The host tests do not need a real server; the real-catalog proof is run by the reviewer on the converted catalogs.
 - Windows-only code (job objects, processes, ACLs) can only be verified in CI. Make the test fail before you trust it.
 
