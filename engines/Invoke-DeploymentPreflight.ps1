@@ -38,8 +38,8 @@ $script:Request = $null
 $script:Connection = $null
 # Coverage of the original model reviews (docs/handoff and tests/Fixtures/preflight-legacy-codes.json): how many of their issue codes this engine implements.
 # Test-DeploymentPreflightSchema compares these two numbers with the engine source and the fixture, so they cannot drift.
-$script:CoverageImplemented = 29
-$script:CoverageTotal = 59
+$script:CoverageImplemented = 31
+$script:CoverageTotal = 66
 
 function Exit-InvalidRequest {
     exit 2

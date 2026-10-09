@@ -1,5 +1,5 @@
 {
-  "note": "Issue codes and severities of the original model review procedures (cfg.Review*, ops.ReviewOperationsFramework), read from ManagementSync.sql of atsisqual/SISQUALManagementConsole (2026-10-05). Shape only, no data. Used by tests/EngineHost/Test-DeploymentPreflightSchema.ps1 to measure how much of the original reviews the DEPLOYMENT_PREFLIGHT engine implements and to check that the severities match.",
+  "note": "Issue codes and severities of the original model review procedures (cfg.Review*, ops.ReviewOperationsFramework), read from ManagementSync.sql of atsisqual/SISQUALManagementConsole (2026-10-05). Shape only, no data. Used by tests/EngineHost/Test-DeploymentPreflightSchema.ps1 to measure how much of the original reviews the DEPLOYMENT_PREFLIGHT engine implements and to check that the severities match. Corrected on 2026-10-09: the first extraction only knew the form 'CODE','SEVERITY'; seven codes written as IssueCode = CONVERT(varchar(n),'CODE') were missing. Severity is null where the original procedure states none (cfg.ReviewApplicationCatalog, cfg.ReviewManagedAssets): the check of severities skips those. The procedures cfg.ReviewManagementModel and cfg.ReviewRepairModel report findings without an issue code in the original (free text), so they have no entry here.",
   "ownerSeverityOverrides": [
     {
       "code": "IIS_IDENTITY_PASSWORD_PENDING",
@@ -9,6 +9,26 @@
     }
   ],
   "codes": [
+    {
+      "code": "CONFIG_FILE_WITHOUT_APPLICATION",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "DUPLICATE_IIS_PATH",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "IIS_APPLICATION_NOT_IN_CATALOG",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "NON_IIS_COMPONENT_HAS_IIS_PATH",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
     {
       "code": "AUTO_START_APPLICATION_PROVIDER_NOT_EXPANDED",
       "review": "cfg.ReviewExtendedApplicationModel",
@@ -150,6 +170,11 @@
       "severity": "ERROR"
     },
     {
+      "code": "LINKS_PRESENTATION_RESOURCE_MISSING",
+      "review": "cfg.ReviewLinksPagePresentationResources",
+      "severity": "ERROR"
+    },
+    {
       "code": "QR_ASSET_MISSING",
       "review": "cfg.ReviewLinksPageQrCodes",
       "severity": "WARNING"
@@ -163,6 +188,11 @@
       "code": "QR_CONTENT_HASH_MISMATCH",
       "review": "cfg.ReviewLinksPageQrCodes",
       "severity": "ERROR"
+    },
+    {
+      "code": "ENABLED_INSTANCE_LOGO_MISSING",
+      "review": "cfg.ReviewManagedAssets",
+      "severity": null
     },
     {
       "code": "PULSE_HTTP_APPLICATION_MISSING",
@@ -296,6 +326,11 @@
     },
     {
       "code": "OPS_LOCAL_SERVER_MISSING",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_PROFILE_MISSING",
       "review": "ops.ReviewOperationsFramework",
       "severity": "ERROR"
     },

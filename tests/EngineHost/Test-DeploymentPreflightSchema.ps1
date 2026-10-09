@@ -78,7 +78,15 @@ $declaredImplemented = [int]([regex]::Match($engineText, '\$script:CoverageImple
 $declaredTotal = [int]([regex]::Match($engineText, '\$script:CoverageTotal = (\d+)').Groups[1].Value)
 Check 'the engine declares exactly how many of the original issue codes it implements' ($declaredImplemented -eq $implemented.Count -and $declaredTotal -eq @($fixture.codes).Count) ("declared $declaredImplemented of $declaredTotal; source $($implemented.Count) of $(@($fixture.codes).Count)")
 $overrides = @{}; foreach ($override in $fixture.ownerSeverityOverrides) { $overrides[[string]$override.code] = [string]$override.engine }
-$wrongSeverity = @($implemented | Where-Object { $expected = if ($overrides.ContainsKey([string]$_.code)) { $overrides[[string]$_.code] } else { [string]$_.severity }; -not ($engineSeverity[[string]$_.code].Count -eq 1 -and $engineSeverity[[string]$_.code].Contains($expected)) } | ForEach-Object { [string]$_.code })
+$wrongSeverity = @(foreach ($row in $implemented) {
+    $code = [string]$row.code
+    # Where the original procedure states no severity (cfg.ReviewApplicationCatalog, cfg.ReviewManagedAssets) there is nothing to compare.
+    if ($null -eq $row.severity -and -not $overrides.ContainsKey($code)) { continue }
+    $expected = if ($overrides.ContainsKey($code)) { $overrides[$code] } else { [string]$row.severity }
+    if (-not ($engineSeverity[$code].Count -eq 1 -and $engineSeverity[$code].Contains($expected))) { $code }
+})
+$noSeverityInOriginal = @($implemented | Where-Object { $null -eq $_.severity -and -not $overrides.ContainsKey([string]$_.code) } | ForEach-Object { [string]$_.code })
+if ($noSeverityInOriginal.Count -gt 0) { Write-Host ('DIAG  severity not stated in the original, not compared: ' + ($noSeverityInOriginal -join ', ')) }
 Check 'every implemented issue code has the severity of the original review (or an owner decision)' ($wrongSeverity.Count -eq 0) ($wrongSeverity -join ', ')
 foreach ($group in ($missing | Group-Object review)) { Write-Host ('DIAG  not yet ported from {0}: {1}' -f $group.Name, (($group.Group | ForEach-Object { [string]$_.code }) -join ', ')) }
 
