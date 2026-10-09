@@ -668,3 +668,78 @@ BEGIN
         IssueCode,
         ObjectName;
 END;
+
+-- ######################################################################
+-- VIEWS READ BY THE PROCEDURES ABOVE (added by the reviewer on 2026-10-09)
+-- cfg.IisServiceAutoStartProviderCatalog is read by cfg.ReviewExtendedApplicationModel and cfg.ManagedInstanceRuntime by cfg.ReviewIisDeploymentModel. Neither is a carried table of the portable
+-- catalog: both are views, and both are derived from carried tables. The first joins dbo.ManagedServer, dbo.ManagedInstance, cfg.IisApplicationAutoStartDefinition and
+-- cfg.IisServiceAutoStartProviderDefinition (dbo_ManagedServer, dbo_ManagedInstance, cfg_IisApplicationAutoStartDefinition, cfg_IisServiceAutoStartProviderDefinition). The second is the columns of dbo.ManagedInstance
+-- plus the three decrypted credentials, which in the portable system come from the credential package, never from the catalog. Same snapshot and same verbatim rules as the procedures.
+-- ######################################################################
+
+-- ======================================================================
+-- cfg.IisServiceAutoStartProviderCatalog  (view, 45 lines)
+-- ======================================================================
+CREATE OR ALTER VIEW cfg.IisServiceAutoStartProviderCatalog
+AS
+SELECT DISTINCT
+    S.ServerCode,
+    S.MachineName,
+    I.InstanceCode,
+    SiteName = I.HostName,
+    ProviderCode = P.ProviderName,
+    ProviderName =
+        CONVERT
+        (
+            nvarchar(255),
+            REPLACE
+            (
+                REPLACE
+                (
+                    REPLACE
+                    (
+                        P.ProviderNameTemplate,
+                        N'{INSTANCE_CODE}',
+                        I.InstanceCode
+                    ),
+                    N'{HOST_NAME}',
+                    I.HostName
+                ),
+                N'{HOST_NAME_SAFE}',
+                REPLACE(I.HostName, N'.', N'_')
+            )
+        ),
+    P.ProviderType,
+    P.IsRequired,
+    P.SortOrder,
+    P.IsEnabled
+FROM dbo.ManagedServer AS S
+INNER JOIN dbo.ManagedInstance AS I
+    ON I.ServerCode = S.ServerCode
+   AND I.IsEnabled = 1
+INNER JOIN cfg.IisApplicationAutoStartDefinition AS D
+    ON D.IsEnabled = 1
+   AND D.ServiceAutoStartEnabled = 1
+INNER JOIN cfg.IisServiceAutoStartProviderDefinition AS P
+    ON P.ProviderName = D.ServiceAutoStartProvider
+   AND P.IsEnabled = 1
+WHERE S.IsEnabled = 1;
+
+-- ======================================================================
+-- cfg.ManagedInstanceRuntime  (view, 16 lines)
+-- ======================================================================
+CREATE OR ALTER VIEW cfg.ManagedInstanceRuntime
+AS
+SELECT I.InstanceCode,I.ServerCode,I.CountryCode,I.CultureCode,I.CustomerCode,I.CustomerName,I.HostName,
+       I.SqlInstanceName,I.LinkedServer,I.DatabaseName,I.ChannelID,
+       MobileAppToken=CONVERT(nvarchar(255),DecryptByKeyAutoCert(CERT_ID(N'SISQUAL_ManagedCredential_Certificate'),NULL,M.SecretCipher,1,CONVERT(varbinary(256),I.InstanceCode+N'|MOBILE_APP_TOKEN'))),
+       I.IsEnabled,I.Notes,I.CreatedAt,I.ModifiedAt,I.CustomerLogo,I.CustomerLogoFileName,I.CustomerLogoMimeType,
+       I.CustomerLogoSha256,I.CustomerLogoModifiedAt,I.IisIdentityUserName,
+       IisIdentityPassword=CONVERT(nvarchar(255),DecryptByKeyAutoCert(CERT_ID(N'SISQUAL_ManagedCredential_Certificate'),NULL,X.SecretCipher,1,CONVERT(varbinary(256),I.InstanceCode+N'|IIS_IDENTITY'))),
+       I.WebAccessUserName,
+       WebAccessPassword=CONVERT(nvarchar(255),DecryptByKeyAutoCert(CERT_ID(N'SISQUAL_ManagedCredential_Certificate'),NULL,W.SecretCipher,1,CONVERT(varbinary(256),I.InstanceCode+N'|WEB_ACCESS'))),
+       I.WebAccessModifiedAt,I.LinksIncludeAllInstances,I.LinksAssignedUserName,I.TsplusAdminToolPath,I.TsplusWebControlEnabled
+FROM dbo.ManagedInstance AS I
+LEFT JOIN sec.ManagedCredential AS X ON X.InstanceCode=I.InstanceCode AND X.CredentialType='IIS_IDENTITY'
+LEFT JOIN sec.ManagedCredential AS W ON W.InstanceCode=I.InstanceCode AND W.CredentialType='WEB_ACCESS'
+LEFT JOIN sec.ManagedCredential AS M ON M.InstanceCode=I.InstanceCode AND M.CredentialType='MOBILE_APP_TOKEN';
