@@ -91,5 +91,8 @@ The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026
 ## Host contract
 
 - Engine class: `READ_ONLY`.
-- Intended credential references: `IIS_IDENTITY.*`, `WEB_ACCESS.*`.
-- Executable host acceptance: in current `main`, none; the contract is empty and the host accepts exact references only. After PR #67 is integrated, `IIS_IDENTITY.*` and `WEB_ACCESS.*` are declared for `DEPLOYMENT_PREFLIGHT` and accepted by family for active catalog instances. PR #67 adds the `TYPE.*` family form only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, limited to active catalog instances.
+- Declared references in current `main`: `IIS_IDENTITY.*`, `WEB_ACCESS.*`.
+- Family-form semantics: `TYPE.*` exists only for the three instance-scoped credential kinds `IIS_IDENTITY`, `WEB_ACCESS`, and `MOBILE_APP_TOKEN`. A concrete reference admitted through a family must belong to an enabled instance of the verified catalog.
+- `DEPLOYMENT_PREFLIGHT` uses only the `IIS_IDENTITY.*` and `WEB_ACCESS.*` families; `MOBILE_APP_TOKEN.*` is a supported host family for engines that declare it, but is not declared by this engine.
+- `RULE_SECRET` never uses the family form. Every rule-secret reference is exact as `RULE_SECRET.<RuleCode>`.
+- [DECIDED 2026-10-09] The three-family restriction and exact `RULE_SECRET` rule are recorded in `docs/decisions-log.md` and implemented by the current host/contract.
