@@ -670,7 +670,7 @@ function Open-PreflightCatalog {
 }
 
 function Write-EngineResult {
-    param([Parameter(Mandatory)][string]$ResultPath,[Parameter(Mandatory)][datetime]$StartedAt,[bool]$Cancelled = $false)
+    param([Parameter(Mandatory)][string]$ResultPath,[Parameter(Mandatory)][datetime]$StartedAt,[bool]$Cancelled = $false,[bool]$AllTargetsFailed = $false)
     $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     # Every result says the coverage is incomplete, including one that ends early (manifest, catalog, machine or instance selection failed).
     if (@($script:Issues | Where-Object { $_.Code -ceq 'PREFLIGHT_COVERAGE_INCOMPLETE' }).Count -eq 0) {
@@ -689,6 +689,8 @@ function Write-EngineResult {
     $failedInstanceCount = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and -not [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) } | ForEach-Object { [string]$_.InstanceCode } | Sort-Object -Unique).Count
     $globalErrors = @($script:Issues | Where-Object { $_.Severity -eq 'ERROR' -and [string]::IsNullOrWhiteSpace([string]$_.InstanceCode) }).Count
     $failedTargets = [Math]::Min($targetCount, $failedInstanceCount + $(if ($failedInstanceCount -eq 0 -and ($globalErrors -gt 0 -or $Cancelled)) { 1 } else { 0 }))
+    # A run that ended before the reviews could run (a missing table, the wrong machine, an internal error) verified no target: none of them is a good target.
+    if ($AllTargetsFailed) { $failedTargets = $targetCount }
     $succeededTargets = if ($failedTargets -eq 0) { $targetCount } else { [Math]::Max(0,$targetCount - $failedTargets) }
     $severityOrder = @{ ERROR=0; WARNING=1; INFO=2 }
     $rows = foreach ($issue in @($script:Issues | Sort-Object @{Expression={$severityOrder[$_.Severity]}},Area,InstanceCode,Object)) {
@@ -755,7 +757,7 @@ try {
     $missingTables = @($script:RequiredCatalogTables | Where-Object { -not (Test-CatalogTable $_) })
     foreach ($missingTable in $missingTables) { Add-Issue ERROR CATALOG CATALOG_TABLE_MISSING $missingTable }
     if ($missingTables.Count -gt 0) {
-        $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt
+        $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt -AllTargetsFailed $true
         exit $exitCode
     }
     $servers = @(Get-CatalogRows 'dbo_ManagedServer')
@@ -805,7 +807,7 @@ catch [System.OperationCanceledException] {
 catch {
     Add-Issue ERROR PREFLIGHT PREFLIGHT_INTERNAL_ERROR '' '' 'Preflight could not complete.'
     try {
-        $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt
+        $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt -AllTargetsFailed $true
         exit $exitCode
     }
     catch { exit 1 }

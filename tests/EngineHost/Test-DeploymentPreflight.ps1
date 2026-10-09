@@ -309,6 +309,10 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $noTableRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     Check 'a catalog without a table the engine reads is CATALOG_TABLE_MISSING, never an empty table or not applicable' (@($noTableRun.results | Where-Object { $_.object -ceq 'CATALOG_TABLE_MISSING:cfg_PulseProfile' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($noTableRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' }).Count -eq 0 -and -not [bool]$noTableRun.succeeded -and [string]$noTableRun.errorMessage -ceq 'PREFLIGHT_ERRORS')
 
+    # When the run ends before the reviews (a table is missing), no instance was verified: every selected instance is a failed target.
+    $noTableAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'a run that ends on a missing table marks every selected instance failed, not one (all-instances run)' ([int]$noTableAll.summary.targetCount -eq 5 -and [int]$noTableAll.summary.failedTargets -eq 5 -and [int]$noTableAll.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noTableAll.summary.targetCount,$noTableAll.summary.failedTargets,$noTableAll.summary.succeededTargets))
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"
