@@ -1,0 +1,1194 @@
+?
+=== Test-ActionCodeCrossReference.ps1?
+PASS  [action-xref] TEST: every non-empty adapter ActionCode resolves exactly to ops_Action?
+PASS  [action-xref] TEST: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine?
+PASS  composed verifier version (C8 + C1/C2) is active?
+PASS  valid catalog produces exactly two action-xref checks?
+PASS  valid adapter references pass?
+PASS  valid action engine references pass?
+PASS  NULL, empty, control-whitespace and Unicode-whitespace optional references are allowed?
+FAIL  [action-xref] TEST: every non-empty adapter ActionCode resolves exactly to ops_Action: DATABASE_SETTING->SETTINGS_SYNC, WINDOWS_SERVICE->SERVICE_RECONCILE?
+PASS  [action-xref] TEST: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine?
+PASS  the two real stale adapter identifiers fail R-043?
+PASS  stale adapter metadata does not create a false engine failure?
+PASS  [action-xref] TEST: every non-empty adapter ActionCode resolves exactly to ops_Action?
+FAIL  [action-xref] TEST: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine: DATABASE_SETTINGS->MISSING_ENGINE?
+PASS  an action that names a missing engine fails the effective engine mapping?
+PASS  missing engine leaves a valid adapter-to-action reference green?
+FAIL  [action-xref] TEST: every non-empty adapter ActionCode resolves exactly to ops_Action: DATABASE_SETTING->database_settings?
+FAIL  [action-xref] TEST: every non-empty ops_Action.EngineCode resolves exactly to ops_Engine: WINDOWS_SERVICES->windows_services?
+PASS  adapter ActionCode comparison is exact and rejects wrong case?
+PASS  engine comparison is exact and rejects wrong case?
+PASS  narrow fixtures without all three C8 tables are not misclassified?
+C8 action cross-reference tests: 12 passed, 0 failed.?
+=== Test-ApplyCatalogChange.ps1?
+PASS  dry-run reports not applied?
+PASS  dry-run leaves catalog byte-exact and writes no baseline?
+PASS  dry-run executes optimistic-state predicates on the staged copy?
+PASS  failed dry-run predicate leaves catalog and baseline untouched?
+PASS  dry-run runs the staged catalog safety and secret scan?
+PASS  failed dry-run safety check leaves catalog and baseline untouched?
+PASS  apply reports changed catalog and reseal required?
+PASS  baseline is byte-exact pre-edit catalog?
+PASS  update/insert/delete were applied exactly?
+PASS  successful edit keeps catalog structurally safe?
+PASS  SQL-shaped text is stored byte-exact as data?
+PASS  SQL-shaped text cannot execute?
+PASS  stale base hash is refused?
+PASS  stale proposal leaves original unchanged?
+PASS  server code comparison is exact?
+PASS  key must be the exact live composite primary key?
+PASS  expected-value mismatch affects zero rows and is refused?
+PASS  failed expected-value check leaves original and no baseline?
+PASS  no-op update is refused?
+PASS  catalog_meta is not editable by C9?
+PASS  derived cross-machine directory cannot be hand-edited?
+PASS  BLOB edits are refused in C9 V1?
+PASS  SQLite INTEGER column refuses JSON string values?
+PASS  foreign-key violation cannot replace original?
+PASS  FK failure leaves original and no baseline?
+PASS  existing seal secret scanner blocks a secret-like edit?
+PASS  secret-scan failure leaves original and no baseline?
+PASS  duplicate JSON member is refused?
+PASS  floating-point JSON numbers are refused?
+C9 catalog-change tests: 29 passed, 0 failed.?
+=== Test-ConvertManagementDb.ps1?
+PASS  schema: columns, identity and composite key are read?
+PASS  rows: only the whitelisted tables are read?
+PASS  rows: a string that looks like an INSERT is skipped, not parsed?
+PASS  rows: bit, long and bytes get native types?
+PASS  rows: quotes and non-ASCII text are unescaped?
+PASS  catalog and manifest are written, no temp files left?
+PASS  integrity check and user_version?
+PASS  catalog_meta has the one expected row?
+PASS  all tables are STRICT?
+PASS  global rows are copied (4 rules, 1 asset, 1 engine, 2 resources)?
+PASS  cut tables are empty; only the new ManagedServer row exists?
+PASS  the old server row of the source is not copied?
+PASS  secret, script, rowversion and ManagementDatabaseName columns do not exist?
+PASS  the history trap row never appears?
+PASS  marker value is not in the catalog file: MARKERA?
+PASS  marker value is not in the manifest: MARKERA?
+PASS  marker value is not in the catalog file: MARKERB?
+PASS  marker value is not in the manifest: MARKERB?
+PASS  marker value is not in the catalog file: MARKERC?
+PASS  marker value is not in the manifest: MARKERC?
+PASS  a whole-value secret becomes a reference token?
+PASS  a label=value secret keeps its label?
+PASS  placeholder and non-sensitive templates are unchanged?
+PASS  redaction is reported by rule code, count 2?
+PASS  a secret-like literal outside the rule tables stops the run?
+PASS  nothing is written when the safety net stops the run?
+PASS  multi-line text keeps CRLF, lone LF, lone CR and tab byte for byte?
+PASS  the stored multi-line value is still TEXT?
+PASS  a normal value with quotes is stored without hex casting and unchanged?
+PASS  text case is never changed (mixed-case code stored as given)?
+PASS  datetime2 keeps its value, with T and no zone?
+PASS  identity value is kept; bit is 0 or 1; char column holds text?
+PASS  BLOB is a real blob that hashes to its stored SHA-256?
+PASS  non-ASCII text is stored as UTF-8?
+PASS  by default code columns compare exactly (no folding)?
+PASS  a bit CHECK rejects other values?
+PASS  with -CodeCollation NoCase the same lookup folds ASCII case?
+PASS  with NoCase the stored text is still exactly as given?
+PASS  manifest is ASCII and LF?
+PASS  manifest SHA-256 and size match the file?
+PASS  manifest lists redacted rule codes, empty-policy findings and excluded columns?
+PASS  manifest row counts match?
+PASS  no collation finding when every code is ASCII?
+PASS  a non-ASCII code value is reported as a finding (count only, no value)?
+PASS  an existing ServerCode is refused (cut mode is B3)?
+PASS  an invalid ServerCode is refused?
+PASS  a missing sqlite3 is refused?
+PASS  a whitelisted table missing from the source is an error?
+  SRV_A: 2 instance(s), 94208 bytes?
+  SRV_B: 2 instance(s), 94208 bytes?
+  SRV_C: 0 instance(s), 94208 bytes?
+PASS  cut ALL writes one catalog per server and one manifest?
+PASS  machine A: its server, 2 instances, its policy, 2 profile links, its pulse hub and its windows group (name match ignores case)?
+PASS  machine B: 2 instances (one matched only by ignoring case), 1 policy, 2 profile links, no pulse, no windows group?
+PASS  machine C: only its server row; every cut table is empty?
+PASS  each of the 4 instances appears in exactly one catalog?
+PASS  global tables are identical in every catalog?
+PASS  stored text is unchanged: the case-only match keeps its own spelling?
+PASS  manifest: mode cut and completeness says each instance is in exactly one catalog?
+PASS  manifest: completeness counts add up for every cut table?
+PASS  manifest: rows that belong to no machine are reported with their codes and not carried?
+PASS  manifest: the case-only match is a finding for the machine that needed it?
+PASS  manifest: a machine without a policy row gets a finding for it?
+PASS  no marker value in any catalog or in the manifest (secret columns are not carried)?
+PASS  the original server rows were not modified in the source (ManagementDatabaseName still there)?
+  SRV_A: 2 instance(s), 94208 bytes?
+PASS  a subset (code given in other case) builds only that machine, named with the code as stored?
+PASS  an unknown ServerCode in cut mode is refused?
+PASS  ALL cannot be mixed with codes?
+PASS  an instance whose server is not in the source is an error (it would belong to no catalog)?
+PASS  nothing is written when the cut stops on an error?
+PASS  two instances that differ only by case are refused?
+PASS  a MachineName shared by two servers is refused (the cut would be ambiguous)?
+PASS  a secret-like literal in a cut table stops the run?
+70 passed, 0 failed?
+=== Test-CredentialCrypto.ps1?
+PASS  canonical: known answer?
+PASS  canonical: ordinal key order (digits, upper case, underscore, lower case)?
+PASS  canonical: keys that differ only by case are all kept?
+PASS  canonical bytes: keys that differ only by case are all kept?
+PASS  canonical: empty array and empty object?
+PASS  canonical: refuses a type it cannot write?
+PASS  canonical bytes: byte[] (not object[]), member excluded, ASCII?
+PASS  parity: both canonical functions found in Seal-Package.ps1?
+PASS  parity: identical output to Seal-Package.ps1 for 19 values?
+PASS  sha256 and fingerprint: known answer (independent implementation)?
+PASS  base64: valid text decodes to byte[]?
+PASS  base64: rejects []?
+PASS  base64: rejects [AQI]?
+PASS  base64: rejects [AQ ID]?
+PASS  base64: rejects [AQID\n]?
+PASS  base64: rejects [AQI-]?
+PASS  base64: rejects [AQI_]?
+PASS  base64: rejects [====]?
+PASS  base64: rejects [AQ==AQ==]?
+PASS  HKDF: content key known answer (salt and info, independent implementation)?
+PASS  issuer key: id is the 64-hex fingerprint of the public key?
+PASS  issuer key: two keys differ?
+PASS  signature: shape and algorithm id?
+PASS  signature: verifies?
+PASS  signature: verifies when read back as an object (as from JSON)?
+PASS  signature: randomised, both verify?
+PASS  signature: altered data fails?
+PASS  signature: one flipped bit fails?
+PASS  signature: unknown issuer key fails?
+PASS  signature: other algorithm id fails?
+PASS  signature: algorithm id is case sensitive?
+PASS  signature: wrong key id fails?
+PASS  signature: key id in upper case fails?
+PASS  signature: value that is not base64 fails?
+PASS  signature: 63-byte value fails?
+PASS  signature: missing members, null and garbage never throw?
+PASS  signature: refuses to sign with a P-384 key?
+PASS  signature: a P-384 public key never verifies?
+PASS  aad: layout known answer?
+PASS  aad: byte[]?
+PASS  aad: upper-case package id refused?
+PASS  aad: server code with a space refused?
+PASS  aad: short fingerprint refused?
+PASS  aad: lower-case credential reference refused?
+PASS  aad: sequence 0 refused?
+PASS  entry: protect returns one object and writes nothing to any stream?
+PASS  entry: members and base64 formats?
+PASS  entry: wrappedKey is a P-256 SubjectPublicKeyInfo and not the machine key?
+PASS  entry: the secret is not in the output (plain, base64, hex)?
+PASS  entry: round trip returns byte[] equal to the secret?
+PASS  entry: same secret twice gives different ephemeral key, nonce and ciphertext?
+PASS  entry: round trip with the object form (as read from JSON)?
+PASS  entry: secret of 1 bytes round trips?
+PASS  entry: secret of 16 bytes round trips?
+PASS  entry: secret of 8192 bytes round trips?
+PASS  entry: empty secret refused?
+PASS  entry: 8193-byte secret refused?
+PASS  entry: refuses a public key that is not P-256?
+PASS  entry: another machine key cannot decrypt (package for machine A on machine B)?
+PASS  entry: changed packageId in the associated data fails?
+PASS  entry: changed serverCode in the associated data fails?
+PASS  entry: changed keyFingerprint in the associated data fails?
+PASS  entry: changed credentialRef in the associated data fails?
+PASS  entry: changed sequence in the associated data fails?
+PASS  entry: flipped ciphertext bit fails?
+PASS  entry: flipped tag bit fails?
+PASS  entry: flipped nonce bit fails?
+PASS  entry: another valid ephemeral key fails?
+PASS  entry: truncated ciphertext fails?
+PASS  entry: wrong nonce length fails?
+PASS  entry: garbage wrappedKey fails?
+PASS  entry: base64 with whitespace fails?
+PASS  entry: missing member fails?
+PASS  entry: a failure never contains the marker or key material?
+?
+Passed: 74  Failed: 0?
+=== Test-CredentialImportCore.ps1?
+PASS  rule: a whole-value secret is the whole template?
+PASS  rule: name=value keeps only the value (password, secret, token, key in the name)?
+PASS  rule: the name match is case-insensitive?
+PASS  rule: a value with a space is not name=value, so the whole template is the secret?
+PASS  rule: a name without password, secret, token or key is a whole-value secret?
+PASS  rule: name= with no value is a whole-value secret (as the conversion tool does)?
+PASS  rule: a template with a placeholder is skipped: Server={ServerName};Password=x?
+PASS  rule: a template with a placeholder is skipped: {{secret:ref}}?
+PASS  rule: a template with a placeholder is skipped: a $(Var) b?
+PASS  rule: a template with a placeholder is skipped: a %VAR% b?
+PASS  rule: a template with a placeholder is skipped: a <name> b?
+PASS  rule: a row that is not sensitive is skipped?
+PASS  rule: a null IsSensitive is skipped?
+PASS  rule: an empty or null template is skipped?
+PASS  rule: the candidate carries the table and the code?
+PASS  parity: the selection and the secret value agree with Protect-RuleRow of the conversion tool (11 redactions compared)?
+PASS  parity: portable rule specs match; cfg.DatabaseSettingRule remains import/validation-only after cleanup?
+PASS  plan: a good source is Ok with no failures?
+PASS  plan: counts per kind, expected and read?
+PASS  plan: six entries with the right kind, code and source?
+PASS  plan: the secret bytes are the UTF-8 of the value; a name=value rule keeps only the value?
+PASS  plan: an instance with no credential configured contributes nothing?
+PASS  plan: failures, counts and the entry list contain no marker except in the bytes?
+PASS  plan: a null secret is NULL_SECRET with the reference?
+PASS  plan: a DBNull secret is NULL_SECRET?
+PASS  plan: an empty secret is NULL_SECRET?
+PASS  plan: a configured credential that was not returned is MISSING?
+PASS  plan: a returned credential that is not configured is UNEXPECTED?
+PASS  plan: the same credential twice is DUPLICATE?
+PASS  plan: an unknown credential type is TYPE?
+PASS  plan: a credential type in lower case is TYPE (exact match)?
+PASS  plan: an instance code in lower case is CODE?
+PASS  plan: a duplicated instance in the catalogue is DUPLICATE_INSTANCE?
+PASS  plan: a rule code in lower case is CODE?
+PASS  plan: the same rule code in two tables is RULE_CODE_COLLISION?
+PASS  plan: odd characters in a code are replaced by ? in the failure text (exact comparison; -like would treat ? as a wildcard)?
+PASS  plan: an empty source is Ok with zero entries (a count check is the caller job)?
+PASS  plan: a reference with a value over 255 characters is still imported (the vault allows 8192 bytes)?
+PASS  dry run: needs no vault, reports Ok and the counts, saves nothing?
+PASS  dry run: a bad plan is not Ok and lists the failure?
+PASS  import: a plan with a failure is refused, nothing is saved and the vault file is unchanged?
+PASS  import: without a vault it fails with VAULT_REQUIRED and writes nothing?
+PASS  import: all six entries are added, saved, and every fingerprint matches?
+PASS  import: the vault holds the values and the sources?
+PASS  import: after closing and reopening the six secrets are there?
+PASS  import: no marker, in plain, appears in the vault file?
+PASS  import: a second import without -Replace is refused at the first existing reference (one SECRET_EXISTS failure) and nothing is saved?
+PASS  import: with -Replace a refresh succeeds and the fingerprints still match?
+PASS  verify: an unchanged source matches all six and saves nothing?
+PASS  verify: a rotated value is MISMATCH with the reference and no value?
+PASS  verify: a credential that is in the source but not in the vault is NOT_IN_VAULT?
+PASS  verify: vault entries that the source no longer has are counted as Extra and are not a failure?
+PASS  verify: a bad plan is not Ok?
+PASS  report: counts per kind, a total and the result, with no value?
+PASS  report: a failure appears with its code and reference, never a value?
+PASS  hygiene: nothing in any stream carries a marker or the passphrase?
+PASS  clearing: the plan bytes are zeroed?
+?
+Passed: 57  Failed: 0?
+=== Test-CredentialPackage.ps1?
+PASS  package: ASCII, LF only, armor, lines of at most 76 characters?
+PASS  package: the body is the canonical JSON of the whole object (signature included)?
+PASS  package: no secret in the text (plain, base64, hex)?
+PASS  validate: accepts a good package, one result and nothing on any stream?
+PASS  validate: the package comes back with its four entries?
+PASS  validate: the result never carries a secret?
+PASS  decrypt: IIS_IDENTITY.INST1?
+PASS  decrypt: WEB_ACCESS.INST1?
+PASS  decrypt: MOBILE_APP_TOKEN.INST1?
+PASS  decrypt: RULE_SECRET.SOME_RULE?
+PASS  decrypt: unknown reference?
+PASS  decrypt: reference in another case?
+PASS  decrypt: with the key of another machine?
+PASS  validate: accepts CRLF line endings (text pasted from a browser)?
+PASS  validate: accepts the text without the final line feed?
+PASS  validate: lower sequence boundary (last accepted 4, package 5)?
+PASS  validate: expiry boundary is inclusive?
+PASS  validate: issuedAt 14 minutes in the future is tolerated?
+PASS  build: two packages differ (package id, ciphertext) and both validate?
+PASS  section 7: package for machine A on machine B (same folder copied) fails at check 5?
+PASS  section 7: altered body (one ciphertext bit) fails at check 3?
+PASS  section 7: altered body (metadata: machine name) fails at check 3?
+PASS  section 7: altered body (metadata: credential reference) fails at check 3?
+PASS  section 7: altered body (metadata: kind) fails at check 3?
+PASS  section 7: altered body (metadata: instance code) fails at check 3?
+PASS  section 7: altered body (sequence raised) fails at check 3?
+PASS  section 7: altered body (expiry extended) fails at check 3?
+PASS  section 7: altered body (an entry removed) fails at check 3?
+PASS  section 7: altered body (an entry duplicated) fails at check 3?
+PASS  section 7: altered body (issuer key id) fails at check 3?
+PASS  section 7: altered signature fails at check 3?
+PASS  section 7: other signature algorithm fails at check 3?
+PASS  section 7: replay with the same sequence fails at check 7?
+PASS  section 7: replay with a higher installed sequence fails at check 7?
+PASS  section 7: expired package fails at check 6?
+PASS  section 7: package not yet valid (notBefore) fails at check 6?
+PASS  section 7: notBefore equal to now is valid?
+PASS  section 7: issuedAt 16 minutes in the future fails at check 6?
+PASS  section 7: wrong server code fails at check 4?
+PASS  section 7: server code in another case fails at check 4?
+PASS  section 7: signed by an unknown issuer key fails at check 3?
+PASS  section 7: signed by another key but claiming the trusted key id fails at check 3?
+PASS  validate: lifetime of 367 days fails at check 6 even when signed?
+PASS  validate: lifetime of exactly 366 days is accepted?
+PASS  validate: expiry before issue fails at check 6?
+PASS  validate: duplicate credential reference fails at check 8?
+PASS  validate: unsupported contract version fails at check 2?
+PASS  validate: other key wrap identifier fails at check 2?
+PASS  validate: other content identifier fails at check 2?
+PASS  order: wrong server + wrong key + expired -> TARGET_SERVER?
+PASS  order: wrong key + expired -> TARGET_KEY?
+PASS  order: expired + replay -> TIME_WINDOW?
+PASS  order: replay + duplicate reference -> REPLAY?
+PASS  order: unknown issuer + wrong server -> SIGNATURE?
+PASS  order: bad version + unknown issuer -> VERSION?
+PASS  order: bad format + bad version -> FORMAT?
+PASS  format: empty text?
+PASS  format: only spaces?
+PASS  format: no begin line?
+PASS  format: no end line?
+PASS  format: text before the begin line?
+PASS  format: text after the end line?
+PASS  format: machine identity armor?
+PASS  format: non-ASCII character?
+PASS  format: lone carriage return?
+PASS  format: line of 77 characters?
+PASS  format: empty body?
+PASS  format: space inside a body line?
+PASS  format: base64 padding in the middle?
+PASS  format: url-safe base64?
+PASS  format: more than 256 KiB?
+PASS  format: body is not JSON?
+PASS  format: JSON array instead of object?
+PASS  format: JSON null?
+PASS  format: duplicate member?
+PASS  format: sequence as a float?
+PASS  format: sequence with exponent?
+PASS  format: sequence beyond int64?
+PASS  format: sequence as text?
+PASS  format: JSON with a comment?
+PASS  format: JSON with a trailing comma?
+PASS  format: null text never throws?
+PASS  format: unknown member at the top?
+PASS  format: unknown member in issuer?
+PASS  format: unknown member in target?
+PASS  format: unknown member in encryption?
+PASS  format: unknown member in an entry?
+PASS  format: case variant of a member?
+PASS  format: case variant in an entry?
+PASS  format: missing contractVersion?
+PASS  format: missing packageId?
+PASS  format: missing sequence?
+PASS  format: missing issuedAt?
+PASS  format: missing expiresAt?
+PASS  format: missing issuer?
+PASS  format: missing target?
+PASS  format: missing encryption?
+PASS  format: missing entries?
+PASS  format: missing signature?
+PASS  format: missing nonce in an entry?
+PASS  format: upper-case package id?
+PASS  format: sequence 0?
+PASS  format: negative sequence?
+PASS  format: time with a space?
+PASS  format: time with an offset?
+PASS  format: impossible date?
+PASS  format: server code with a space?
+PASS  format: upper-case fingerprint?
+PASS  format: short issuer key id?
+PASS  format: machine name with a space?
+PASS  format: unknown credential kind?
+PASS  format: lower-case credential ref?
+PASS  format: instance code with a space?
+PASS  format: no entries?
+PASS  format: entries is an object?
+PASS  format: entries is a string?
+PASS  format: nonce of 11 bytes?
+PASS  format: wrappedKey of 90 bytes?
+PASS  format: ciphertext of 16 bytes?
+PASS  format: ciphertext not base64?
+PASS  format: short signature value?
+PASS  format: signature algorithm too short?
+PASS  format: version with a space?
+PASS  format: target is a string?
+PASS  format: sequence as a boolean?
+PASS  format: null entry?
+PASS  format: 501 entries?
+PASS  format: 500 entries pass the format check (the next check decides)?
+PASS  move: two entries swapped between references still validate (signed)?
+PASS  move: the swapped entry no longer decrypts under the first reference?
+PASS  move: the swapped entry no longer decrypts under the second reference?
+PASS  move: the same entries under another sequence validate (signed)?
+PASS  move: ...but do not decrypt (sequence is in the associated data)?
+PASS  move: the same entries under another package id do not decrypt?
+PASS  move: the same entries under another server code do not decrypt?
+PASS  move: a package that names another machine key cannot be used with this key?
+PASS  build: minimal call works?
+PASS  build: lifetime of 367 days refused?
+PASS  build: lifetime of 366 days accepted?
+PASS  build: expiry before issue refused?
+PASS  build: no entries refused?
+PASS  build: sequence 0 refused?
+PASS  build: server code with a space refused?
+PASS  build: upper-case package id refused?
+PASS  build: P-384 machine key refused?
+PASS  build: duplicate reference refused?
+PASS  build: unknown kind refused?
+PASS  build: lower-case reference refused?
+PASS  build: a text secret (not bytes) refused?
+PASS  build: empty secret refused?
+PASS  build: 501 entries refused?
+PASS  identity: text layout (known answer)?
+PASS  identity: round trip?
+PASS  identity: a package built from the parsed identity validates?
+PASS  identity: CRLF accepted?
+PASS  identity: no final line feed accepted?
+PASS  identity: empty?
+PASS  identity: missing a line?
+PASS  identity: lines swapped?
+PASS  identity: an extra line?
+PASS  identity: package armor?
+PASS  identity: text before the armor?
+PASS  identity: fingerprint of another key?
+PASS  identity: upper-case fingerprint?
+PASS  identity: other key algorithm?
+PASS  identity: public key not base64?
+PASS  identity: public key of another curve?
+PASS  identity: server code with a space?
+PASS  identity: machine name with a space?
+PASS  identity: unknown contract version?
+PASS  identity: time without Z?
+PASS  identity: non-ASCII character?
+PASS  identity: two spaces after a colon?
+PASS  identity: too long?
+PASS  identity: builder refuses a P-384 key?
+PASS  identity: builder refuses a server code with a space?
+PASS  identity: builder refuses a machine name with a space?
+PASS  format: text over 262144 characters fails at check 1 (size)?
+PASS  format: a non-ASCII character fails at check 1 (characters)?
+PASS  format: a control character fails at check 1 (characters)?
+PASS  format: a wrong BEGIN armor line fails at check 1 (armor)?
+PASS  format: a wrong END armor line fails at check 1 (armor)?
+PASS  format: text before the BEGIN line fails at check 1 (armor)?
+PASS  format: a signed body with an unknown top-level member fails at check 1?
+PASS  format: a signed body with an unknown member in target fails at check 1?
+PASS  format: a signed body with an unknown member in an entry fails at check 1?
+PASS  validate: an unexpected internal error fails closed (FORMAT, nothing returned)?
+PASS  decrypt: control, the same call works on the unmodified package with a live key?
+PASS  decrypt: a package object with a duplicated reference is refused?
+?
+Passed: 189  Failed: 0?
+=== Test-CredentialSigning.ps1?
+PASS  init: exit 0 and the vault file exists?
+PASS  init: shows the issuer key id in 16 groups of 4?
+PASS  init: the passphrase is in neither stream?
+PASS  info: exit 0, same key id, a revision, no private material?
+PASS  info: a wrong passphrase is exit 1 with the generic VAULT_OPEN?
+PASS  init: an existing vault is refused and untouched?
+PASS  passphrase: the environment variable without the explicit opt-in is refused?
+PASS  passphrase: a redirected input never waits for a prompt (fails closed at once)?
+PASS  init: a weak passphrase is refused and nothing is created?
+PASS  export: the public key text parses and carries the vault key id, and the fingerprint is shown?
+PASS  export: the text holds no private key?
+PASS  export: an existing output file is never overwritten?
+PASS  backup: needs no passphrase, writes an identical copy and shows its SHA-256?
+PASS  restore: with the passphrase a backup comes back identical?
+PASS  restore: a wrong passphrase refuses and creates nothing?
+PASS  signer: exit 0 and a result with exactly issuerKeyId, algorithm and value?
+PASS  signer: the signature verifies with the public key of the vault?
+PASS  signer: only reads the vault (the file is byte-identical afterwards)?
+PASS  signer: nothing secret in the streams?
+PASS  signer: a wrong passphrase is exit 1, VAULT_OPEN, and no output file?
+PASS  signer: a missing vault is exit 1 and no output file?
+PASS  signer: a missing input is SIGNER_INPUT?
+PASS  signer: without a passphrase source and a redirected input it fails closed?
+PASS  verifier: a valid signature is exit 0?
+PASS  verifier: -IssuerKeyFile works without the environment variable?
+PASS  verifier: altered input is exit 1 (SIGNATURE_INVALID)?
+PASS  verifier: one flipped bit of the signature is exit 1?
+PASS  verifier: another algorithm id is exit 1?
+PASS  verifier: a key id that is not the pinned key is exit 1 (the key id in the signature is never trusted)?
+PASS  verifier: the pinned key of another issuer is exit 1?
+PASS  verifier: a missing issuer key file is exit 1 (ISSUER_KEY_FILE)?
+PASS  verifier: no issuer key configured at all is exit 1 (nothing is assumed)?
+PASS  verifier: a corrupt issuer key file is exit 1?
+PASS  verifier: an unreadable signature file is exit 1?
+Package: C:\Users\runneradmin\AppData\Local\Temp\sisqual-signing-test-54de89e464974da990da06d0b94081aa\pkg  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\sisqual-signing-test-54de89e464974da990da06d0b94081aa\pkg\package-manifest.json?
+PASS  seal: Seal-Package seals with the real signer?
+PASS  seal: the manifest signature carries the vault issuer key id and the ECDSA algorithm?
+PASS  verify: the real verifier accepts the sealed package?
+PASS  verify: the signature is valid over the canonical manifest bytes, checked in this process?
+PASS  tamper: a changed manifest field fails the verification?
+PASS  tamper: a changed catalog fails the verification?
+PASS  tamper: a changed engine file fails the verification?
+PASS  verify: the pinned key of another issuer rejects a package it did not sign?
+PASS  verify: with the right key it verifies again (control)?
+Package: C:\Users\runneradmin\AppData\Local\Temp\sisqual-signing-test-54de89e464974da990da06d0b94081aa\pkg-wrong  version 1.0.0  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+The manifest will be signed by the credential tool signer.?
+PASS  seal: a wrong vault passphrase stops the seal at the signer?
+PASS  seal: a failed signer leaves no manifest behind?
+?
+Passed: 45  Failed: 0?
+=== Test-CredentialVault.ps1?
+PASS  defaults: PBKDF2 minimum and default are 600000 iterations?
+PASS  defaults: minimum passphrase length is 14?
+PASS  create with the real default writes 600000 iterations in the header?
+PASS  policy: a short passphrase is refused?
+PASS  policy: 13 characters are refused?
+PASS  policy: one repeated character is refused?
+PASS  policy: a refused passphrase creates nothing?
+PASS  kdf: PBKDF2-HMAC-SHA256 known answer at 1000 iterations?
+PASS  kdf: PBKDF2-HMAC-SHA256 known answer at 600000 iterations?
+PASS  create: one object returned and nothing written to any stream?
+PASS  create: armored, ASCII and LF only?
+PASS  create: envelope members and algorithm names?
+PASS  create: salt 16 bytes, nonce 12 bytes?
+PASS  create: revision 1, no issuer, no secrets?
+PASS  create: an existing vault is never overwritten?
+PASS  create: refused inside a Git work tree?
+PASS  create: fewer iterations than the minimum are refused?
+PASS  acl (Windows): inheritance off and only the user, Administrators and SYSTEM?
+PASS  open: the right passphrase returns the data?
+PASS  open: a wrong passphrase gives the generic VAULT_OPEN?
+PASS  open: a trailing space is a different passphrase?
+PASS  open: a non-ASCII passphrase round trips (UTF-8)?
+PASS  tamper: one flipped ciphertext bit fails?
+PASS  tamper: one flipped tag bit fails?
+PASS  tamper: a changed nonce fails?
+PASS  tamper: a changed salt fails?
+PASS  tamper: a changed iteration count fails?
+PASS  tamper: another version is a format error?
+PASS  tamper: another cipher name is a format error?
+PASS  tamper: another kdf name is a format error?
+PASS  tamper: an unknown member is a format error?
+PASS  tamper: a short salt is a format error?
+PASS  tamper: a 12-byte nonce is required?
+PASS  tamper: an iteration count below the minimum is refused (downgrade)?
+PASS  format: a wrong BEGIN line?
+PASS  format: a wrong END line?
+PASS  format: text before the armor?
+PASS  format: a non-ASCII character?
+PASS  format: a body line that is not base64?
+PASS  format: an empty file?
+PASS  format: a text that is not a vault?
+PASS  format: over the size limit?
+PASS  format: CRLF line endings (a pasted copy) still open?
+PASS  open: a missing file is a format error?
+PASS  open: an authentic vault with a weak KDF is refused?
+PASS  aad: opening with the untouched header works (control)?
+PASS  aad: a changed header field fails to open even with the right key?
+PASS  save: revision goes to 2 and the file changes?
+PASS  save: a new nonce for the same key and salt?
+PASS  save: the previous generation is kept as .prev and is the old file?
+PASS  save: no temporary file is left behind?
+PASS  save: the marker is not in the file in clear?
+PASS  save: a second save works (revision 3)?
+PASS  save: a fresh open sees the revision and the data?
+PASS  save: a vault changed on disk since it was opened is refused (VAULT_CHANGED)?
+PASS  close: the key bytes are zeroed?
+PASS  close: a closed vault cannot be saved?
+PASS  issuer: signing without a key is ISSUER_MISSING?
+PASS  issuer: info is null before a key exists?
+PASS  issuer: create returns the public info only and writes nothing else?
+PASS  issuer: the key id is the fingerprint of the public key?
+PASS  issuer: a second key is refused without -Replace?
+PASS  issuer: the signature has the shape Seal-Package expects and verifies?
+PASS  issuer: neither the key id, the public key nor the private key appear in the file in clear?
+PASS  issuer: after save and reopen the same key signs and verifies?
+PASS  issuer: -Replace creates a different key?
+PASS  issuer: the old public key no longer verifies the new signature?
+PASS  issuer: a closed vault gives nothing?
+PASS  backup: a byte-identical copy with a .bak name, hash verified?
+PASS  backup: an existing backup is never overwritten?
+PASS  backup: a destination inside a Git work tree is refused?
+PASS  backup: a file that is not a vault is refused?
+PASS  restore: a wrong passphrase refuses and changes nothing?
+PASS  restore: the target is untouched after the refusal?
+PASS  restore: an existing target needs -Force?
+PASS  restore: a new path gets a vault identical to the backup that opens?
+PASS  restore -Force: the older backup is back and the replaced file is kept?
+PASS  restore: a corrupt backup is refused (the restore test fails)?
+PASS  restore: the target is untouched after a corrupt backup?
+PASS  streams: the passphrase never appears in the output?
+?
+Passed: 80  Failed: 0?
+=== Test-CredentialVaultSecrets.ps1?
+PASS  ref: derived as KIND.CODE?
+PASS  ref: kind IIS_IDENTITY is accepted?
+PASS  ref: kind WEB_ACCESS is accepted?
+PASS  ref: kind MOBILE_APP_TOKEN is accepted?
+PASS  ref: kind RULE_SECRET is accepted?
+PASS  ref: an unknown kind is SECRET_KIND?
+PASS  ref: a kind in lower case is SECRET_KIND (case sensitive)?
+PASS  ref: a code in lower case is SECRET_CODE?
+PASS  ref: a code with a dot is SECRET_CODE (the reference stays unambiguous)?
+PASS  ref: a 61-character code is SECRET_CODE?
+PASS  ref: a 60-character code is accepted?
+PASS  ref: an empty code is refused?
+PASS  add: returns one object (reference and fingerprint) and writes nothing to any stream?
+PASS  list: five entries sorted by reference (ordinal)?
+PASS  list: metadata only - no property carries a value?
+PASS  list: the source and the time are kept?
+PASS  list: every fingerprint is 64 lower-case hex and they differ?
+PASS  get: the value round trips?
+PASS  get: a non-ASCII value round trips (UTF-8 bytes)?
+PASS  get: all 256 byte values round trip?
+PASS  get: an 8192-byte value round trips?
+PASS  add: an empty value is SECRET_VALUE?
+PASS  add: an 8193-byte value is SECRET_VALUE?
+PASS  add: a source with a line break is SECRET_SOURCE?
+PASS  add: a non-ASCII source is SECRET_SOURCE?
+PASS  add: a 101-character source is SECRET_SOURCE?
+PASS  add: a refused add leaves the vault unchanged?
+PASS  get: the returned array is a copy (clearing it leaves the vault intact)?
+PASS  get: an unknown reference is SECRET_MISSING?
+PASS  get: a malformed reference is SECRET_MISSING?
+PASS  add: an existing reference is SECRET_EXISTS?
+PASS  add: the refused duplicate did not change the stored value?
+PASS  -Replace: the value and its fingerprint change, and there is still one entry for the reference?
+PASS  fingerprint: the right value matches?
+PASS  fingerprint: another value does not match?
+PASS  fingerprint: one flipped bit does not match?
+PASS  fingerprint: an unknown reference is SECRET_MISSING?
+PASS  fingerprint: the same value in another vault has another fingerprint (the salt is per vault)?
+PASS  fingerprint: it is SHA-256 of the vault salt followed by the value?
+PASS  file: neither the marker (plain, base64, hex) nor any reference appears in clear?
+PASS  reopen: every entry, value and fingerprint survived and the revision matches the save?
+PASS  reopen: the access log survived and holds references and actions only?
+PASS  log: a read is recorded with the reference and no value?
+PASS  log: the first events were ADD for the entries created?
+PASS  log: the -Replace was recorded?
+PASS  log: it keeps only the newest entries when it passes the limit?
+PASS  limit: one more than the maximum is SECRETS_LIMIT?
+PASS  limit: replacing an existing entry at the limit still works?
+PASS  remove: the entry is gone and the removal is logged?
+PASS  remove: its value is SECRET_MISSING afterwards?
+PASS  remove: an unknown reference is SECRET_MISSING?
+PASS  add: after a removal the same reference can be added again?
+PASS  compat: a vault whose data has no secrets list gets one on the first add?
+PASS  closed: add is VAULT_CLOSED?
+PASS  closed: list is VAULT_CLOSED?
+PASS  closed: get is VAULT_CLOSED?
+PASS  closed: remove is VAULT_CLOSED?
+PASS  closed: the log is VAULT_CLOSED?
+PASS  hygiene: no marker in the list, the log or any failure?
+?
+Passed: 59  Failed: 0?
+=== Test-ExportManagementEngines.ps1?
+PASS  parses exactly the two ops.Engine rows?
+PASS  quotes are unescaped?
+PASS  metadata is read?
+PASS  stored hash equals UTF-16LE hash?
+PASS  export reports 2 engines and 0 mismatches?
+PASS  file is UTF-8 without BOM and keeps CRLF?
+PASS  manifest is ASCII and LF?
+PASS  manifest records CRLF and the non-ASCII character?
+PASS  literal password values are counted?
+PASS  a type cast is not a hit?
+PASS  a placeholder is not a hit?
+PASS  the marker value never reaches the manifest?
+PASS  a hash mismatch stops the export?
+PASS  the mismatching file is not written?
+PASS  the mismatch is recorded in the manifest?
+PASS  an output folder inside the repository is refused?
+PASS  the refused folder was not created?
+PASS  a path in SourceFileName is refused?
+PASS  the engine filter exports only the selected engine?
+PASS  an unknown engine code is an error?
+PASS  two engines with the same file name are refused?
+21 passed, 0 failed?
+=== Test-IssuerKeyText.ps1?
+PASS  text: armor, four fields, LF, ASCII?
+PASS  text: field order and algorithm?
+PASS  parse: round trip gives the key id and the same public key bytes?
+PASS  parse: CRLF (a pasted copy) is accepted?
+PASS  parse: a missing final newline is accepted?
+PASS  parse: the parsed key verifies a signature of the issuer?
+PASS  parse: empty text?
+PASS  parse: text that is not a key?
+PASS  parse: wrong BEGIN line?
+PASS  parse: wrong END line?
+PASS  parse: text before the armor?
+PASS  parse: a missing field?
+PASS  parse: an extra field?
+PASS  parse: fields in another order?
+PASS  parse: another contract version?
+PASS  parse: another key algorithm?
+PASS  parse: key id in upper case?
+PASS  parse: key id of another key (fingerprint is recomputed)?
+PASS  parse: public key of another key?
+PASS  parse: public key that is not base64?
+PASS  parse: a non-ASCII character?
+PASS  parse: a trailing space on a field?
+PASS  parse: over the size limit?
+PASS  generate: a P-384 key is refused?
+PASS  parse: a P-384 key with a consistent key id is refused (the key itself is validated)?
+PASS  parse: a label altered to another of the same length (Contract)?
+PASS  parse: a label altered to another of the same length (KeyId)?
+PASS  parse: a label altered to another of the same length (KeyAlgorithm)?
+PASS  parse: a label altered to another of the same length (PublicKey)?
+PASS  generate: an ECDH key is not an issuer key but is accepted as a P-256 point (the algorithm field is what separates them)?
+PASS  fingerprint display: 16 groups of 4 in upper case?
+PASS  fingerprint display: the groups give back the fingerprint?
+PASS  fingerprint display: upper case input is refused?
+PASS  fingerprint display: a short input is refused?
+?
+Passed: 34  Failed: 0?
+=== Test-LegacyDatabaseSettingRuleShapes.ps1?
+PASS  fixture models exactly 14 enabled legacy rules?
+PASS  fixture declares raw-source validation before structured conversion?
+PASS  synthetic structure materializes all 14 legacy/replacement pairs?
+PASS  cleanup equivalence accepts all 14 four-term structural pairs, including NULL/empty SettingUser?
+PASS  cleanup removes the validation-only legacy table from the synthetic portable surface?
+PASS  four-term equivalence rejects a changed Application term?
+PASS  four-term equivalence rejects a User term that differs from SettingUser?
+PASS  four-term equivalence requires the approved empty User null replacement?
+PASS  four-term equivalence rejects unbracketed reserved User identifier?
+PASS  four-term equivalence rejects unbracketed reserved Key identifier?
+PASS  old synthetic two-term filter is not accepted as equivalent?
+PASS  four-term filter order remains fail-closed?
+Legacy database-setting shape tests: 12 passed, 0 failed.?
+=== Test-LinksPageDirectory.ps1?
+PASS  C1/C2 on top of C7: the schema version stays 2, the baseline cut rule is 2 (C7) and the tool is 0.5.0?
+PASS  directory schema has the seven approved public columns?
+PASS  directory preserves nullable CustomerCode and CustomerName?
+PASS  SRV_A general PT page sees two enabled remote PT instances?
+PASS  C1 AssignedUserName is carried byte-exact?
+PASS  nullable customer fields are preserved as NULL?
+PASS  disabled instances and disabled-server instances are excluded?
+PASS  local instances never enter their own directory?
+PASS  C2 machine without a general page has an empty directory?
+PASS  disabled machine has an empty directory?
+PASS  same-country matching is cross-machine and excludes disabled targets?
+PASS  new-machine C2 directory is empty and recorded as zero?
+PASS  new-machine C2 does not report the expected empty directory as a missing policy?
+PASS  a catalog with the directory is schema 2 and cut rule 3 (C7 is 2, the directory makes it 3), in the file and in the manifest?
+PASS  cut conversion builds all four catalogs?
+PASS  catalog row counts follow C1/C2 selection?
+PASS  written catalog carries the public assigned user name?
+PASS  written catalog keeps nullable customer fields NULL?
+PASS  manifest records directory count per catalog?
+PASS  independent verifier passes the intact populated directories?
+PASS  verifier detects a directory value mutation?
+Links directory tests: 21 passed, 0 failed.?
+=== Test-ObsoleteCatalogMetadata.ps1?
+PASS  production whitelist carries 62 tables after cleanup plus derived Links directory?
+PASS  cfg.DatabaseSettingRule is not a carried table?
+PASS  cfg.DatabaseSettingRule is validation-only and not a redaction surface?
+PASS  an enabled legacy database-setting rule with the approved four-term equivalent passes validation?
+PASS  a section name that looks like a date is compared as text and passes (JSON dates are not converted to DateTime)?
+PASS  harmless filter whitespace, brackets and keyword casing remain equivalent?
+PASS  a changed legacy database-setting rule cannot be silently discarded?
+PASS  legacy filter values cannot be associated with the wrong columns?
+PASS  legacy replacement filter cannot add a behavior-changing predicate?
+PASS  legacy replacement must retain FULL_REPLACE semantics?
+PASS  legacy replacement must retain create-if-missing semantics?
+PASS  legacy replacement insert values must match the legacy key identity?
+PASS  legacy replacement insert identity must be a JSON text, not null (no coercion to the empty legacy value)?
+PASS  legacy replacement insert identity must be a JSON text, not an empty list (no coercion to the empty legacy value)?
+PASS  legacy replacement insert identity must be a JSON text, not the number 0 (no coercion to the empty legacy value)?
+PASS  legacy replacement insert identity must be a JSON text, not the boolean false (no coercion to the empty legacy value)?
+PASS  legacy replacement insert identity must be a JSON text, not an object (no coercion to the empty legacy value)?
+PASS  legacy replacement insert identity cannot have a null Application?
+PASS  legacy replacement insert configuration cannot add columns?
+PASS  V8 retirement requires the KEYCLOAK_DB_URL replacement rule?
+PASS  V8 retirement rejects a disabled KEYCLOAK_DB_URL replacement rule?
+PASS  V8 retirement rejects a repurposed KEYCLOAK_DB_URL replacement rule?
+PASS  V8 retirement requires KEYCLOAK_DB_URL to remain globally scoped?
+PASS  an enabled FULL_DEPLOYMENT step 63 cannot be retired?
+PASS  a NULL FULL_DEPLOYMENT step 63 flag cannot be treated as disabled?
+PASS  V8 retirement requires the CONFIG_REPAIR action?
+PASS  V8 retirement rejects a remapped CONFIG_REPAIR action?
+PASS  V8 retirement requires the CONFIG_REPAIR action to remain enabled?
+PASS  V8 retirement requires the CONFIG_REPAIR engine?
+PASS  V8 retirement requires the CONFIG_REPAIR engine to remain enabled?
+PASS  V8 retirement requires FULL_DEPLOYMENT step 20 CONFIG_REPAIR?
+PASS  V8 retirement requires FULL_DEPLOYMENT step 20 CONFIG_REPAIR to remain enabled?
+PASS  exactly the V8 action is removed?
+PASS  both retired engine rows are removed?
+PASS  FULL_DEPLOYMENT step 63 is removed?
+PASS  DATABASE_SETTINGS action is retained and resolves to DATABASE_CONTENT_SYNC?
+PASS  FULL_DEPLOYMENT step 30 DATABASE_SETTINGS is retained?
+PASS  CONFIG_REPAIR action is retained and executable?
+PASS  FULL_DEPLOYMENT step 20 CONFIG_REPAIR is retained and enabled?
+PASS  no retired action remains in filtered action rows?
+PASS  no retired engine remains in filtered engine rows?
+PASS  no retired action remains in filtered action steps?
+PASS  DATABASE_SETTINGS action cannot regress to the retired legacy engine?
+PASS  FULL_DEPLOYMENT cannot silently lose the DATABASE_SETTINGS action?
+PASS  FULL_DEPLOYMENT cannot silently lose step 30 DATABASE_SETTINGS?
+PASS  production source cannot silently lose the entire FULL_DEPLOYMENT surface?
+PASS  an unexpected second child reference to the retired V8 action fails closed?
+PASS  the retired V8 action cannot remain as a composite parent?
+PASS  dependent metadata for the retired V8 action fails closed instead of becoming orphaned?
+PASS  exported catalog contains no V8 action?
+PASS  exported catalog contains neither retired engine?
+PASS  exported catalog contains no FULL_DEPLOYMENT step 63?
+PASS  exported catalog keeps DATABASE_SETTINGS action mapped to DATABASE_CONTENT_SYNC?
+PASS  exported catalog has no cfg_DatabaseSettingRule table?
+Obsolete catalog metadata tests: 54 passed, 0 failed.?
+=== Test-RetainedExecutionContracts.ps1?
+PASS  CONFIG_REPAIR replacement keeps the approved execution contract?
+PASS  CONFIG_REPAIR retirement rejects a non preview/apply mode policy?
+PASS  CONFIG_REPAIR retirement rejects disabled RequiresInstanceSelection?
+PASS  CONFIG_REPAIR retirement rejects disabled AllowAllInstances?
+PASS  CONFIG_REPAIR retirement rejects disabled PassInstanceCode?
+PASS  CONFIG_REPAIR retirement rejects disabled PassApply?
+PASS  DATABASE_SETTINGS retained path is enabled end to end?
+PASS  DATABASE_CONTENT_SYNC engine cannot be disabled after retirement?
+PASS  DATABASE_CONTENT_SYNC engine enablement cannot be NULL?
+PASS  DATABASE_CONTENT_SYNC engine must resolve exactly once?
+PASS  DATABASE_SETTINGS action cannot be disabled after retirement?
+PASS  DATABASE_SETTINGS action enablement cannot be NULL?
+PASS  DATABASE_SETTINGS must remain an ENGINE action?
+PASS  DATABASE_SETTINGS rejects ModePolicy 'NONE'?
+PASS  DATABASE_SETTINGS rejects ModePolicy 'APPLY_ONLY'?
+PASS  DATABASE_SETTINGS rejects ModePolicy 'preview_apply'?
+PASS  DATABASE_SETTINGS rejects ModePolicy ''?
+PASS  DATABASE_SETTINGS ModePolicy cannot be NULL?
+PASS  DATABASE_SETTINGS ModePolicy cannot be absent?
+PASS  DATABASE_SETTINGS RequiresInstanceSelection cannot be zero?
+PASS  DATABASE_SETTINGS RequiresInstanceSelection cannot be null?
+PASS  DATABASE_SETTINGS RequiresInstanceSelection cannot be absent?
+PASS  DATABASE_SETTINGS AllowAllInstances cannot be zero?
+PASS  DATABASE_SETTINGS AllowAllInstances cannot be null?
+PASS  DATABASE_SETTINGS AllowAllInstances cannot be absent?
+PASS  DATABASE_SETTINGS PassInstanceCode cannot be zero?
+PASS  DATABASE_SETTINGS PassInstanceCode cannot be null?
+PASS  DATABASE_SETTINGS PassInstanceCode cannot be absent?
+PASS  DATABASE_SETTINGS PassApply cannot be zero?
+PASS  DATABASE_SETTINGS PassApply cannot be null?
+PASS  DATABASE_SETTINGS PassApply cannot be absent?
+PASS  FULL_DEPLOYMENT step 30 cannot be disabled after retirement?
+PASS  FULL_DEPLOYMENT step 30 enablement cannot be NULL?
+Retained execution contract tests: 33 passed, 0 failed.?
+=== Test-RetiredIdentifierCasing.ps1?
+PASS  case variant of retired V8 action is rejected?
+PASS  case variant of retired V8 engine reference is rejected?
+PASS  case variant of retired V8 engine row is rejected?
+PASS  case variant of retired DATABASE_SETTINGS engine row is rejected?
+PASS  case variant of retired V8 child reference is rejected?
+PASS  case variant of retired V8 parent reference is rejected?
+PASS  case variant of retired V8 dependent metadata is rejected?
+PASS  SQL-equivalent right-padded V8 action is rejected?
+PASS  SQL-equivalent right-padded retired engine reference is rejected?
+PASS  case-and-padding variant of retired V8 engine row is rejected?
+PASS  SQL-equivalent right-padded DATABASE_SETTINGS engine row is rejected?
+PASS  SQL-equivalent right-padded V8 child reference is rejected?
+PASS  case-and-padding variant of retired V8 parent reference is rejected?
+PASS  SQL-equivalent right-padded V8 dependent metadata is rejected?
+Retired identifier SQL-equivalence tests: 14 passed, 0 failed.?
+=== Test-RuntimeLogging-MultilineAssignment.ps1?
+PASS  PEM-style private-key assignment is fully redacted?
+PASS  safe prefix before PEM assignment remains available?
+PASS  PEM redaction remains one physical log record?
+PASS  newline-start credential assignment is fail-closed?
+PASS  safe prefix before multiline credential remains available?
+PASS  credential redaction remains one physical log record?
+PASS  same-line sensitive assignment continuation is fail-closed?
+PASS  safe prefix before same-line continuation remains available?
+PASS  same-line continuation redaction remains one physical log record?
+PASS  whitespace-bearing multiline credential is fail-closed?
+PASS  safe prefix before whitespace multiline credential remains available?
+PASS  whitespace multiline redaction remains one physical log record?
+PASS  single-line whitespace-bearing credential is fail-closed?
+PASS  safe prefix before single-line whitespace credential remains available?
+PASS  single-line whitespace redaction remains one physical log record?
+PASS  vertical-tab sensitive whitespace is fail-closed?
+PASS  vertical-tab preserves safe prefix?
+PASS  vertical-tab redaction remains one physical log record?
+PASS  form-feed sensitive whitespace is fail-closed?
+PASS  form-feed preserves safe prefix?
+PASS  form-feed redaction remains one physical log record?
+PASS  unicode-nbsp sensitive whitespace is fail-closed?
+PASS  unicode-nbsp preserves safe prefix?
+PASS  unicode-nbsp redaction remains one physical log record?
+PASS  single-line sensitive boundary preserves independent field redaction?
+PASS  safe prefix before single-line sensitive boundary remains available?
+PASS  single-line boundary redaction remains one physical log record?
+PASS  same-line sensitive boundary does not leak the preceding whitespace value?
+PASS  same-line sensitive fields remain independently redacted?
+PASS  safe prefix before same-line sensitive boundary remains available?
+PASS  same-line boundary redaction remains one physical log record?
+31 passed, 0 failed?
+=== Test-RuntimeLogging.ps1?
+PASS  default approved root is the SISQUAL log tree?
+PASS  default log root matches ADR-0007?
+PASS  default retention is 30 days?
+PASS  default prefix is stable?
+PASS  log root outside approved root is rejected?
+PASS  UNC approved root is rejected?
+PASS  approved-root containment rejects case-distinct boundary spelling?
+PASS  case-distinct boundary rejection creates no log child?
+PASS  log root through a junction is rejected before use?
+PASS  junction target was not written by rejected initialization?
+PASS  guarded initialization creates nested missing directories?
+PASS  initialize creates configured directory?
+PASS  initialize returns canonical approved root?
+PASS  initialize returns canonical log root?
+PASS  initialize returns configured retention?
+PASS  directory write probe can open unguarded log root?
+PASS  directory guard denies concurrent write access to reparse metadata?
+PASS  retention removes files older than the configured window?
+PASS  retention keeps the exact UTC boundary day?
+PASS  retention ignores files outside the logger prefix?
+PASS  write creates the expected daily log file?
+PASS  write keeps safe context?
+PASS  write redacts sensitive property names?
+PASS  write redacts token and authorization assignments?
+PASS  write redacts credential and private-key assignments?
+PASS  write redacts bearer credentials?
+PASS  write redacts complete Basic authorization header value?
+PASS  write consumes folded authorization continuation credentials?
+PASS  write redacts quoted sensitive JSON keys?
+PASS  write consumes escaped quotes inside sensitive JSON values?
+PASS  write consumes complete composite sensitive JSON values?
+PASS  write does not contain supplied secret markers?
+PASS  write normalizes embedded newlines to one physical record?
+PASS  log is UTF-8 without BOM?
+PASS  escaped JSON property names are decoded before sensitivity matching?
+PASS  multiline composite sensitive JSON is redacted?
+PASS  safe prefix before multiline sensitive JSON remains available?
+PASS  multiline JSON redaction remains one physical record?
+PASS  event timestamp still controls the event log file date?
+PASS  future event timestamp does not drive automatic retention?
+PASS  wall-clock UTC rollover automatically re-runs retention?
+PASS  write rejects a log root replaced by a junction after initialization?
+PASS  post-initialization junction target was not written?
+PASS  write rejects an existing daily log file symbolic link?
+PASS  daily log symbolic-link target was not appended?
+PASS  write rejects an existing daily log file hard link?
+PASS  daily log hard-link target was not appended?
+PASS  retention rejects a stale symbolic-link log file?
+PASS  retention symbolic-link target was not deleted or modified?
+PASS  retention rejects a stale hard-linked log file?
+PASS  retention hard-link target was not deleted or modified?
+PASS  invalid event codes are rejected?
+PASS  unsafe property names are rejected?
+53 passed, 0 failed?
+=== Test-SealPackage.ps1?
+PASS  canonical form: keys sorted, no spaces, escapes, non-ASCII as \u00e9, arrays kept?
+PASS  canonical form: control characters are escaped?
+PASS  canonical bytes leave out the signature and accept parsed JSON objects?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg\package-manifest.json?
+PASS  first seal: sealed, manifest and seal log written?
+PASS  first seal: the manifest is valid against the structure rules?
+PASS  first seal: every file is listed once, the manifest is not, and paths are in ordinal order?
+PASS  first seal: SHA-256 and size of every file equal an independent computation?
+PASS  first seal: catalog block carries server code, schema version, origin and the conversion run?
+PASS  first seal: a catalog written by the converter is not modified?
+PASS  first seal: signature is present and has the shape the contract asks for?
+PASS  first seal: the manifest file is ASCII with LF?
+PASS  first seal: the log line has package id, version, server, origin, file count and no secret?
+PASS  verify: a freshly sealed package matches its manifest and the signature verifies?
+PASS  verify: a changed file is detected?
+PASS  verify: a deleted file is detected?
+PASS  verify: an extra file is detected?
+PASS  verify: a changed manifest field is detected?
+PASS  verify: an edited catalog row is detected?
+PASS  verify: a forged signature is detected?
+PASS  verify: a stray temporary file is detected?
+PASS  verify: a missing manifest is reported?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg2  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog compared with the baseline: 2 table(s) differ.?
+  table cfg_ConfigRule: content changed (rows 2 -> 3)?
+  table dbo_ManagedServer: content changed (rows 1 -> 1)?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-09T02:21:38Z.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg2\package-manifest.json?
+PASS  re-seal: origin becomes manual-edit-sealed, with the note, version kept, new package id?
+PASS  re-seal: catalog_meta records the manual edit and the seal time?
+PASS  re-seal: the summary names the two changed tables and no other?
+PASS  re-seal: the summary never contains a cell value?
+PASS  re-seal: the new manifest verifies and the old signature would not?
+PASS  re-seal: the manifest origin and catalog_meta agree?
+PASS  re-seal: the log (next to this package folder) has a line for the manual edit?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg3  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: ui/index.html?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg3\package-manifest.json?
+PASS  re-seal after a non-catalog change: origin stays conversion-tool and the catalog is untouched?
+PASS  re-seal after a non-catalog change: the summary lists exactly that file?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg3  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 0 changed, 4 unchanged.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg3\package-manifest.json?
+PASS  re-seal with no change: new package id, same file entries?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg4  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: Start.cmd?
+The manifest will be signed by the credential tool signer.?
+Dry run: nothing was written.?
+PASS  dry run: reports what it would do and writes nothing (no manifest change, no log)?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg4  version 1.2.3  catalog for SRV_A (origin conversion-tool)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: Start.cmd?
+The manifest will be signed by the credential tool signer.?
+PASS  without -Yes a non-interactive run is refused?
+PASS  a refused confirmation writes nothing?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-09T02:21:40Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a signer that fails stops the seal?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-09T02:21:40Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a signer that returns an invalid signature stops the seal?
+PASS  after a signer failure neither the catalog (edited text kept, meta untouched) nor the manifest changed?
+PASS  no signer and no -Unsigned is refused?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg5  version 1.2.3  catalog for SRV_A (origin manual-edit-sealed)?
+Files: 0 added, 0 removed, 1 changed, 3 unchanged.?
+  changed: catalog/catalog-SRV_A.db?
+Catalog changed since the last seal. No -Baseline was given, so which tables changed cannot be shown.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-09T02:21:41Z.?
+The manifest will be signed by the credential tool signer.?
+PASS  a missing signer script is refused?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg6  version 0.0.1  catalog for SRV_A (origin conversion-tool)?
+First seal: 4 file(s) will be listed.?
+SIGNATURE: none (-Unsigned). The application refuses this package unless started with its development flag.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\pkg6\package-manifest.json?
+PASS  -Unsigned: no signature member, logged as UNSIGNED, and verification fails only because of that?
+PASS  first seal without -ProductVersion is refused?
+PASS  first seal with a malformed version is refused?
+PASS  first seal without a conversion manifest or an origin is refused?
+PASS  a catalog changed after the conversion does not match the conversion manifest?
+Package: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\first1  version 1.0.0  catalog for SRV_A (origin manual-edit-sealed)?
+First seal: 4 file(s) will be listed.?
+catalog_meta will record source_kind manual-edit-sealed and built_at_utc 2026-10-09T02:21:42Z.?
+The manifest will be signed by the credential tool signer.?
+Sealed. Manifest: C:\Users\runneradmin\AppData\Local\Temp\seal-tests-b112545bbf7342c5ad2b5918f97837d5\first1\package-manifest.json?
+PASS  with an explicit origin the same catalog can be sealed, and catalog_meta is updated?
+PASS  refused: credentials.db?
+PASS  refused: a credential package?
+PASS  refused: a vault file?
+PASS  refused: a certificate with key?
+PASS  refused: a log?
+PASS  refused: a name with an accent?
+INFO  a colon cannot be part of a Windows file name, that check is skipped?
+INFO  this file system ignores case, the case-duplicate check is skipped?
+PASS  refused: a link inside the package?
+PASS  catalog refused: a secret-like literal in a text cell?
+PASS  nothing written after: a secret-like literal in a text cell?
+PASS  catalog refused: a secret column?
+PASS  nothing written after: a secret column?
+PASS  catalog refused: a credential table?
+PASS  nothing written after: a credential table?
+PASS  catalog refused: a second catalog_meta row?
+PASS  nothing written after: a second catalog_meta row?
+PASS  catalog refused: a foreign key violation?
+PASS  nothing written after: a foreign key violation?
+PASS  catalog refused: an unsupported schema version?
+PASS  catalog refused: no catalog_meta?
+PASS  catalog refused: not a SQLite file?
+PASS  re-seal refused: catalog_meta.server_code no longer matches the manifest?
+PASS  two catalogs in one package need -CatalogRelativePath?
+PASS  a note with a non-ASCII character is refused?
+PASS  the secret patterns of the seal tool equal those of the converter (no drift)?
+69 passed, 0 failed?
+=== Test-SealPackageSchemaV2.ps1?
+PASS  seal validator supports schema version 2?
+PASS  structurally valid C7 schema v2 catalog passes seal validation?
+PASS  schema v2 rejects the retired raw FilterClause column?
+PASS  schema v2 rejects a missing FilterPredicateJson column?
+PASS  future schema version 3 remains fail-closed?
+Seal schema v2 tests: 5 passed, 0 failed.?
+=== Test-SqlStrictness.ps1?
+PASS  the heuristic flags a double-quoted separator and accepts a single-quoted one?
+PASS  no SQL text with a double-quoted separator in 53 files?
+2 passed, 0 failed?
+=== Test-StructuredDatabaseFilters.ps1?
+PASS  composed converter (C7 + C1/C2) is active: tool 0.5.0, schema 2, baseline cut rule 2?
+PASS  unfiltered SISQUAL_VIEW_DATASOURCE_CONNECTION: explicit ALL?
+PASS  unfiltered SISQUAL_VIEW_REPORT_DEFAULT_CONNECTION: explicit ALL?
+PASS  unfiltered SISQUAL_VIEW_REPORT_DEFAULT_WFM_DATABASE: explicit ALL?
+PASS  blank filter becomes explicit ALL?
+PASS  shape 1: one equality?
+PASS  shape 1: id literal preserved?
+PASS  shape 2: two equality terms?
+PASS  shape 3: three equality terms?
+PASS  shape 3: doubled quote decoded once?
+PASS  shape 4: four equality terms?
+PASS  shape 4: numeric literal is invariant text?
+PASS  shape 5: lookup encoded structurally?
+PASS  shape 5: lookup predicate is structured?
+PASS  shape 6: schema-qualified lookup?
+PASS  shape 6: outer AND survives lookup?
+PASS  shape 7: nested lookup encoded?
+PASS  TOP (1) lookup is accepted without changing semantics?
+PASS  OR is rejected?
+PASS  LIKE is rejected?
+PASS  not-equal is rejected?
+PASS  function expression is rejected?
+PASS  IN is rejected?
+PASS  statement terminator is rejected?
+PASS  line comment is rejected?
+PASS  block comment is rejected?
+PASS  lookup without WHERE is rejected?
+PASS  TOP other than 1 is rejected?
+PASS  trailing tokens are rejected?
+PASS  catalog row drops raw FilterClause?
+PASS  catalog row adds FilterPredicateJson?
+PASS  catalog row JSON round-trips a lookup without executable SQL?
+PASS  catalog schema excludes raw FilterClause?
+PASS  catalog schema contains required FilterPredicateJson?
+PASS  source adapter removes executable FilterClause before catalog build?
+PASS  source adapter creates structured lookup JSON?
+PASS  61-row batch spanning all seven shapes converts?
+PASS  61-row batch retains structured lookups?
+PASS  manifest exclusion list records raw filter removal?
+PASS  ISNULL: the real shape converts to four terms?
+PASS  ISNULL: the column is the inner column and the comparison is still EQ?
+PASS  ISNULL: the replacement is kept as a literal node (NULL is read as the empty string)?
+PASS  ISNULL: the other terms carry no nullReplacement?
+PASS  ISNULL: the stored JSON holds the replacement?
+PASS  ISNULL meaning: a NULL row matches (the whole point of keeping the replacement)?
+PASS  ISNULL meaning: an empty row matches?
+PASS  ISNULL meaning: a row with a value does not match?
+PASS  ISNULL meaning: without ISNULL a NULL row does not match (the probe rewrite would have changed this)?
+PASS  ISNULL: case-insensitive keyword and free whitespace?
+PASS  ISNULL: a numeric replacement is kept as invariant text?
+PASS  ISNULL: a non-empty replacement is kept as written?
+PASS  ISNULL: accepted inside a lookup predicate too?
+PASS  ISNULL: a column that is itself called ISNULL still works (the function form needs a parenthesis)?
+PASS  ISNULL: one argument is rejected?
+PASS  ISNULL: three arguments are rejected?
+PASS  ISNULL: a column as replacement is rejected (only a literal)?
+PASS  ISNULL: nested ISNULL is rejected?
+PASS  ISNULL: without a comparison is rejected?
+PASS  ISNULL: a non-equality comparison is rejected?
+PASS  ISNULL: truncated is rejected?
+PASS  ISNULL: a missing comma between the arguments is rejected?
+PASS  ISNULL: a missing closing parenthesis is rejected?
+PASS  ISNULL: on the value side is rejected?
+PASS  ISNULL: another function is still rejected?
+PASS  real shapes: all 6 structural templates of the snapshot convert?
+PASS  real shapes: the templates cover the 58 populated filters and the three unfiltered rules make 61?
+PASS  real shapes: the ISNULL template is in the fixture (14 filters)?
+PASS  real shapes: the fixture holds no real value (every text literal is v and every number is 0)?
+Structured filter tests: 68 passed, 0 failed.?
+=== Test-TestCatalogConversion.ps1?
+PASS  intact cut catalogs: no check fails?
+PASS  intact cut catalogs: all eight groups ran?
+PASS  intact cut catalogs: the stored hash of the multi-line template matches in every catalog?
+PASS  intact new-machine catalog: no check fails?
+PASS  one text cell changed by a single letter case: values and manifest fail, and the table and key are named?
+PASS  CRLF turned into LF in a multi-line text: caught by values and by the stored hash?
+PASS  a row missing in a catalog: values fail with the count?
+PASS  an instance of another machine copied into a catalog: cut checks fail (in two catalogs, foreign row)?
+PASS  a secret column added to a catalog: exclusions fail?
+PASS  a table of the secret schema added: exclusions fail?
+PASS  the original secret put back in a rule: secrets fail (needle found), values fail (not a reference token)?
+PASS  a secret-like literal planted in a text cell: the pattern scan fails?
+PASS  a code whose case was changed: values fail (stored case is compared exactly)?
+PASS  a wrong SHA-256 in the manifest: manifest fails?
+PASS  an unlisted catalog file next to the others: manifest fails?
+PASS  a global table changed in one catalog only: global and values fail?
+PASS  a missing manifest: the tool fails instead of passing?
+PASS  the planted value is never printed (output carries names, keys and counts only)?
+PASS  the in-memory source rows are unchanged after all runs?
+19 passed, 0 failed?
+=== Test-V8ReplacementRequiredWithoutLegacyRows.ps1?
+PASS  production without retired V8 metadata still accepts the intact replacement contract?
+PASS  an explicit enabled PATCH policy preserves the approved replacement behavior?
+PASS  an enabled REPLACE policy cannot retire V8 because rule patching would be bypassed?
+PASS  production retirement requires the KEYCLOAK application target?
+PASS  production retirement requires the KEYCLOAK application to remain enabled?
+PASS  production retirement rejects a repointed KEYCLOAK physical path?
+PASS  production without retired V8 metadata still requires KEYCLOAK_DB_URL?
+PASS  production without retired V8 metadata still requires the executable CONFIG_REPAIR path?
+V8 replacement-without-legacy regressions: 8 passed, 0 failed?
