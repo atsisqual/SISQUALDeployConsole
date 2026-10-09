@@ -37,7 +37,7 @@ and returned `17` in every catalog. The matrix below lists those 17 portable-cat
 
 ## Retired engines
 
-The owner decision Q3 of 2026-10-06 says that `DATABASE_SETTINGS` and `V8_KEYCLOAK_CONFIG` are not ported as autonomous engines because their required behavior is provided by newer engines. They are not members of the 17-row portable engine catalog above and are not active host targets.
+[DECIDED 2026-10-06] Q3 in `docs/decisions-log.md` says that `DATABASE_SETTINGS` and `V8_KEYCLOAK_CONFIG` are not ported as autonomous engines because their required behavior is provided by newer engines. They are not members of the 17-row portable engine catalog above and are not active host targets.
 
 | Retired engine | Former wave | Engine class | Replacement / retained behavior |
 |---|---:|---|---|
