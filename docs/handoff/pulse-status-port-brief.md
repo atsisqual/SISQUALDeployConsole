@@ -1,9 +1,10 @@
 # PULSE_STATUS port brief
 
-**Status:** preparation for E1. Text only; no engine implementation.
+**Status:** [PROPOSED] preparation for E1, text only; no engine implementation.
 **Date:** 2026-10-09
 **Verification tree:** `main@53719d23657ae1254bf42af731174e0c71edf26d`.
 **Original PR base:** `main@57310b0996d8c6e8ea008af7f131bec4c65efccc`.
+**Dependency:** [PENDING] PR #69 is still open. This brief depends on its `docs/handoff/preflight-port-gap.md` rules 6 and 7 and must not be integrated before #69. After #69 is integrated, merge the updated `main` into this branch and replace the PR-head citation below with the file from `main`.
 
 ## 1. Sources and evidence boundary
 
@@ -14,7 +15,7 @@ This brief uses:
 - `docs/decisions-log.md`, especially the 2026-10-07 `PULSE_STATUS` owner decision;
 - the exact `cfg.ReviewPulseModel` SQL at the same Management Console reference;
 - `tests/Fixtures/carried-schema.json` at `main@53719d23657ae1254bf42af731174e0c71edf26d`;
-- rules 6 and 7 of `docs/handoff/preflight-port-gap.md` from read-only PR #69 head `fcb46258c18ab1e3bf2ab05080bb49f5a52e6695`, because that file is not yet in `main`.
+- rules 6 and 7 of `docs/handoff/preflight-port-gap.md` from open PR #69 head `bd44dec80ff0cf886d57a9aab3ce55db13040d37`. That file is not yet in `main`; this brief therefore depends on #69 until it is integrated.
 
 The GitHub connector cannot return the 29.5 MB snapshot ScriptText as one direct file read. The old engine flow below is therefore limited to the source-derived extraction already recorded in `docs/migration/analysis-pulse.md`. The six `cfg.ReviewPulseModel` predicates were independently checked against their exact SQL. No predicate is inferred from an issue-code name.
 
