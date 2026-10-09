@@ -45,7 +45,7 @@ The catalog is read-only for the application, and the owner changes it by hand a
 | B | The application keeps its own override file outside the catalog | A second source of truth, the risk the architecture removed (R-001); not recommended |
 | C | No engine: the owner edits the 12 rows with the catalog edit and seal flow | Simplest; no preview of the effect |
 
-[PROPOSED] Option A, with a read-only matrix of effective visibility (default, profile, override) for all 840 combinations, computed by the same function that `LINKS_PAGES` uses so that the two never disagree.
+[DECIDED 2026-10-06] Q9 selected option A for V1, with the read-only effective-visibility matrix first. [PROPOSED] Compute the matrix (default, profile, override) for all 840 combinations with the same function that `LINKS_PAGES` uses so that the two never disagree; that implementation detail is not itself specified by Q9.
 
 ## 7. Preview and apply
 
@@ -71,13 +71,14 @@ None. The values are application codes and flags.
 
 The console menus (reading numbers and ranges from the keyboard) become browser selection. The store procedure, the central write and the SQL context go.
 
-## 13. Test plan and open questions
+## 13. Test plan and recorded decisions
 
 - Runner: effective-visibility fixtures shared with `LINKS_PAGES` (default, profile and override layers; an all-environments instance); proposal generation, empty proposal, each invalid case, the catalog file unchanged by the engine, a proposal applied with the seal tool and the resulting page set.
 - [V] None needed beyond the pilot pages.
-1. [PENDING] Which option (A recommended). A needs a catalog-change function in the tools (a separate PR).
-2. [PENDING] Whether per-instance visibility changes are needed in V1 at all: only 1 of 70 instances has an override today. Recommendation: provide the read-only effective matrix first and the proposal generator second.
-3. [PENDING] Who may change visibility and whether a second reader is required (R-047).
+1. [DECIDED 2026-10-06] Q9 selects option A: a read-only effective visibility matrix, with changes made by an owner catalog edit followed by a seal.
+2. [DECIDED 2026-10-06] S9 asked whether this capability is needed in V1 and the owner accepted `Option A, read-only matrix first`; V1 therefore keeps the capability and starts with the read-only matrix even though only 1 of 70 instances currently has an override.
+3. [DECIDED 2026-10-06] Q6/C6 requires a second reader for a production catalog edit; together with Q9, visibility changes are owner catalog edits followed by a seal, not writes by this engine.
+4. [PENDING] The exact UX/file format of the proposal and the catalog-change helper mechanics are implementation details not fixed by Q9 or Q6; they must not be presented as an additional owner decision.
 
 ## Host contract
 
