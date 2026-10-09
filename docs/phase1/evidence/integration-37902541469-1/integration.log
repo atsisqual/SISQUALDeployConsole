@@ -1,0 +1,43 @@
+PASS  fixture: 62 tables, 3 rows each?
+PASS  file path: conversion succeeds?
+PASS  file path: the new server row has creation times from the clock?
+PASS  file path: every global table carries its 3 rows, cut tables are empty, one server row?
+PASS  file path: multi-line text with CRLF, lone LF, tab, quote and accent is byte-exact?
+PASS  file path: marker not in the catalog: MARKERA?
+PASS  file path: marker not in the catalog: MARKERB?
+PASS  file path: the redacted rule is reported by code?
+PASS  file path: engine export succeeds with 3 engines?
+PASS  cut, file path: conversion of all machines succeeds?
+PASS  cut, file path: three catalogs, mode cut, each instance in exactly one catalog?
+PASS  cut, file path: every machine gets its own rows; the orphan profile link is dropped (machine 3 has none)?
+PASS  cut, file path: the orphan is reported with its code?
+PASS  cut, file path: global tables are identical in every catalog?
+PASS  cut, file path: marker not in any catalog: MARKERA?
+PASS  cut, file path: marker not in any catalog: MARKERB?
+PASS  verify, file path: Test-CatalogConversion passes on the new-machine catalog?
+PASS  verify, file path: Test-CatalogConversion passes on the three cut catalogs (every cell of every table)?
+PASS  sql: the fixture database has the collation Latin1_General_CI_AS?
+PASS  sql: 62 tables loaded?
+PASS  sql: conversion succeeds?
+PASS  sql: the tool read the collation from the database?
+PASS  sql: row counts per table equal the file path?
+PASS  sql: the catalog is identical to the one built from the file, value by value, in every table?
+PASS  sql: marker not in the catalog: MARKERA?
+PASS  sql: marker not in the manifest: MARKERA?
+PASS  sql: marker not in the catalog: MARKERB?
+PASS  sql: marker not in the manifest: MARKERB?
+PASS  sql: the same rules are redacted as in the file path?
+PASS  sql: engine export succeeds?
+PASS  sql: the exported engine files are identical to the file path (CRLF, accents)?
+PASS  sql: 3 engines, no hash mismatch?
+PASS  cut, sql: conversion of all machines succeeds?
+PASS  cut, sql: the tool read the collation from the database and the completeness check passed?
+PASS  cut, sql: all three catalogs are identical to the ones built from the file, value by value, clock columns included?
+PASS  cut, sql: the same unplaced rows and the same completeness counts as the file path?
+PASS  cut, sql: marker not in any catalog or manifest: MARKERA?
+PASS  cut, sql: marker not in any catalog or manifest: MARKERB?
+PASS  verify, sql: Test-CatalogConversion passes on the new-machine catalog, read from SQL Server?
+PASS  verify, sql: Test-CatalogConversion passes on the cut catalogs, read from SQL Server?
+PASS  sql: the tools did not change the source database (counts and checksums)?
+INFO  without -TrustServerCertificate the export exit code is 0 (LocalDB certificate)?
+41 passed, 0 failed?
