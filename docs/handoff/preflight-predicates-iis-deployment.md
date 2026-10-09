@@ -2,19 +2,17 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewIisDeploymentModel`
-**Verification base:** `main@a32141cbec584d349f1591a4aa5a801137463278`
+**Verification base:** `main@28d4dc52c2d02bdce2add2101a306845041690b3`
 
 ## Evidence boundary
 
-Predicates are copied from `docs/handoff/preflight-legacy-procedures.sql.txt`. The seven requested codes are the `cfg.ReviewIisDeploymentModel` rows still listed by `docs/handoff/preflight-port-gap.md` on read-only PR #69 head `80240090ba5dc37e13a64d359f9378a1c033fcc4`; `SERVER_POLICY_MISSING` and `IIS_IDENTITY_PASSWORD_PENDING` are outside this D13b set because that gap says they are already ported.
+Predicates are copied from `docs/handoff/preflight-legacy-procedures.sql.txt`. The seven requested codes are the `cfg.ReviewIisDeploymentModel` rows still listed by `docs/handoff/preflight-port-gap.md` on read-only PR #69; `SERVER_POLICY_MISSING` and `IIS_IDENTITY_PASSWORD_PENDING` are outside this D13b set because the gap counts them as already ported.
 
-SQLite table/column names were checked against `tests/Fixtures/carried-schema.json` at the verification base. SQL Server table names map to SQLite with `_` between schema and object name. `cfg.ManagedInstanceRuntime` is not a carried table; the portable catalog carries `dbo_ManagedInstance.IisIdentityUserName`, while passwords are external credentials.
+SQLite table/column names were checked against `tests/Fixtures/carried-schema.json`. `cfg.ManagedInstanceRuntime` is a legacy view, not a carried table; its verbatim definition is now included in the evidence file. It projects carried `dbo.ManagedInstance` columns and decrypts `IIS_IDENTITY`, `WEB_ACCESS`, and `MOBILE_APP_TOKEN` credentials. In the portable system, the same metadata comes from `dbo_ManagedInstance` and secrets come from the request credential package, never from the catalog.
 
-`tests/Fixtures/preflight-legacy-codes.json` is not present in this `main` tree. Each severity below is the literal severity emitted by the extracted procedure and agrees with the seven-code table in `preflight-port-gap.md`.
+`docs/decisions-log.md` records that all source databases use `Latin1_General_CI_AS`: legacy comparisons without explicit `COLLATE` are case-insensitive and accent-sensitive. The same 2026-10-05 owner decision makes catalog codes exact in the new system. Non-code template comparisons below preserve the legacy CI_AS semantics unless another recorded owner rule overrides them.
 
-### Text comparison policy
-
-The legacy procedure has no `COLLATE`; source database collation is not stated. Portable rule 7 makes catalog codes exact and Windows names case-insensitive. Empty-string tests are collation-independent. Template and non-code text comparisons whose case behavior is not fixed by those rules are marked `[PENDING]`. Secret comparison is called out separately under the conflict predicate.
+The T-SQL evidence header also fixes ordinary-space behavior: equality pads strings with spaces, so `NULLIF(x,'')` returns `NULL` for a value made only of ordinary spaces. Tabs or other whitespace do not become empty merely because of this rule.
 
 ## `SERVER_NOT_REGISTERED`
 
@@ -30,19 +28,19 @@ IF NOT EXISTS
 )
 ```
 
-**SQLite inputs:** `dbo_ManagedServer(MachineName, IsEnabled)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `dbo_ManagedServer(MachineName, IsEnabled)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No instance-to-instance comparison. When a preflight request is for one selected instance, report this machine-registration failure on the selected instance and retain the machine name in details/object data.
+**Rule 6:** No instance-to-instance comparison. Report this machine-level registration failure in the selected run while retaining the machine name as the object/detail.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `MachineName` is a Windows machine name, so portable behavior is case-insensitive as required by rule 7.
+**Text comparison:** Legacy is CI_AS. Portable Windows machine-name comparison is case-insensitive by rule 7; preserve accent sensitivity to match the confirmed source semantics.
 
-**Tests:** Trigger: no enabled server row matches the local machine. Non-trigger: enabled matching row exists. Boundary: a matching machine name with different letter case still counts as registered.
+**Tests:** Trigger: no enabled server row matches. Non-trigger: enabled matching row. Boundary: case-only machine-name difference still matches; accent-only difference does not.
 
-**Ambiguity:** None after applying the explicit Windows-name rule.
+**Ambiguity:** None.
 
 ## `ROOT_DEFINITION_COUNT`
 
@@ -52,17 +50,17 @@ IF NOT EXISTS
 IF (SELECT COUNT(*) FROM cfg.IisApplicationDefinition WHERE IsEnabled = 1 AND IsSiteRoot = 1) <> 1
 ```
 
-**SQLite inputs:** `cfg_IisApplicationDefinition(IsEnabled, IsSiteRoot)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisApplicationDefinition(IsEnabled, IsSiteRoot)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; this is a global definition cardinality check. Report on the selected instance because its IIS layout depends on the definition set.
+**Rule 6:** No cross-instance comparison; global definition cardinality.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
 **Text comparison:** None.
 
-**Tests:** Trigger: zero enabled roots. Non-trigger: exactly one enabled root. Boundary: two enabled roots must fire; disabled root rows do not affect the count.
+**Tests:** Trigger: zero enabled roots. Non-trigger: exactly one. Boundary: two enabled roots fire; disabled roots do not count.
 
 **Ambiguity:** None.
 
@@ -77,19 +75,19 @@ WHERE IsEnabled = 1
   AND PoolNameTemplate <> N'{HOST_NAME}';
 ```
 
-**SQLite inputs:** `cfg_IisApplicationDefinition(IisApplicationCode, IsEnabled, IsSiteRoot, PoolNameTemplate)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisApplicationDefinition(IisApplicationCode, IsEnabled, IsSiteRoot, PoolNameTemplate)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. Report on the selected instance when its root definition violates the required template.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** `PoolNameTemplate` is an IIS pool-name template, not a filesystem path.
+**Rule 7:** `PoolNameTemplate` is not a filesystem path.
 
-**Text comparison:** The legacy `<> N'{HOST_NAME}'` comparison follows unknown database collation. `PoolNameTemplate` is not a catalog code. **[PENDING]** Decide whether a case-only token such as `{host_name}` is accepted. Do not infer case sensitivity from the issue-code name.
+**Text comparison:** `PoolNameTemplate` is non-code text. The original comparison is confirmed `Latin1_General_CI_AS`, so the port preserves CI_AS semantics here: case-insensitive and accent-sensitive. The owner exact-code decision does not apply to this template field.
 
-**Tests:** Trigger: enabled root with `{HOST_NAME}_ROOT`. Non-trigger: exact `{HOST_NAME}`. Boundary: `{host_name}`; expected result remains **[PENDING]** the template-case decision.
+**Tests:** Trigger: `{HOST_NAME}_ROOT`. Non-trigger: `{HOST_NAME}`. Boundary: `{host_name}` is also a non-trigger under CI_AS; an accent-altered token is not equal and fires.
 
-**Ambiguity:** Case-only template behavior.
+**Ambiguity:** None after the recorded source-collation evidence.
 
 ## `DUPLICATE_POOL_TEMPLATE`
 
@@ -102,19 +100,19 @@ GROUP BY PoolNameTemplate
 HAVING COUNT(*) > 1;
 ```
 
-**SQLite inputs:** `cfg_IisApplicationDefinition(PoolNameTemplate, IsEnabled)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisApplicationDefinition(PoolNameTemplate, IsEnabled)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. This checks definition templates, not expanded per-instance pool names. Report the global definition defect on the selected instance whose deployment uses the duplicated template.
+**Rule 6:** No cross-instance comparison. This checks definition templates, not expanded per-instance pool names.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `GROUP BY PoolNameTemplate` inherits unknown legacy collation. The field is template text, not a catalog code. **[PENDING]** Decide whether templates differing only by case are one duplicate group.
+**Text comparison:** Legacy grouping is confirmed CI_AS. The port therefore groups `PoolNameTemplate` case-insensitively and accent-sensitively. A case-only pair is one duplicate group; an accent-only pair is distinct.
 
-**Tests:** Trigger: two enabled application definitions with exactly the same `PoolNameTemplate`. Non-trigger: unique templates. Boundary: two templates differ only by case; expected result is **[PENDING]** the template-case decision.
+**Tests:** Trigger: two enabled rows with the same template. Non-trigger: unique templates. Boundaries: `{HOST_NAME}` plus `{host_name}` fires as a duplicate; accent-only difference does not group.
 
-**Ambiguity:** Case-only grouping only.
+**Ambiguity:** None after the source-collation evidence.
 
 ## `PRIMARY_BINDING_COUNT`
 
@@ -124,17 +122,17 @@ HAVING COUNT(*) > 1;
 IF (SELECT COUNT(*) FROM cfg.IisBindingDefinition WHERE IsEnabled = 1 AND IsPrimary = 1) <> 1
 ```
 
-**SQLite inputs:** `cfg_IisBindingDefinition(IsEnabled, IsPrimary)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisBindingDefinition(IsEnabled, IsPrimary)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; global binding-definition cardinality. Report on the selected instance whose site would consume the definition.
+**Rule 6:** No cross-instance comparison; global binding-definition cardinality.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
 **Text comparison:** None.
 
-**Tests:** Trigger: no enabled primary binding. Non-trigger: exactly one. Boundary: two enabled primary bindings fire; disabled primaries do not count.
+**Tests:** Trigger: zero enabled primary bindings. Non-trigger: exactly one. Boundary: two enabled primary bindings fire; disabled primaries do not count.
 
 **Ambiguity:** None.
 
@@ -159,19 +157,19 @@ WHERE P.IsEnabled = 1
   );
 ```
 
-**SQLite inputs:** `cfg_IisServerPolicy(ServerCode, IsEnabled, CertificateSubjectTemplate, CertificateStoreName)` and `cfg_IisBindingDefinition(IsEnabled, UseCertificate)`, all confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisServerPolicy(ServerCode, IsEnabled, CertificateSubjectTemplate, CertificateStoreName)` and `cfg_IisBindingDefinition(IsEnabled, UseCertificate)`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No instance-to-instance comparison. The legacy statement evaluates enabled server policies when any enabled certificate binding exists. The portable machine catalog is already server-scoped; if the local policy fires, report it on the selected instance while retaining `ServerCode` in details.
+**Rule 6:** No instance-to-instance comparison. If the local policy fires, report it in the selected run and retain `ServerCode` in details.
 
 **Rule 7:** Certificate subject/store values are not filesystem paths.
 
-**Text comparison:** The only text operation is `NULLIF(..., '')`; it tests empty versus non-empty and does not depend on letter case. Preserve it exactly: whitespace-only is not the same as empty because the source does not trim these two fields.
+**Text comparison:** The relevant SQL operation is padded `NULLIF(...,'')`. Empty **or ordinary-spaces-only** subject/store fires because SQL Server pads the comparison with spaces. A tab-only value does not become empty under this rule. Do not implement SQLite/.NET raw equality here.
 
-**Tests:** Trigger: certificate binding enabled and local enabled policy has empty subject or store. Non-trigger: certificate binding enabled and both are non-empty. Boundary: whitespace-only subject/store is non-empty in the original predicate and must not fire solely for whitespace.
+**Tests:** Trigger: enabled certificate binding plus empty subject or store. Non-trigger: both fields non-empty. Boundaries: ordinary-spaces-only subject/store fires; tab-only text does not fire solely as empty.
 
-**Ambiguity:** None in the predicate. Do not add trimming that the source does not contain.
+**Ambiguity:** None.
 
 ## `IIS_IDENTITY_PASSWORD_CONFLICT`
 
@@ -205,20 +203,22 @@ GROUP BY ServerCode, IdentityName
 HAVING COUNT(DISTINCT IisIdentityPassword) > 1;
 ```
 
-**SQLite inputs:** `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`, `dbo_ManagedInstance(ServerCode, InstanceCode, IisIdentityUserName, IsEnabled)`, and `cfg_IisServerPolicy(ServerCode, PoolIdentityTemplate, IsEnabled)` exist in `carried-schema.json`. There is no carried `cfg_ManagedInstanceRuntime` and no carried `IisIdentityPassword`; portable passwords must come from the request credential package as `IIS_IDENTITY.<InstanceCode>` rather than from the catalog.
+**SQLite/credential inputs:** Reproduce `cfg.ManagedInstanceRuntime` from carried `dbo_ManagedInstance(ServerCode, InstanceCode, IisIdentityUserName, IsEnabled)` plus `cfg_IisServerPolicy(ServerCode, PoolIdentityTemplate, IsEnabled)` and `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`. `IisIdentityPassword` comes from request credential `IIS_IDENTITY.<InstanceCode>` for each enabled instance, matching the legacy view's decrypted `IIS_IDENTITY` credential.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** Yes, explicitly. Build `IdentityRows` from **every enabled instance of the local machine**, including unselected instances. Resolve each effective identity from `IisIdentityUserName` or the server policy template, and obtain every required instance password from the request credential package. If another enabled instance needed for the comparison has no credential, rule 6 says return an `ERROR`, not silence. Report `IIS_IDENTITY_PASSWORD_CONFLICT` on the selected instance when that selected instance participates in an identity group containing more than one distinct password.
+**Rule 6:** Yes, and the legacy scope is the **entire enabled local server**, not only selected participants. Build `IdentityRows` for every enabled local-machine instance. Report **every** identity group with more than one distinct password. If the selected instance participates in that group, attach the issue to the selected instance. If a conflicting group contains only unselected enabled instances, the selected run still fails with a **global machine error** for that identity; do not suppress it. Missing credentials needed for the comparison remain an `ERROR`, not silence.
 
-**Rule 7:** No filesystem path is used.
+This reporting rule is source fidelity plus rule 6, not a new owner policy: the original procedure emits the server-wide group regardless of selection, and selection does not exist in this SQL predicate.
 
-**Text comparison:** `LOWER(...)` makes the legacy identity grouping explicitly case-insensitive; portable behavior also compares Windows account names without case, so preserve that. `ServerCode` and `InstanceCode` are catalog codes and remain exact. Passwords are authentication secrets: portable comparison should be exact secret-value comparison so credentials that differ only by case are still different passwords. This follows the rule-6 intent of one account having one password and avoids applying catalog collation semantics to an external secret.
+**Rule 7:** No filesystem path.
 
-**Tests:** Trigger: selected instance and an enabled unselected instance use the same identity name (including a case-only name variation) but different exact password values. Non-trigger: same identity and same exact password across all enabled instances. Boundary: passwords differ only by letter case; portable behavior treats them as distinct and fires. Also include the required rule-6 case where the conflicting instance is not selected.
+**Text comparison:** Effective identity is explicitly `LOWER(...)` and source collation is CI_AS, so Windows identity grouping is case-insensitive and accent-sensitive. `ServerCode`/`InstanceCode` are catalog codes and are exact in the new system. Legacy `COUNT(DISTINCT IisIdentityPassword)` also follows CI_AS; the predicate specification therefore preserves that legacy equality for deciding whether passwords are distinct unless the owner later records an explicit security override.
 
-**Ambiguity:** The legacy `COUNT(DISTINCT nvarchar-password)` technically follows the unknown source collation, so a case-insensitive database may have collapsed case-only password differences. The portable choice above preserves authentication semantics and the explicit rule-6 wording rather than the unknown database collation. If the owner requires byte-for-byte legacy collation behavior for secrets, that would need an explicit override; no such decision is present in the supplied sources.
+**Tests:** Trigger: two enabled local instances share the same identity under CI_AS and have passwords that are distinct under CI_AS. Non-trigger: same identity and same password under CI_AS. Boundaries: (1) selected instance participates in a conflict with an unselected instance -> selected-instance error; (2) two unselected instances conflict while selected instance uses another identity -> global machine error still emitted; (3) identity differs only by case -> same group; (4) passwords differing only by case are not distinct under legacy CI_AS; an accent-only password difference is distinct.
+
+**Ambiguity:** None for legacy predicate/reporting. A future owner security override could intentionally make secret comparison byte-exact, but no such override is assumed here.
 
 ## Implementation stop points
 
-This document specifies only the seven codes listed by the port gap. It deliberately does not redefine the two IIS review codes already counted as ported. `cfg.ManagedInstanceRuntime` must not be recreated as a secret-bearing catalog surface; the password-conflict check uses carried identity metadata plus request credentials for all enabled instances.
+This document specifies only the seven codes listed by the port gap. The newly supplied `cfg.ManagedInstanceRuntime` view removes the previous schema blocker: metadata comes from carried `dbo_ManagedInstance`, while `IIS_IDENTITY` passwords come from the request credential package. Source collation is confirmed CI_AS; catalog codes remain exact by owner decision, and non-code template comparisons preserve CI_AS in this specification.
