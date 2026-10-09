@@ -70,6 +70,7 @@ That architectural decision does not mean the current log records are already a 
 Before a text-log reader can replace the current history action without losing source-visible information, the runtime producer/adapter must emit normalized operation lifecycle records that preserve, at minimum:
 
 - `operationId`;
+- `sessionId` or an equivalent correlation identifier that can group multiple executions from the same console/operator session;
 - top-level `actionCode`;
 - `engineCode` when an engine is involved;
 - `instanceCode` or equivalent target identity;
@@ -77,6 +78,8 @@ Before a text-log reader can replace the current history action without losing s
 - `startedAt` and `endedAt` (or enough timestamp plus duration data to derive both);
 - final `status`/outcome;
 - the non-secret result or failure `message` that is intended for history display.
+
+`operationId` identifies one operation and is not a replacement for the source `SessionID`. The session/correlation identifier must remain distinct so related executions can still be grouped without inventing that relationship from engine or action identity.
 
 For composite actions the record must retain the parent action identity as well as child engine events. For aliases, the requested action code must remain distinct from the resolved engine code. None of these fields requires a state database; they are structured fields in the plain-text operation log.
 
