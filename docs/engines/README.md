@@ -2,7 +2,7 @@
 
 This summary separates the 17 engine rows carried by the portable catalog from engines that the owner explicitly retired and from composite actions that are not engines.
 
-`Intended credential references` are the reference families or exact references that the ported engine specification expects to need. `Host-accepted references today` records what the executable host contract accepts. In current `main`, `DEPLOYMENT_PREFLIGHT` has no accepted references: the contract is empty and the host accepts exact references only. After PR #67 is integrated, `DEPLOYMENT_PREFLIGHT` declares `IIS_IDENTITY.*` and `WEB_ACCESS.*`, accepted by family for active catalog instances. PR #67 adds host support for the family wildcard form `TYPE.*` only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, and only for references belonging to active catalog instances. PR #68 documents that transition and does not modify the executable contract or host.
+`Intended credential references` are the reference families or exact references that the ported engine specification expects to need. `Host-accepted references today` records what the executable host contract accepts. In current `main`, `DEPLOYMENT_PREFLIGHT` declares `IIS_IDENTITY.*` and `WEB_ACCESS.*`. The host supports the family form `TYPE.*` only for the three instance-scoped kinds `IIS_IDENTITY`, `WEB_ACCESS`, and `MOBILE_APP_TOKEN`, and admits a concrete reference through that family only when its suffix is an enabled instance of the verified catalog. `RULE_SECRET` never has a family wildcard: every rule secret reference is exact, `RULE_SECRET.<RuleCode>`. This is the owner decision of 2026-10-09 recorded in `docs/decisions-log.md`.
 
 ## Portable catalog engines
 
@@ -17,9 +17,9 @@ and returned `17` in every catalog. The matrix below lists those 17 portable-cat
 
 | Engine | Wave | Engine class | Intended credential references | Host-accepted references today |
 |---|---:|---|---|---|
-| `DEPLOYMENT_PREFLIGHT` | 1 | `READ_ONLY` | `IIS_IDENTITY.*`, `WEB_ACCESS.*` | none in current `main`; after #67: `IIS_IDENTITY.*`, `WEB_ACCESS.*`, accepted by family for active catalog instances |
+| `DEPLOYMENT_PREFLIGHT` | 1 | `READ_ONLY` | `IIS_IDENTITY.*`, `WEB_ACCESS.*` | `IIS_IDENTITY.*`, `WEB_ACCESS.*`; each family expands only to enabled catalog instances |
 | `PULSE_STATUS` | 1 | `MUTATING` | `IIS_IDENTITY.*` | none |
-| `CONFIG_REPAIR` | 2 | `MUTATING` | `RULE_SECRET.*` | none |
+| `CONFIG_REPAIR` | 2 | `MUTATING` | exact `RULE_SECRET.<RuleCode>` references required by the rules used | none |
 | `MANAGED_ASSETS` | 2 | `MUTATING` | none | none |
 | `IIS_RECONCILE` | 3 | `MUTATING` | `IIS_IDENTITY.*` | none |
 | `WINDOWS_SERVICES` | 4 | `MUTATING` | `IIS_IDENTITY.*` | none |
@@ -87,4 +87,4 @@ The remaining engine classes were rechecked against their current specifications
 
 Reviewer-verified legacy behaviour requires both credential families: `IIS_IDENTITY.*` and `WEB_ACCESS.*`. The old preflight verifies the Web Access password (`WEB_ACCESS_PASSWORD_MISSING`), and the owner decision of 2026-10-07 requires all 12 reviews and all their issue codes to be ported.
 
-The individual `DEPLOYMENT_PREFLIGHT` specification records both families. In current `main`, the executable contract is empty and the host accepts only exact references, so `DEPLOYMENT_PREFLIGHT` has no accepted references. After PR #67 is integrated, the contract declares `IIS_IDENTITY.*` and `WEB_ACCESS.*` and the host accepts those families for active catalog instances.
+The executable contract in current `main` declares both families for `DEPLOYMENT_PREFLIGHT`. For either family, the host accepts only concrete references whose instance code belongs to an enabled instance of the verified catalog. The family mechanism is restricted to `IIS_IDENTITY`, `WEB_ACCESS`, and `MOBILE_APP_TOKEN`; `RULE_SECRET` is always exact and is never authorized by `RULE_SECRET.*`. This restriction is [DECIDED 2026-10-09] in `docs/decisions-log.md`.
