@@ -7,6 +7,33 @@ $script:EngineCode = 'DEPLOYMENT_PREFLIGHT'
 $script:EngineVersion = '1.0.0'
 $script:Issues = [System.Collections.Generic.List[object]]::new()
 $script:Tables = @{}
+# Every table of the carried schema that this engine reads. A table that is missing (a catalog edited by hand and sealed again) is an ERROR, never an empty table: an empty
+# table makes the checks that walk it pass in silence. Test-DeploymentPreflightSchema compares this list with the tables the source names (catalog_meta is generated and optional).
+$script:RequiredCatalogTables = @(
+    'cfg_Application',
+    'cfg_ConfigFile',
+    'cfg_ConfigFileRepairPolicy',
+    'cfg_ConfigRule',
+    'cfg_IisApplicationDefinition',
+    'cfg_IisServerPolicy',
+    'cfg_LinksPageAsset',
+    'cfg_LinksPagePolicy',
+    'cfg_LinksPagePresentationResource',
+    'cfg_LinksPageTemplate',
+    'cfg_LinksProfile',
+    'cfg_LinksProfileInstance',
+    'cfg_ManagedAssetDestination',
+    'cfg_PulseHttpPolicy',
+    'cfg_PulseProfile',
+    'cfg_PulseResource',
+    'cfg_WebAccessPolicy',
+    'cfg_WebAccessTemplate',
+    'cfg_WindowsServiceDefinition',
+    'dbo_ManagedInstance',
+    'dbo_ManagedServer',
+    'ops_Action',
+    'ops_Engine'
+)
 $script:Request = $null
 $script:Connection = $null
 # Coverage of the original model reviews (docs/handoff and tests/Fixtures/preflight-legacy-codes.json): how many of their issue codes this engine implements.
@@ -725,6 +752,12 @@ try {
     if ($manifestFiles.Count -eq 0) { throw 'PACKAGE_MANIFEST_FILES_MISSING' }
     $script:Connection = Open-PreflightCatalog -PackageRoot $packageRoot -CatalogPath ([string](Get-Field $script:Request 'catalogPath' '')) -ManifestFiles $manifestFiles
 
+    $missingTables = @($script:RequiredCatalogTables | Where-Object { -not (Test-CatalogTable $_) })
+    foreach ($missingTable in $missingTables) { Add-Issue ERROR CATALOG CATALOG_TABLE_MISSING $missingTable }
+    if ($missingTables.Count -gt 0) {
+        $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt
+        exit $exitCode
+    }
     $servers = @(Get-CatalogRows 'dbo_ManagedServer')
     $instances = @(Get-CatalogRows 'dbo_ManagedInstance')
     $enabledServers = @($servers | Where-Object { Test-Enabled $_ })

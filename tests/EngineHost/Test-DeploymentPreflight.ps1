@@ -304,6 +304,11 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $noPulseRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noPulse.Package -CatalogPath $noPulse.Catalog -CatalogSession $noPulse.Session -ManifestEntries $noPulse.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     Check 'a machine without a Pulse profile reports not applicable (INFO) and does not fail on Pulse' (@($noPulseRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' -and $_.status -ceq 'INFO' }).Count -eq 1 -and @($noPulseRun.results | Where-Object { $_.object -like 'PULSE_*' -and $_.status -ceq 'ERROR' }).Count -eq 0 -and [bool]$noPulseRun.succeeded)
 
+    # A table that is missing is not an empty table: a catalog edited by hand and sealed again without cfg_PulseProfile must not read as 'not applicable'.
+    $noTable = New-ScenarioPackage -Name 'notable' -ExtraSql 'DROP TABLE cfg_PulseProfile;'
+    $noTableRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a catalog without a table the engine reads is CATALOG_TABLE_MISSING, never an empty table or not applicable' (@($noTableRun.results | Where-Object { $_.object -ceq 'CATALOG_TABLE_MISSING:cfg_PulseProfile' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($noTableRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' }).Count -eq 0 -and -not [bool]$noTableRun.succeeded -and [string]$noTableRun.errorMessage -ceq 'PREFLIGHT_ERRORS')
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"

@@ -57,6 +57,13 @@ Check 'every column of the synthetic catalog is a real column' ($badColumns.Coun
 Check 'the engine reads at least the tables of the reviews it implements' ($engineTables.Count -ge 20) ([string]$engineTables.Count)
 
 
+$declaredTables = @([regex]::Matches(([regex]::Match($engineText, '\$script:RequiredCatalogTables = @\(([^)]*)\)').Groups[1].Value), "'([A-Za-z0-9_]+)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+$readTables = @($engineTables | Where-Object { $_ -cne 'catalog_meta' })
+Check 'the engine requires exactly the tables it reads (catalog_meta aside)' (($declaredTables -join ',') -ceq ($readTables -join ',')) (('required {0} / read {1}' -f $declaredTables.Count, $readTables.Count))
+$syntheticTables = @([regex]::Matches($testText, 'CREATE TABLE\s+([A-Za-z0-9_]+)\s*\(') | ForEach-Object { $_.Groups[1].Value })
+$notBuilt = @($declaredTables | Where-Object { $syntheticTables -cnotcontains $_ })
+Check 'the synthetic catalog creates every table the engine requires' ($notBuilt.Count -eq 0) ($notBuilt -join ', ')
+
 # Coverage of the original reviews. The fixture lists the issue codes of the original review procedures; the engine says how many it implements, and
 # the numbers must agree with the source, so an engine can never claim more coverage than it has (or forget to say it has less).
 $fixture = Get-Content -LiteralPath (Join-Path $repo 'tests/Fixtures/preflight-legacy-codes.json') -Raw | ConvertFrom-Json -Depth 20
