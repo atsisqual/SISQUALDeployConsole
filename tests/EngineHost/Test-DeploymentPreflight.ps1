@@ -286,16 +286,14 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
 
     # All instances: INST1 is fine; INST2 (PT), INST3 (ES) and INST4 (BR) have no instance root. INST2 and INST3 have no QR asset, INST4 is not PT or ES.
-    # INST5 uses the Windows account SVC-USER, which is INST1's svc-user written in capitals, with a different password: the same account cannot have two passwords.
-    $allSecrets = @{}; foreach ($key in $secrets.Keys) { $allSecrets[$key] = $secrets[$key] }
-    $allSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
-    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $allSecrets
-    Check 'Windows account names are compared without case: svc-user and SVC-USER with different passwords conflict' (@($all.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' }).Count -eq 1)
+    # INST5 uses the Windows account SVC-USER, which is INST1's svc-user written in capitals; here both have the same password, so INST1 is the one good instance.
+    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'the same Windows account with the same password on two instances is not a conflict (INST1 stays the one good instance)' (@($all.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_*' }).Count -eq 0)
     # The shared account is checked against every enabled instance, also when only one instance is run (as FULL_DEPLOYMENT does).
     $oneSecrets = @{}; foreach ($key in $secrets.Keys) { $oneSecrets[$key] = $secrets[$key] }
     $oneSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
     $oneConflict = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $oneSecrets
-    Check 'a run for one instance finds the shared account with another password on an instance that is not selected' (@($oneConflict.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    Check 'Windows account names are compared without case, and a run for one instance finds the shared account with another password on an instance that is not selected (svc-user selected, SVC-USER not)' (@($oneConflict.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
     $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
     Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)' ($qrMissing.Count -eq 3 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3|QR_ASSET_MISSING:INST5 / c1') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
     $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
