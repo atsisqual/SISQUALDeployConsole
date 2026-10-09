@@ -2,23 +2,26 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewLinksPagePresentationResources`
-**Verification base:** `main@28d4dc52c2d02bdce2add2101a306845041690b3`
+**Verification base:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`
 
 ## Evidence boundary
 
-The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt` at the verification base. The requested D13e port set and rules 6 and 7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69 head `80240090ba5dc37e13a64d359f9378a1c033fcc4`.
+The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt`. The requested D13e port set and rules 6 and 7 come from the regenerated `docs/handoff/preflight-port-gap.md` on read-only PR #69.
 
 SQLite table and column names were checked against `tests/Fixtures/carried-schema.json`. `cfg.LinksPagePresentationResource` maps to `cfg_LinksPagePresentationResource`; the carried columns used by the requested predicate are `ResourceCode`, `ResourceText`, `ContentSha256`, and `IsEnabled`.
 
-The requested `tests/Fixtures/preflight-legacy-codes.json` is not present in this `main` tree. The requested code's severity is checked against the literal extracted T-SQL and the one-code table in `preflight-port-gap.md`; both say `ERROR`.
+The corrected inventory fixture exists on PR #67, not main. The regenerated port gap records 66 original codes, 31 implemented and 35 still unported. For this procedure specifically, the original has two codes and exactly one remains unported.
 
 `docs/decisions-log.md` records the source database collation as `Latin1_General_CI_AS`: source text comparison is case-insensitive and accent-sensitive. The same 2026-10-05 owner decision makes catalog codes exact in the new system. `ContentSha256` is hash text, not a catalog code, so the source hash comparison semantics below remain CI_AS.
 
-### Source-inventory discrepancy
+### Source inventory [CONFIRMED]
 
-The exact extracted procedure emits two issue codes: `LINKS_PRESENTATION_RESOURCE_MISSING` and `LINKS_PRESENTATION_HASH_MISMATCH`. The supplied port gap says only one code from this procedure remains to port and lists only `LINKS_PRESENTATION_HASH_MISMATCH`; the D13 task likewise assigns one code to D13e. This document therefore specifies only that requested code and does not silently create a 31st unported item.
+The exact extracted procedure emits two issue codes:
 
-**[PENDING] Question:** before implementation, should the source inventory / legacy-code fixture / port-gap count be amended to include `LINKS_PRESENTATION_RESOURCE_MISSING`, or is that code intentionally excluded by a decision not present in the supplied sources? Until that is answered, do not infer an implementation requirement for the extra code from its name.
+- `LINKS_PRESENTATION_RESOURCE_MISSING` -- already implemented by `Invoke-ReviewLinksPresentation` in PR #67: when there is no enabled `cfg_LinksPagePresentationResource` row, the engine emits this `ERROR` code;
+- `LINKS_PRESENTATION_HASH_MISMATCH` -- not yet implemented and therefore the single D13e predicate specified below.
+
+The earlier 59-code inventory omitted seven original codes and made this procedure look inconsistent. The corrected 66-code inventory and regenerated `preflight-port-gap.md` resolve that discrepancy; there is no remaining `[PENDING]` inventory question and no 31st-item ambiguity.
 
 ## `LINKS_PRESENTATION_HASH_MISMATCH`
 
@@ -47,7 +50,7 @@ WHERE P.IsEnabled = 1
 
 **Rule 7:** No catalog filesystem path is used. `ResourceText` is hashed in memory; no existence/read/write probe is part of this predicate, so real-path resolution and containment do not apply here.
 
-**Text comparison:** The hash input is not ordinary text equality: SQL Server first executes `CONVERT(varbinary(max), P.ResourceText)` where `ResourceText` is `nvarchar`, then hashes those bytes. The portable test/port must preserve that SQL Server Unicode byte representation rather than silently hashing UTF-8 text; include a non-ASCII text case to prove byte parity. The final `P.ContentSha256 <> LOWER(computed_hex)` uses the confirmed `Latin1_General_CI_AS` source collation. Therefore stored uppercase and lowercase hexadecimal for the same 64 digest digits compare equal and do **not** trigger. Accent sensitivity is irrelevant to hexadecimal characters.
+**Text comparison:** The hash input is not ordinary text equality: SQL Server first executes `CONVERT(varbinary(max), P.ResourceText)` where `ResourceText` is `nvarchar`, then hashes those bytes. The portable test/port must preserve that SQL Server Unicode byte representation rather than silently hashing UTF-8 text; include a non-ASCII text case to prove byte parity. The final `P.ContentSha256 <> LOWER(computed_hex)` uses `Latin1_General_CI_AS`. Therefore stored uppercase and lowercase hexadecimal for the same 64 digest digits compare equal and do **not** trigger. Accent sensitivity is irrelevant to hexadecimal characters.
 
 **Tests:**
 
@@ -55,8 +58,8 @@ WHERE P.IsEnabled = 1
 - Non-trigger: an enabled resource stores the lowercase 64-character SHA-256 of the SQL Server `nvarchar` byte representation of its `ResourceText`; no issue.
 - Boundary: use `ResourceText` containing at least one non-ASCII character and verify the portable hash uses the same bytes as `CONVERT(varbinary(max), nvarchar)` rather than UTF-8. Separately, store the same digest in uppercase hexadecimal; this is also a non-trigger under CI_AS.
 
-**Ambiguity:** The predicate shape, carried columns, hash algorithm, enabled-row filter, severity, and hash-text case behavior are unambiguous. The remaining question is only the procedure-level inventory discrepancy for `LINKS_PRESENTATION_RESOURCE_MISSING`; it must not be guessed into an implementation requirement.
+**Ambiguity:** The predicate shape, carried columns, hash algorithm, enabled-row filter, severity, hash-text case behavior and procedure inventory are now unambiguous.
 
 ## Implementation stop points
 
-This text specifies exactly the one D13e code named by the supplied gap. Before implementation, reconcile why the reviewer-extracted source also emits `LINKS_PRESENTATION_RESOURCE_MISSING` while the authoritative 30-code gap omits it. The hexadecimal-case behavior is no longer `[PENDING]`: the recorded source collation resolves it. No predicate is derived from either issue-code name.
+This text specifies the only code from this procedure that is still unported. `LINKS_PRESENTATION_RESOURCE_MISSING` is already implemented; `LINKS_PRESENTATION_HASH_MISMATCH` remains. No predicate is derived from either issue-code name.
