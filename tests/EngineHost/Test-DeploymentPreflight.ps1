@@ -337,6 +337,14 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $noInstancesRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noInstances.Package -CatalogPath $noInstances.Catalog -CatalogSession $noInstances.Session -ManifestEntries $noInstances.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
     Check 'an all-instances run on a catalog with no enabled instance reports zero targets, not a fabricated one' ([int]$noInstancesRun.summary.targetCount -eq 0 -and [int]$noInstancesRun.summary.failedTargets -eq 0 -and [int]$noInstancesRun.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noInstancesRun.summary.targetCount,$noInstancesRun.summary.failedTargets,$noInstancesRun.summary.succeededTargets))
 
+    # A UNC path in the catalog is refused on its text, before anything is probed: probing \\server\share opens a network connection (and an unroutable server makes the probe wait).
+    $unc = New-ScenarioPackage -Name 'unc' -ExtraSql "UPDATE cfg_Application SET PhysicalPathTemplate = '\\10.255.255.1\share\app' WHERE ApplicationCode = 'APP1'; UPDATE cfg_WindowsServiceDefinition SET ExecutablePathTemplate = '\\10.255.255.1\share\service.exe';"
+    $uncWatch = [Diagnostics.Stopwatch]::StartNew()
+    $uncRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $unc.Package -CatalogPath $unc.Catalog -CatalogSession $unc.Session -ManifestEntries $unc.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $uncWatch.Stop()
+    $uncCodes = @($uncRun.results | Where-Object { $_.status -ceq 'ERROR' -and ($_.object -like 'APPLICATION_PATH_OUTSIDE_ROOT*' -or $_.object -like 'SERVICE_EXECUTABLE_OUTSIDE_ROOT*') } | ForEach-Object { ([string]$_.object).Split(':')[0] } | Sort-Object -Unique)
+    Check 'a UNC application folder and a UNC service executable are refused on their text, without a network probe (no wait on an unroutable server)' (($uncCodes -join ',') -ceq 'APPLICATION_PATH_OUTSIDE_ROOT,SERVICE_EXECUTABLE_OUTSIDE_ROOT' -and $uncWatch.Elapsed.TotalSeconds -lt 10) (('{0} in {1:n1} s' -f ($uncCodes -join ','), $uncWatch.Elapsed.TotalSeconds))
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"

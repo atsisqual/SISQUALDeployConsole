@@ -201,8 +201,19 @@ function Resolve-RealPath {
     catch { return [IO.Path]::GetFullPath($Path) }
 }
 
+function Test-PathLocalAbsolute {
+    # Text only, no file system access: a local drive path. A UNC path (\\server\share) or a device path is not one, and probing it would open a network connection.
+    param([Parameter(Mandatory)][string]$Path)
+    try { $full = [IO.Path]::GetFullPath($Path) } catch { return $false }
+    return ($full -match '^[A-Za-z]:[\\/]')
+}
+
 function Test-RealPathUnderRoot {
     param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Root)
+    # The decision is made on text first (it touches neither the disk nor the network): a path that is not local, or that is lexically outside the root, is refused before anything is probed.
+    # Only a path that passed is resolved, so that links inside the approved root are followed and judged.
+    if (-not (Test-PathLocalAbsolute $Path) -or -not (Test-PathLocalAbsolute $Root)) { return $false }
+    if (-not (Test-PathUnderRoot -Path $Path -Root $Root)) { return $false }
     return (Test-PathUnderRoot -Path (Resolve-RealPath $Path) -Root (Resolve-RealPath $Root))
 }
 
@@ -232,6 +243,7 @@ function Test-InstanceRootConfined {
     if ([string]::IsNullOrWhiteSpace($servicesRoot) -or [string]::IsNullOrWhiteSpace($hostName)) { return $true }
     $root = Get-InstanceRoot $Server $Instance
     if ([string]::IsNullOrWhiteSpace($root)) { return $false }
+    if (-not (Test-PathLocalAbsolute $servicesRoot) -or -not (Test-PathLocalAbsolute $root)) { return $false }   # before anything is resolved: a UNC root would be probed
     $realRoot = (Resolve-RealPath $root).TrimEnd('\','/')
     $realServices = (Resolve-RealPath $servicesRoot).TrimEnd('\','/')
     return ((Test-PathUnderRoot -Path $realRoot -Root $realServices) -and -not $realRoot.Equals($realServices,[StringComparison]::OrdinalIgnoreCase))
