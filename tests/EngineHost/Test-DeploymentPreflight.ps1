@@ -299,6 +299,11 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
     Check 'failedTargets counts every instance with an error, not just one' ([int]$all.summary.targetCount -eq 5 -and [int]$all.summary.failedTargets -eq 4 -and [int]$all.summary.succeededTargets -eq 1) $summaryText
 
+    # Owner decision of 2026-10-06: a machine without a Pulse profile is 'not applicable', not an error (PRESALES and TENDERS have none).
+    $noPulse = New-ScenarioPackage -Name 'nopulse' -ExtraSql 'DELETE FROM cfg_PulseProfile;'
+    $noPulseRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noPulse.Package -CatalogPath $noPulse.Catalog -CatalogSession $noPulse.Session -ManifestEntries $noPulse.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a machine without a Pulse profile reports not applicable (INFO) and does not fail on Pulse' (@($noPulseRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' -and $_.status -ceq 'INFO' }).Count -eq 1 -and @($noPulseRun.results | Where-Object { $_.object -like 'PULSE_*' -and $_.status -ceq 'ERROR' }).Count -eq 0 -and [bool]$noPulseRun.succeeded)
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"

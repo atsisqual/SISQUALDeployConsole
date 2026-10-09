@@ -483,7 +483,9 @@ function Invoke-ReviewLinksPresentation {
 function Invoke-ReviewPulseModel {
     param($Context)
     $profiles = @(Get-EnabledRows 'cfg_PulseProfile')
-    if ($profiles.Count -eq 0) { Add-Issue ERROR PULSE_MODEL PULSE_HUB_NOT_FOUND }
+    # Owner decision of 2026-10-06 (PULSE_STATUS.md, decisions log): a machine without a Pulse profile reports 'not applicable' and does not fail. The original review is
+    # only run for a hub that is given, so there is nothing to review here (PRESALES and TENDERS have no profile).
+    if ($profiles.Count -eq 0) { Add-Issue INFO PULSE_MODEL PULSE_NOT_APPLICABLE '' '' 'This machine has no enabled Pulse profile; the Pulse review does not apply.'; return }
     foreach ($profile in $profiles) {
         $hub = [string](Get-Field $profile 'HubInstanceCode' '')
         $hubRows = @($Context.Instances | Where-Object { (Test-Enabled $_) -and [string](Get-Field $_ 'InstanceCode' '') -ceq $hub })
