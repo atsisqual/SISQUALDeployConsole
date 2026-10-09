@@ -11,6 +11,8 @@ Use these labels in design, code comments, PRs, and reports:
 - `[CONFIRMED]` - demonstrated by approved evidence, code, test, or recorded run.
 - `[PROPOSED]` - recommended but not yet approved.
 - `[PENDING]` - information, decision, or validation still required.
+- `[DECIDED]` - decided by the owner and traceable to an owner message or an approved document; the date or the owner's words may follow (`[DECIDED 2026-10-08]`).
+- `[CLOSED]` - finished: delivered, answered or retired, with nothing left to do; say what closed it.
 - `[V]` - implemented or analysed but still requires the specified real Windows/SISQUAL validation.
 
 Never promote an inference to `[CONFIRMED]`. A decision is recorded as made by the owner only when it can be traced to an owner message or an approved document; otherwise write `[PENDING]` with the supporting evidence and ask (rule accepted by the owner on 2026-10-05).
