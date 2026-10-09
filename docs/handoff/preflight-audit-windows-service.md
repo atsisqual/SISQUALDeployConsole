@@ -1,0 +1,26 @@
+# DEPLOYMENT_PREFLIGHT audit: Windows service model
+
+**Status:** [PROPOSED]
+**Original:** `cfg.ReviewWindowsServiceModel`
+**Engine:** `Invoke-ReviewWindowsServices`
+**Evidence:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa` and PR #67 branch `engine/deployment-preflight-v1`.
+
+## Audit
+
+| Original / engine check | Original predicate, textual | Engine behavior | Coincidem? | T-SQL semantics / port rule |
+|---|---|---|---|---|
+| `MANAGED_SERVER_NOT_FOUND` | Resolve `@ServerCode` from enabled `dbo.ManagedServer` where `MachineName=@MachineName`; if NULL, emit `ERROR` and return. | No check in `Invoke-ReviewWindowsServices`; the portable runtime validates the local server before reviews. | **No engine-code equivalent in this review.** Runtime boundary replaces the source check operationally. | Original machine equality is CI_AS/padded. Portable runtime uses Windows-name no-case matching and requires one local server. |
+| `WINDOWS_SERVICE_DEFINITION_MISSING` | `IF NOT EXISTS (SELECT 1 FROM cfg.WindowsServiceDefinition WHERE IsEnabled=1)` | Engine loads enabled definitions and emits same code when count is zero. | **Yes in predicate intent.** | No text comparison in predicate. |
+| `SERVICE_ACCOUNT_USERNAME_MISSING` | `cfg.ManagedInstanceRuntime I CROSS JOIN enabled cfg.WindowsServiceDefinition D ... (@InstanceCode IS NULL OR I.InstanceCode=@InstanceCode) AND NULLIF(LTRIM(RTRIM(I.IisIdentityUserName)),N'') IS NULL` | For each selected instance, engine emits once if `IisIdentityUserName` is `IsNullOrWhiteSpace`; it does not emit one row per enabled service definition. | **No.** Scope is selected-equivalent, but multiplicity differs and engine trims tabs/other whitespace that the original does not. | Original LTRIM/RTRIM removes ordinary spaces only; padded `NULLIF` makes spaces-only empty. InstanceCode equality is legacy CI_AS/padded versus exact portable code. |
+| `SERVICE_ACCOUNT_PASSWORD_MISSING` | Same selected instance x enabled definition scope, `NULLIF(I.IisIdentityPassword,N'') IS NULL`. | Engine emits once per selected instance when request credential `IIS_IDENTITY.<InstanceCode>` is absent. | **No literal parity.** Credential source and per-definition multiplicity differ; portable package is intentional architecture. | Legacy spaces-only password is empty through SQL padding. Portable secret is opaque bytes/presence, not CI_AS text. |
+| `SERVICE_NAME_TOO_LONG` | For selected instance x enabled definition, `LEN(cfg.ExpandTemplate(...)) > 256`. | Engine expands each selected instance/definition and uses `.Length -gt 256`. | **No at trailing-space boundary.** Otherwise same shape. | SQL `LEN` ignores trailing ordinary spaces; .NET Length counts them. A 256-char substantive name plus trailing spaces can diverge. |
+| `DUPLICATE_SERVICE_NAME` | Build `ServiceNames` only for rows passing optional `@InstanceCode`; `GROUP BY ServiceName HAVING COUNT(*)>1`; join duplicate names back to every member row. | Engine deliberately builds names across **all enabled machine instances** under rule 6, groups in a case-insensitive map, and emits on every selected holder of a duplicated name. | **Intentional scope change.** Rule 6 broadens selected-instance runs. Grouping is not fully text-identical. | Original grouping is CI_AS and SQL padded equality: case-only and trailing-space-only names group; accents differ. Engine ignore-case grouping preserves case behavior but does not automatically preserve SQL trailing-space padding. |
+| `SERVICE_IDENTITY_PASSWORD_CONFLICT` | Selected-scope CTE: `IdentityName=LOWER(LTRIM(RTRIM(I.IisIdentityUserName)))`; nonblank username/password; `GROUP BY IdentityName HAVING COUNT(DISTINCT IisIdentityPassword)>1`. | Engine groups **all enabled** instances by case-insensitive raw username, then only evaluates groups containing selected members; compares exact credential hashes and emits on selected members. Missing unselected credential emits engine-only `SERVICE_IDENTITY_PASSWORD_UNVERIFIED`. | **No literal parity; partly intentional.** Rule 6 broadens comparison and exact portable secret semantics are intentional. Username trim and reporting differ. | Original username ordinary-space trim + LOWER + CI_AS/padding. Engine `IsNullOrWhiteSpace` filters then groups raw value no-case, so leading/trailing ordinary spaces are not normalized. Original password DISTINCT is CI_AS text; portable secret hash is exact. |
+
+## Engine-owned check without original equivalent
+
+`SERVICE_IDENTITY_PASSWORD_UNVERIFIED` is emitted when a selected account is shared with an enabled unselected instance whose required credential is absent from the request. This follows rule 6 fail-closed behavior; the original SQL has no equivalent code because it reads all passwords directly from the management database.
+
+## Result
+
+`WINDOWS_SERVICE_DEFINITION_MISSING` is the only direct predicate match. Other same-named checks differ through credential architecture, issue multiplicity, .NET length/whitespace behavior, or rule-6 cross-instance broadening. `MANAGED_SERVER_NOT_FOUND` is replaced by a runtime boundary rather than an engine issue, and `SERVICE_IDENTITY_PASSWORD_UNVERIFIED` is portable-only. This audit is text only and does not authorize changes to PR #67.
