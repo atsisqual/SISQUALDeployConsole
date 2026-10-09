@@ -1,0 +1,19 @@
+PASS  SourceFileName from catalog is honored?
+PASS  host does not derive target counts from result row count?
+PASS  rapid successful child exits do not race stdin delivery?
+PASS  machine ownership is read from active catalog session, not caller properties?
+PASS  secret is absent from child arguments and environment?
+PASS  secret leak blocked: SECRET_STDOUT?
+PASS  secret leak blocked: SECRET_STDERR?
+PASS  secret leak blocked: SECRET_RESULT?
+PASS  schema arithmetic is validated without row inference?
+PASS  result must echo request mode?
+PASS  READ_ONLY engine cannot APPLY?
+PASS  SQL catalog actions are refused?
+PASS  PREVIEW_APPLY preview returns fingerprint?
+PASS  APPLY accepts fingerprint from same host session?
+PASS  stale fingerprint is refused before launch?
+PASS  composite fingerprint is aggregate over ordered child identities?
+PASS  timeout writes cancel request and cooperative engine exits?
+PASS  large stdin cannot block timeout enforcement?
+PASS  descendant inheriting redirected pipes cannot block the host?
