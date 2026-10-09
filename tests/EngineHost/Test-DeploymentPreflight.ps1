@@ -319,6 +319,18 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $dupUser = New-ScenarioPackage -Name 'dupuser' -ExtraSql "UPDATE dbo_ManagedInstance SET WebAccessUserName = 'WEB-USER' WHERE InstanceCode = 'INST2';"
     $dupUserRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupUser.Package -CatalogPath $dupUser.Catalog -CatalogSession $dupUser.Session -ManifestEntries $dupUser.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     Check 'a run for one instance finds a Web Access user that another enabled instance also has, without case (web-user and WEB-USER)' (@($dupUserRun.results | Where-Object { $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    # In a run for all instances every selected holder fails, not only the first one.
+    $dupServiceAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupService.Package -CatalogPath $dupService.Catalog -CatalogSession $dupService.Session -ManifestEntries $dupService.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    $serviceHolders = @($dupServiceAll.results | Where-Object { $_.object -ceq 'DUPLICATE_SERVICE_NAME:shared-service' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'every selected instance that gets the same service name fails, not only the first (all-instances run)' (($serviceHolders -join ',') -ceq 'INST1,INST2,INST3,INST4,INST5') ($serviceHolders -join ',')
+    $dupUserAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupUser.Package -CatalogPath $dupUser.Catalog -CatalogSession $dupUser.Session -ManifestEntries $dupUser.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    $userHolders = @($dupUserAll.results | Where-Object { $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER:*' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'every selected instance that has the same Web Access user fails, not only the first (all-instances run)' (($userHolders -join ',') -ceq 'INST1,INST2') ($userHolders -join ',')
+    $allDifferent = @{}; foreach ($key in $secrets.Keys) { $allDifferent[$key] = $secrets[$key] }
+    $allDifferent['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
+    $conflictAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $allDifferent
+    $conflictHolders = @($conflictAll.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'both instances that share an account with different passwords fail, not only the first (all-instances run)' (($conflictHolders -join ',') -ceq 'INST1,INST5') ($conflictHolders -join ',')
     Check 'unique service names and Web Access users give no duplicate in the all-instances run' (@($all.results | Where-Object { $_.object -like 'DUPLICATE_SERVICE_NAME*' -or $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER*' }).Count -eq 0)
 
     # The instance folder is ServicesRoot\<HostName>: if that is a junction that points outside the services root, the lexical path is inside it and the real one is not.

@@ -368,8 +368,8 @@ function Invoke-ReviewWindowsServices {
     foreach ($holderName in @($nameHolders.Keys)) {
         $holderCodes = @($nameHolders[$holderName])
         if ($holderCodes.Count -lt 2) { continue }
-        $selectedHolder = @($holderCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Select-Object -First 1)
-        if ($selectedHolder.Count -eq 1) { Add-Issue ERROR WINDOWS_SERVICES DUPLICATE_SERVICE_NAME $holderName $selectedHolder[0] }
+        # Every selected holder of the name fails, not only the first: the others would otherwise count as good targets.
+        foreach ($selectedHolder in @($holderCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Sort-Object -Unique)) { Add-Issue ERROR WINDOWS_SERVICES DUPLICATE_SERVICE_NAME $holderName $selectedHolder }
     }
     # An account shared by several enabled instances must have one password. The selected instances are compared with EVERY enabled instance of the machine
     # (a run for one instance of FULL_DEPLOYMENT included); the credentials of the others come in the request, never from the catalog, so an account whose other
@@ -394,9 +394,11 @@ function Invoke-ReviewWindowsServices {
             if (-not [string]::IsNullOrWhiteSpace($memberHash)) { $passwordHashes[$memberHash] = $memberCode }
             elseif (-not $selectedCodes.ContainsKey($memberCode)) { $unverified = $true }
         }
-        $targetCode = [string](Get-Field $selectedMembers[0] 'InstanceCode' '')
-        if ($passwordHashes.Count -gt 1) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_CONFLICT $user $targetCode }
-        elseif ($unverified) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_UNVERIFIED $user $targetCode }
+        foreach ($selectedMember in $selectedMembers) {
+            $targetCode = [string](Get-Field $selectedMember 'InstanceCode' '')
+            if ($passwordHashes.Count -gt 1) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_CONFLICT $user $targetCode }
+            elseif ($unverified) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_UNVERIFIED $user $targetCode }
+        }
     }
 }
 
@@ -424,8 +426,7 @@ function Invoke-ReviewWebAccess {
     foreach ($holderUser in @($userHolders.Keys)) {
         $userCodes = @($userHolders[$holderUser])
         if ($userCodes.Count -lt 2) { continue }
-        $selectedUserHolder = @($userCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Select-Object -First 1)
-        if ($selectedUserHolder.Count -eq 1) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $holderUser $selectedUserHolder[0] }
+        foreach ($selectedUserHolder in @($userCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Sort-Object -Unique)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $holderUser $selectedUserHolder }
     }
     foreach ($policy in @(Get-EnabledRows 'cfg_WebAccessPolicy')) {
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }
