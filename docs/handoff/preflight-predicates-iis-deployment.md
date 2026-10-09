@@ -2,17 +2,42 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewIisDeploymentModel`
-**Verification base:** `main@28d4dc52c2d02bdce2add2101a306845041690b3`
+**Verification base:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`
 
 ## Evidence boundary
 
-Predicates are copied from `docs/handoff/preflight-legacy-procedures.sql.txt`. The seven requested codes are the `cfg.ReviewIisDeploymentModel` rows still listed by `docs/handoff/preflight-port-gap.md` on read-only PR #69; `SERVER_POLICY_MISSING` and `IIS_IDENTITY_PASSWORD_PENDING` are outside this D13b set because the gap counts them as already ported.
+Predicates are copied from `docs/handoff/preflight-legacy-procedures.sql.txt`. The seven requested unported codes and rules 6/7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69. `SERVER_POLICY_MISSING` and `IIS_IDENTITY_PASSWORD_PENDING` are outside this D13b set because the regenerated gap counts them as already ported.
 
-SQLite table/column names were checked against `tests/Fixtures/carried-schema.json`. `cfg.ManagedInstanceRuntime` is a legacy view, not a carried table; its verbatim definition is now included in the evidence file. It projects carried `dbo.ManagedInstance` columns and decrypts `IIS_IDENTITY`, `WEB_ACCESS`, and `MOBILE_APP_TOKEN` credentials. In the portable system, the same metadata comes from `dbo_ManagedInstance` and secrets come from the request credential package, never from the catalog.
+SQLite table/column names were checked against `tests/Fixtures/carried-schema.json`. `cfg.ManagedInstanceRuntime` is a legacy view, not a carried table; its verbatim definition is in the evidence file. Metadata comes from carried `dbo_ManagedInstance`; portable secrets come from the request credential package.
 
-`docs/decisions-log.md` records that all source databases use `Latin1_General_CI_AS`: legacy comparisons without explicit `COLLATE` are case-insensitive and accent-sensitive. The same 2026-10-05 owner decision makes catalog codes exact in the new system. Non-code template comparisons below preserve the legacy CI_AS semantics unless another recorded owner rule overrides them.
+The source database uses `Latin1_General_CI_AS`: comparisons without explicit `COLLATE` are case-insensitive and accent-sensitive. SQL Server equality pads ordinary spaces; `NULLIF(x,'')` therefore treats ordinary-spaces-only text as empty. Catalog codes compare exactly in the new system by the 2026-10-05 owner decision. Portable credential secrets are not catalog text: `contracts/credential-package.md` defines them as encrypted opaque values and the vault fingerprint is computed from the exact secret bytes. Therefore secret equality in the portable port is exact-byte equality, deliberately not CI_AS.
 
-The T-SQL evidence header also fixes ordinary-space behavior: equality pads strings with spaces, so `NULLIF(x,'')` returns `NULL` for a value made only of ordinary spaces. Tabs or other whitespace do not become empty merely because of this rule.
+### Complete text-operator matrix
+
+Line numbers are relative to the first `CREATE OR ALTER PROCEDURE` line of `cfg.ReviewIisDeploymentModel` in the evidence file.
+
+| Procedure line | Operator / expression | Legacy T-SQL behavior | Portable behavior |
+|---|---|---|---|
+| 9 | `COALESCE(NULLIF(@MachineName,N''), ...)` | `NULLIF` uses padded equality: empty or ordinary-spaces-only input becomes NULL | [PROPOSED] Preserve the empty/spaces boundary; do not use all-whitespace trimming |
+| 24 | `MachineName = @ResolvedMachineName` | CI_AS plus space padding | [PROPOSED] Windows machine names compare without case; preserve accent sensitivity. [PENDING] Whether trailing-space padding is intentionally retained for Windows names |
+| 41 | `P.ServerCode = S.ServerCode` text join | CI_AS plus padding | [PROPOSED] Catalog code comparison is exact in the new system, intentionally different from legacy case/padding behavior |
+| 44 | `S.MachineName = @ResolvedMachineName` | CI_AS plus padding | [PROPOSED]/[PENDING] Same Windows-name rule as line 24 |
+| 64 | `PoolNameTemplate <> N'{HOST_NAME}'` | CI_AS plus padding: case-only and trailing-space-only variants compare equal | [PROPOSED] Preserve CI_AS+padding for this non-code template unless a later owner decision changes it |
+| 72 | `GROUP BY PoolNameTemplate` | Grouping uses CI_AS text equality and SQL padding | [PROPOSED] Preserve case-insensitive, accent-sensitive, padded grouping for this non-code template |
+| 100 | `NULLIF(CertificateSubjectTemplate,N'')` | Empty or ordinary-spaces-only becomes NULL; tab-only does not | [PROPOSED] Preserve exactly |
+| 101 | `NULLIF(CertificateStoreName,'')` | Same padded-empty behavior | [PROPOSED] Preserve exactly |
+| 111 | `I.ServerCode = S.ServerCode` join | CI_AS plus padding | [PROPOSED] Exact catalog-code comparison in the portable model |
+| 114 | `S.MachineName = @ResolvedMachineName` | CI_AS plus padding | [PROPOSED]/[PENDING] Same Windows-name rule as line 24 |
+| 115 | `NULLIF(I.IisIdentityPassword,N'')` | Legacy `nvarchar` empty test uses space padding | [PROPOSED] Credential package secret is opaque bytes; absence is determined by credential presence/empty-byte contract, not database collation |
+| 122 | `LOWER(COALESCE(NULLIF(I.IisIdentityUserName,N''), P.PoolIdentityTemplate))` | `NULLIF` treats spaces-only username as empty; `LOWER` plus CI_AS makes account grouping case-insensitive | [PROPOSED] Windows account names compare without case. Preserve ordinary-space empty fallback. [PENDING] Accent/trailing-space normalization for account names beyond the explicit no-case rule |
+| 126 | `I.ServerCode = S.ServerCode` join | CI_AS plus padding | [PROPOSED] Exact catalog code |
+| 129 | `P.ServerCode = I.ServerCode` join | CI_AS plus padding | [PROPOSED] Exact catalog code |
+| 132 | `S.MachineName = @ResolvedMachineName` | CI_AS plus padding | [PROPOSED]/[PENDING] Same Windows-name rule as line 24 |
+| 133 | `NULLIF(I.IisIdentityPassword,N'') IS NOT NULL` | Legacy presence uses padded string equality | [PROPOSED] Portable presence is credential-package presence; do not reinterpret opaque secret bytes under CI_AS |
+| 140 | `GROUP BY ServerCode, IdentityName` | `ServerCode` and identity text group under CI_AS/padding | [PROPOSED] ServerCode exact; Windows identity no-case. [PENDING] Accent/trailing-space dimension for Windows identity |
+| 141 | `COUNT(DISTINCT IisIdentityPassword) > 1` | Legacy password `nvarchar` distinctness inherits CI_AS/padding, so case-only values can collapse | [PROPOSED] Intentionally change to exact secret-byte/fingerprint comparison because portable credentials are opaque bytes; `Secret` and `secret` are distinct secrets |
+
+No `LIKE`, `IN`, `REPLACE`, `LTRIM/RTRIM`, or `LEN` operator occurs in this procedure. The matrix lists every text equality/inequality, text JOIN, `NULLIF`, `LOWER`, `GROUP BY` and `DISTINCT` operation that affects these predicates.
 
 ## `SERVER_NOT_REGISTERED`
 
@@ -32,15 +57,13 @@ IF NOT EXISTS
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No instance-to-instance comparison. Report this machine-level registration failure in the selected run while retaining the machine name as the object/detail.
+**Rule 6:** No instance-to-instance comparison. Report this machine-level error in the selected run and retain the machine name.
 
 **Rule 7:** No filesystem path.
 
-**Text comparison:** Legacy is CI_AS. Portable Windows machine-name comparison is case-insensitive by rule 7; preserve accent sensitivity to match the confirmed source semantics.
+**Text comparison:** Matrix line 24.
 
-**Tests:** Trigger: no enabled server row matches. Non-trigger: enabled matching row. Boundary: case-only machine-name difference still matches; accent-only difference does not.
-
-**Ambiguity:** None.
+**Tests:** Trigger: no enabled server matches. Non-trigger: enabled matching row. Boundary: case-only difference matches; accent-only difference does not; trailing-space behavior follows the `[PENDING]` Windows-name dimension.
 
 ## `ROOT_DEFINITION_COUNT`
 
@@ -54,15 +77,13 @@ IF (SELECT COUNT(*) FROM cfg.IisApplicationDefinition WHERE IsEnabled = 1 AND Is
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; global definition cardinality.
+**Rule 6:** No cross-instance comparison.
 
 **Rule 7:** No filesystem path.
 
 **Text comparison:** None.
 
-**Tests:** Trigger: zero enabled roots. Non-trigger: exactly one. Boundary: two enabled roots fire; disabled roots do not count.
-
-**Ambiguity:** None.
+**Tests:** Trigger: zero roots. Non-trigger: exactly one. Boundary: two enabled roots fire; disabled roots do not count.
 
 ## `ROOT_POOL_NAME_INVALID`
 
@@ -81,13 +102,11 @@ WHERE IsEnabled = 1
 
 **Rule 6:** No cross-instance comparison.
 
-**Rule 7:** `PoolNameTemplate` is not a filesystem path.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `PoolNameTemplate` is non-code text. The original comparison is confirmed `Latin1_General_CI_AS`, so the port preserves CI_AS semantics here: case-insensitive and accent-sensitive. The owner exact-code decision does not apply to this template field.
+**Text comparison:** Matrix line 64.
 
-**Tests:** Trigger: `{HOST_NAME}_ROOT`. Non-trigger: `{HOST_NAME}`. Boundary: `{host_name}` is also a non-trigger under CI_AS; an accent-altered token is not equal and fires.
-
-**Ambiguity:** None after the recorded source-collation evidence.
+**Tests:** Trigger: `{HOST_NAME}_ROOT`. Non-trigger: `{HOST_NAME}`. Boundaries: `{host_name}` and `{HOST_NAME} ` are legacy non-triggers under CI_AS+padding; accent-altered token fires.
 
 ## `DUPLICATE_POOL_TEMPLATE`
 
@@ -104,15 +123,13 @@ HAVING COUNT(*) > 1;
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. This checks definition templates, not expanded per-instance pool names.
+**Rule 6:** No cross-instance comparison.
 
 **Rule 7:** No filesystem path.
 
-**Text comparison:** Legacy grouping is confirmed CI_AS. The port therefore groups `PoolNameTemplate` case-insensitively and accent-sensitively. A case-only pair is one duplicate group; an accent-only pair is distinct.
+**Text comparison:** Matrix line 72.
 
-**Tests:** Trigger: two enabled rows with the same template. Non-trigger: unique templates. Boundaries: `{HOST_NAME}` plus `{host_name}` fires as a duplicate; accent-only difference does not group.
-
-**Ambiguity:** None after the source-collation evidence.
+**Tests:** Trigger: same template twice. Non-trigger: distinct templates. Boundaries: case-only and trailing-space-only variants group; accent-only variants do not.
 
 ## `PRIMARY_BINDING_COUNT`
 
@@ -126,15 +143,13 @@ IF (SELECT COUNT(*) FROM cfg.IisBindingDefinition WHERE IsEnabled = 1 AND IsPrim
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; global binding-definition cardinality.
+**Rule 6:** No cross-instance comparison.
 
 **Rule 7:** No filesystem path.
 
 **Text comparison:** None.
 
-**Tests:** Trigger: zero enabled primary bindings. Non-trigger: exactly one. Boundary: two enabled primary bindings fire; disabled primaries do not count.
-
-**Ambiguity:** None.
+**Tests:** Trigger: zero primary bindings. Non-trigger: one. Boundary: two enabled primary bindings fire.
 
 ## `CERTIFICATE_POLICY_MISSING`
 
@@ -161,15 +176,13 @@ WHERE P.IsEnabled = 1
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No instance-to-instance comparison. If the local policy fires, report it in the selected run and retain `ServerCode` in details.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** Certificate subject/store values are not filesystem paths.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** The relevant SQL operation is padded `NULLIF(...,'')`. Empty **or ordinary-spaces-only** subject/store fires because SQL Server pads the comparison with spaces. A tab-only value does not become empty under this rule. Do not implement SQLite/.NET raw equality here.
+**Text comparison:** Matrix lines 100-101.
 
-**Tests:** Trigger: enabled certificate binding plus empty subject or store. Non-trigger: both fields non-empty. Boundaries: ordinary-spaces-only subject/store fires; tab-only text does not fire solely as empty.
-
-**Ambiguity:** None.
+**Tests:** Trigger: enabled certificate binding plus empty/spaces-only subject or store. Non-trigger: both substantive. Boundary: tab-only value is not empty.
 
 ## `IIS_IDENTITY_PASSWORD_CONFLICT`
 
@@ -203,22 +216,20 @@ GROUP BY ServerCode, IdentityName
 HAVING COUNT(DISTINCT IisIdentityPassword) > 1;
 ```
 
-**SQLite/credential inputs:** Reproduce `cfg.ManagedInstanceRuntime` from carried `dbo_ManagedInstance(ServerCode, InstanceCode, IisIdentityUserName, IsEnabled)` plus `cfg_IisServerPolicy(ServerCode, PoolIdentityTemplate, IsEnabled)` and `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`. `IisIdentityPassword` comes from request credential `IIS_IDENTITY.<InstanceCode>` for each enabled instance, matching the legacy view's decrypted `IIS_IDENTITY` credential.
+**SQLite/credential inputs:** carried `dbo_ManagedInstance(ServerCode, InstanceCode, IisIdentityUserName, IsEnabled)`, `cfg_IisServerPolicy(ServerCode, PoolIdentityTemplate, IsEnabled)`, `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`, plus request credential `IIS_IDENTITY.<InstanceCode>`.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** Yes, and the legacy scope is the **entire enabled local server**, not only selected participants. Build `IdentityRows` for every enabled local-machine instance. Report **every** identity group with more than one distinct password. If the selected instance participates in that group, attach the issue to the selected instance. If a conflicting group contains only unselected enabled instances, the selected run still fails with a **global machine error** for that identity; do not suppress it. Missing credentials needed for the comparison remain an `ERROR`, not silence.
-
-This reporting rule is source fidelity plus rule 6, not a new owner policy: the original procedure emits the server-wide group regardless of selection, and selection does not exist in this SQL predicate.
+**Rule 6:** Evaluate every enabled local-machine instance. Emit every conflicting identity group. If the selected instance participates, attach the issue to it; if a conflicting group contains only unselected enabled instances, fail the selected run with a global machine error. Missing credentials required for the comparison are `ERROR`, not silence.
 
 **Rule 7:** No filesystem path.
 
-**Text comparison:** Effective identity is explicitly `LOWER(...)` and source collation is CI_AS, so Windows identity grouping is case-insensitive and accent-sensitive. `ServerCode`/`InstanceCode` are catalog codes and are exact in the new system. Legacy `COUNT(DISTINCT IisIdentityPassword)` also follows CI_AS; the predicate specification therefore preserves that legacy equality for deciding whether passwords are distinct unless the owner later records an explicit security override.
+**Text comparison:** Identity grouping follows matrix lines 122/140. Password distinctness deliberately follows the portable secret contract, not legacy database collation: compare exact secret bytes/fingerprints. `Secret` and `secret` are distinct.
 
-**Tests:** Trigger: two enabled local instances share the same identity under CI_AS and have passwords that are distinct under CI_AS. Non-trigger: same identity and same password under CI_AS. Boundaries: (1) selected instance participates in a conflict with an unselected instance -> selected-instance error; (2) two unselected instances conflict while selected instance uses another identity -> global machine error still emitted; (3) identity differs only by case -> same group; (4) passwords differing only by case are not distinct under legacy CI_AS; an accent-only password difference is distinct.
+**Tests:** Trigger: same Windows identity has two distinct exact secret values. Non-trigger: exact same secret bytes. Boundaries: identity case-only variant is the same account; secret case-only variant is a conflict; two unselected instances conflicting still produce a global machine error.
 
-**Ambiguity:** None for legacy predicate/reporting. A future owner security override could intentionally make secret comparison byte-exact, but no such override is assumed here.
+**Ambiguity:** Windows-account accent/trailing-space normalization remains `[PENDING]`; secret equality does not.
 
 ## Implementation stop points
 
-This document specifies only the seven codes listed by the port gap. The newly supplied `cfg.ManagedInstanceRuntime` view removes the previous schema blocker: metadata comes from carried `dbo_ManagedInstance`, while `IIS_IDENTITY` passwords come from the request credential package. Source collation is confirmed CI_AS; catalog codes remain exact by owner decision, and non-code template comparisons preserve CI_AS in this specification.
+The source collation and legacy view are known. Remaining `[PENDING]` dimensions concern Windows-name/account accent or trailing-space normalization where the permanent rule only fixes no-case comparison. Catalog codes are exact by owner decision. Portable secret comparison is explicitly exact-byte/fingerprint comparison because credentials are opaque values, not catalog text.
