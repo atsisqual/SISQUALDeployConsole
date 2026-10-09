@@ -1,0 +1,23 @@
+PASS  unmodified preflight source satisfies the local contract anchors?
+PASS  all 12 local reviews are registered exactly once?
+PASS  catalog review CommandText is never read as executable code?
+PASS  host-style operation id matches the engine request envelope?
+PASS  fully-qualified existing Windows path passes the engine path gate?
+PASS  host-style deadline passes the engine exact UTC parser?
+PASS  MUTATION remove READ_ONLY PREVIEW guard is detected?
+PASS  MUTATION remove missing-IIS-credential error is detected?
+PASS  MUTATION remove one of the 12 review registrations is detected?
+PASS  MUTATION suppress catalog build-time INFO is detected?
+PASS  MUTATION introduce executable text primitive is detected?
+PASS  MUTATION read catalog review CommandText is detected?
+PASS  diagnostic gate source exists before instrumentation: exit 21 }?
+PASS  diagnostic gate source exists before instrumentation: exit 22 }?
+PASS  diagnostic gate source exists before instrumentation: exit 23 }?
+PASS  diagnostic gate source exists before instrumentation: exit 24 }?
+PASS  diagnostic gate source exists before instrumentation: exit 25 }?
+PASS  diagnostic gate source exists before instrumentation: exit 26 }?
+PASS  diagnostic gate source exists before instrumentation: exit 27 }?
+PASS  diagnostic gate source exists before instrumentation: exit 28 }?
+PASS  diagnostic gate source exists before instrumentation: exit 29 }?
+PASS  instrumented valid envelope passes every invalid-request gate?
+SUMMARY: 22 passed, 0 failed?
