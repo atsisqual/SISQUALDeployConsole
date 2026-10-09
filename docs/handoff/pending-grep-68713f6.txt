@@ -1,0 +1,308 @@
+# Raw result of the D9 grep over docs/ of main 68713f6 (file:line:text, text cut at 110 characters, non-ASCII shown as ?).
+# Command: grep -RIn --include='*.md' --fixed-strings '[PENDING]' docs --exclude='work-queue.md'
+# Run by the reviewer on 2026-10-09. 305 occurrences in 66 files.
+docs/architecture/ADR-0007-embedded-readonly-catalog.md:42:[DECIDED 2026-10-07] SQLite managed provider (Phase
+docs/architecture/ADR-0008-engine-host-contract.md:67:[PENDING] The host receives the manifest entries from it
+docs/decisions-log.md:57:| 2026-10-08 | [PENDING] A verified package state held by the bootstrap and read by t
+docs/engines/CONFIG_REPAIR.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] nee
+docs/engines/CONFIG_REPAIR.md:62:Back up each changed file once per run, to the run folder under its path with
+docs/engines/CONFIG_REPAIR.md:82:1. [PENDING] Behaviour for a selector with several matches (`XML_NODES_ALL` i
+docs/engines/CONFIG_REPAIR.md:83:2. [PENDING] Do applications need a restart after a repair? Recommendation: o
+docs/engines/CONFIG_REPAIR.md:84:3. [PENDING] Backup retention and the folder ACL. Recommendation: administrat
+docs/engines/CONFIG_REPAIR.md:85:4. [PENDING] One secret value per rule for all instances is how the data is. 
+docs/engines/CONFIG_REPAIR.md:86:5. [PENDING] Bounded retry for just-written files: keep it (recommended), wit
+docs/engines/DATABASE_CONTENT_SYNC.md:7:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PEND
+docs/engines/DATABASE_CONTENT_SYNC.md:39:Each instance's local SQL Server and databases, with Windows integrat
+docs/engines/DATABASE_CONTENT_SYNC.md:74:1. [PENDING] Convert the 61 filters to structured predicates in a con
+docs/engines/DATABASE_CONTENT_SYNC.md:75:2. [PENDING] Keycloak data through the database or through its admin 
+docs/engines/DATABASE_CONTENT_SYNC.md:76:3. [PENDING] Whether this engine runs at step 30 on a clean server, b
+docs/engines/DATABASE_COPY.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] nee
+docs/engines/DATABASE_COPY.md:56:The safety backup is the undo. [PROPOSED] A run manifest (source, destination
+docs/engines/DATABASE_COPY.md:76:1. [PENDING] **Which source and destination pairs are allowed.** Instances be
+docs/engines/DATABASE_COPY.md:77:2. [PENDING] Moving databases to **another machine** is not done by this engi
+docs/engines/DATABASE_COPY.md:78:3. [PENDING] Cleanup of source and safety backups: retention and who deletes 
+docs/engines/DATABASE_COPY.md:79:4. [PENDING] Whether the settings sync after the copy is mandatory (recommend
+docs/engines/DATABASE_COPY.md:80:5. [PENDING] Whether the destination's Keycloak database should be refreshed 
+docs/engines/DATABASE_COPY.md:81:6. [PENDING] The permissions of the operator on the SQL instances (backup and
+docs/engines/DEPLOYMENT_PREFLIGHT.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDI
+docs/engines/ENVIRONMENT_STATE_PROBE.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PE
+docs/engines/ENVIRONMENT_STATE_PROBE.md:74:1. [PENDING] Persist the state? Recommendation: no database; keep t
+docs/engines/ENVIRONMENT_STATE_PROBE.md:75:2. [PENDING] Probe through the public name (what a user sees, but e
+docs/engines/ENVIRONMENT_STATE_PROBE.md:76:3. [PENDING] One shared HTTP check module for this engine and `PULS
+docs/engines/FULL_DEPLOYMENT.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] n
+docs/engines/FULL_DEPLOYMENT.md:68:The composite is repeatable only if every step is. [PROPOSED] After a failu
+docs/engines/FULL_DEPLOYMENT.md:72:A failed step stops that run; the others are not started. A failed step of 
+docs/engines/FULL_DEPLOYMENT.md:93:1. [PENDING] **Order on a clean server** (the findings of waves 3 to 5): th
+docs/engines/FULL_DEPLOYMENT.md:94:2. [PENDING] `V8_KEYCLOAK_PREREQUISITES` belongs to the preflight phase but
+docs/engines/FULL_DEPLOYMENT.md:95:3. [PENDING] Pulse on a machine without exactly one hub: "not applicable" (
+docs/engines/FULL_DEPLOYMENT.md:96:4. [PENDING] Stop the whole run or only that instance when one instance fai
+docs/engines/FULL_DEPLOYMENT.md:97:5. [PENDING] Whether to require a successful preview before apply (none was
+docs/engines/FULL_DEPLOYMENT.md:98:6. [PENDING] The Keycloak and software update path (Keycloak files, applica
+docs/engines/IIS_RECONCILE.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] nee
+docs/engines/IIS_RECONCILE.md:58:Back up the IIS configuration before the first change (IIS-30). [PENDING] mec
+docs/engines/IIS_RECONCILE.md:75:1. [PENDING] **The certificate store.** ADR-0006 condition 4 says to standard
+docs/engines/IIS_RECONCILE.md:76:2. [PENDING] `DeleteUnmanagedObjects` is 0 in all policies but exists in the 
+docs/engines/IIS_RECONCILE.md:77:3. [PENDING] IIS-29 (central certificate store): no catalog binding definitio
+docs/engines/IIS_RECONCILE.md:78:4. [PENDING] The matrix's open points: IIS-01 mechanism, IIS-20 policy (recom
+docs/engines/IIS_RECONCILE.md:79:5. [PENDING] Where the pool identity account (`PoolIdentityTemplate`) lives a
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PE
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:35:Each instance's SQL Server (local to the machine) and the `sisqualK
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:71:1. [PENDING] **Order on a clean server.** Step 64 runs before the K
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:72:2. [PENDING] Keycloak may keep client data in memory; a direct data
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:73:3. [PENDING] One secret per rule for all instances (also open in th
+docs/engines/KEYCLOAK_CLIENT_SECRETS.md:74:4. [PENDING] Connection encryption defaults for the instance SQL Se
+docs/engines/LINKS_PAGES.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs
+docs/engines/LINKS_PAGES.md:73:1. [PENDING] The generation time (section 7). Recommendation: remove it from th
+docs/engines/LINKS_PAGES.md:74:2. [PENDING] Machines without a policy that have a general page instance (PRESA
+docs/engines/LINKS_PAGES.md:75:3. [PENDING] The assigned user name on the page (task 1c).
+docs/engines/LINKS_PAGES.md:76:4. [PENDING] The 5 obsolete profile-instance rows are not carried; confirm no p
+docs/engines/LINKS_VISIBILITY.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] 
+docs/engines/LINKS_VISIBILITY.md:78:1. [PENDING] Which option (A recommended). A needs a catalog-change functi
+docs/engines/LINKS_VISIBILITY.md:79:2. [PENDING] Whether per-instance visibility changes are needed in V1 at a
+docs/engines/LINKS_VISIBILITY.md:80:3. [PENDING] Who may change visibility and whether a second reader is requ
+docs/engines/MANAGED_ASSETS.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] ne
+docs/engines/MANAGED_ASSETS.md:76:1. [PENDING] An enabled instance without a logo: today the review reports an
+docs/engines/MANAGED_ASSETS.md:77:2. [PENDING] Validate that the bytes are a PNG and within a size limit befor
+docs/engines/MANAGED_ASSETS.md:78:3. [PENDING] ACLs of the written files. The old engine sets none, so they in
+docs/engines/MANAGED_ASSETS.md:79:4. [PENDING] Should the engine also remove logos at destinations when the in
+docs/engines/MODEL_REVIEW.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] need
+docs/engines/MODEL_REVIEW.md:62:1. [PENDING] Keep a separate action, or make it the preview of the preflight. 
+docs/engines/MODEL_REVIEW.md:63:2. [PENDING] Add the catalog status to the report (build time, source, manifes
+docs/engines/PULSE_STATUS.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] need
+docs/engines/PULSE_STATUS.md:34:IIS site on the hub (files only), the scheduler service, HTTPS endpoints of th
+docs/engines/README.md:44:- If the approved specification is insufficient to decide, mark the class `[PENDING]
+docs/engines/STORAGE_SIZE_SCAN.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING]
+docs/engines/STORAGE_SIZE_SCAN.md:78:1. [PENDING] Where measurements are kept. Recommendation: one JSON line p
+docs/engines/STORAGE_SIZE_SCAN.md:79:2. [PENDING] Whether a measurement may exceed the time budget when the ow
+docs/engines/STORAGE_SIZE_SCAN.md:80:3. [PENDING] Gigabytes: decimal or binary for the ceilings. Recommendatio
+docs/engines/V8_KEYCLOAK_CONFIG.md:7:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING
+docs/engines/V8_KEYCLOAK_CONFIG.md:56:2. [PENDING] The case this engine seems to serve, repointing the databas
+docs/engines/V8_KEYCLOAK_CONFIG.md:57:3. [PENDING] Whether the host name rule and the port rules are all expec
+docs/engines/V8_KEYCLOAK_PREREQUISITES.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [
+docs/engines/V8_KEYCLOAK_PREREQUISITES.md:67:1. [PENDING] Where the installers come from and who pins them. Re
+docs/engines/V8_KEYCLOAK_PREREQUISITES.md:68:2. [PENDING] JDK 23 is a short-term release. Confirm the Keycloak
+docs/engines/V8_KEYCLOAK_PREREQUISITES.md:69:3. [PENDING] Copying a library into the system directory: is ther
+docs/engines/V8_KEYCLOAK_SERVICE.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDIN
+docs/engines/V8_KEYCLOAK_SERVICE.md:72:1. [PENDING] Who puts the Keycloak files on the instance? No engine doe
+docs/engines/V8_KEYCLOAK_SERVICE.md:73:2. [PENDING] `FULL_DEPLOYMENT` configures Keycloak (`CONFIG_REPAIR`, st
+docs/engines/V8_KEYCLOAK_SERVICE.md:74:3. [PENDING] Certificate validation exception for self-signed certifica
+docs/engines/V8_KEYCLOAK_SERVICE.md:75:4. [PENDING] Service log rotation (the log has no limit today). Recomme
+docs/engines/WEB_ACCESS.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs 
+docs/engines/WEB_ACCESS.md:72:1. [PENDING] One local user per instance (76) with a reset password on every app
+docs/engines/WEB_ACCESS.md:73:2. [PENDING] Restart of the root pool: only when something changed (recommended)
+docs/engines/WEB_ACCESS.md:74:3. [PENDING] Whether the credential file may use the machine key of the portable
+docs/engines/WINDOWS_SERVICES.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] 
+docs/engines/WINDOWS_SERVICES.md:38:Service Control Manager through CIM (`Win32_Service`), the local account s
+docs/engines/WINDOWS_SERVICES.md:74:1. [PENDING] **Order on a clean server.** `FULL_DEPLOYMENT` runs IIS at st
+docs/engines/WINDOWS_SERVICES.md:75:2. [PENDING] One account for 76 instances: confirm that all instances of a
+docs/engines/WINDOWS_SERVICES.md:76:3. [PENDING] Whether a restart is wanted on every change or only when the 
+docs/engines/WINDOWS_SERVICES.md:77:4. [PENDING] The logon-right helper: keep a native call, or use a tool. Re
+docs/handoff/2026-10-05-documentation-tasks-handover.md:7:Tags: [CONFIRMED] checked; [PROPOSED] recommendation
+docs/handoff/2026-10-05-phase1b-validation-handover.md:14:4. Use `[CONFIRMED]`, `[PROPOSED]`, `[PENDING]`, `[V
+docs/handoff/2026-10-05-phase1b-validation-handover.md:197:1. [PENDING] Decide the final product CNG key name.
+docs/handoff/2026-10-05-phase1b-validation-handover.md:198:2. [PENDING] Define the final CNG key ACL and the W
+docs/handoff/2026-10-05-phase1b-validation-handover.md:199:3. [PENDING] Determine whether the default machine-
+docs/handoff/2026-10-05-phase1b-validation-handover.md:201:5. [PENDING] Reviewer/owner decides whether the suc
+docs/handoff/2026-10-05-phase1b-validation-handover.md:202:6. [PENDING] PR #36 SQLite/provider validation rema
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:15:4. Preserve `[CONFIRMED]`, `[PROPOSED]`, `[P
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:77:The backend spike proves steps 3-9 at HTTP l
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:164:2. [PENDING] Browser-level vanilla-JS spike
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:165:3. [PENDING] Browser regression proving no 
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:166:4. [PENDING] Decide session lifetime and id
+docs/handoff/2026-10-05-phase1c-local-web-security-handover.md:167:5. [PENDING] Separate Phase 1C task for ope
+docs/handoff/2026-10-05-session-handoff.md:7:Tags: [CONFIRMED] verified in this session; [PROPOSED] design pro
+docs/handoff/2026-10-05-session-handoff.md:26:- Tags `[CONFIRMED]`, `[PROPOSED]`, `[PENDING]`, `[V]`.
+docs/handoff/2026-10-05-session-handoff.md:145:- [PENDING] `Microsoft.Data.SqlClient` is approved but not pinn
+docs/handoff/2026-10-05-session-handoff.md:146:- [PENDING] `ManagementDatabaseName` (NOT NULL, meaningless aft
+docs/handoff/2026-10-05-session-handoff.md:147:- [PENDING] `COLLATE NOCASE` on `*Code` columns is on by defaul
+docs/handoff/2026-10-05-session-handoff.md:200:Still [PENDING]: how the 25 client files reach the operator mac
+docs/handoff/2026-10-05-session-handoff.md:220:IMPORTANT correction: the description of PR #21 had claimed tha
+docs/handoff/2026-10-05-session-handoff.md:230:`tools/Seal-Package.ps1` (PR #22): validates the catalog, rehas
+docs/handoff/2026-10-05-session-handoff.md:234:Notes: a file named `a:b.txt` on NTFS is an alternate data stre
+docs/handoff/2026-10-05-session-handoff.md:259:[PENDING] Q3 (how the package reaches the machine; the owner as
+docs/handoff/2026-10-05-session-handoff.md:271:5. Phase 6 engine ports, the largest part: 19 engines in `ops.E
+docs/handoff/2026-10-06-phase1b-sqlite-provider-handover.md:84:[PENDING] The owner/reviewer must either:
+docs/handoff/2026-10-06-phase1b-sqlite-provider-handover.md:141:[PENDING] Owner/reviewer approval to adopt the
+docs/handoff/2026-10-06-phase1b-sqlite-provider-handover.md:143:[PENDING] Native SQLite version policy (3.53.3
+docs/handoff/2026-10-06-phase3-runtime-catalog-handover.md:70:[PENDING] The current head itself has not execut
+docs/handoff/2026-10-06-phase3-runtime-catalog-handover.md:110:[PENDING] Execute current head `ef85a68...` on 
+docs/handoff/2026-10-06-phase3-runtime-catalog-handover.md:112:[PENDING] Integrate this factory after the sign
+docs/handoff/2026-10-06-phase3-runtime-catalog-handover.md:114:[PENDING] Vendor the exact accepted provider pa
+docs/handoff/2026-10-06-phase3-runtime-catalog-handover.md:116:[PENDING] Add semantic manifest/package records
+docs/handoff/2026-10-06-phase3-runtime-logging-handover.md:86:[PENDING] The separate runtime bootstrap work sh
+docs/handoff/2026-10-06-phase3-runtime-logging-handover.md:88:[PENDING] Engine execution should log normalized
+docs/handoff/2026-10-06-phase3-runtime-logging-handover.md:90:[PENDING] Decide later what read-only log inform
+docs/handoff/pending-decisions-register.md:3:**Status:** [PROPOSED] consolidation for the reviewer and the own
+docs/handoff/pending-decisions-register.md:98:**Count:** 55 decisions (S 14, K 13, C 11, E 17) and 10 validati
+docs/migration/analysis-cross-machine-operations.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recomme
+docs/migration/analysis-cross-machine-operations.md:70:3. **Plan and approval state.** Plans, events, approval
+docs/migration/analysis-cross-machine-operations.md:74:## 7. Recommendation and [PENDING] decisions
+docs/migration/analysis-cross-machine-operations.md:82:[PENDING] for the owner, each with a recommendation:
+docs/migration/analysis-pulse.md:6:Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] 
+docs/migration/analysis-pulse.md:61:| Does the profile say something different? | [CONFIRMED] `ScopePolicy` is
+docs/migration/analysis-pulse.md:83:4. **The collector is the engine copied elsewhere.** The task action point
+docs/migration/catalog-conversion-plan.md:9:Tags: [CONFIRMED] read from the source or decided by the owner; [P
+docs/migration/catalog-conversion-plan.md:72:- [PROPOSED] Primary keys are carried over as they are. Foreign k
+docs/migration/catalog-conversion-plan.md:113:| `app.HousekeepingPolicy` | 8 | Global | `app_HousekeepingPolic
+docs/migration/catalog-conversion-plan.md:147:| `cfg.LinksPageAsset` | 45 | Global | `cfg_LinksPageAsset` | `A
+docs/migration/catalog-conversion-plan.md:158:| `cfg.PulseResource` | 3 | Global | `cfg_PulseResource` | `Reso
+docs/migration/catalog-conversion-plan.md:164:| `cfg.WebsiteBrandingAsset` | 3 | Global | `cfg_WebsiteBranding
+docs/migration/catalog-conversion-plan.md:169:| `dbo.ManagedInstance` | 76 | Cut by InstanceCode | `dbo_Manage
+docs/migration/catalog-conversion-plan.md:207:| Views | 6 | `cfg.ManagedInstanceRuntime` decrypts passwords an
+docs/migration/catalog-conversion-plan.md:249:- [CONFIRMED] `cfg.Application.LinksHubInstanceCode` is NULL in 
+docs/migration/catalog-conversion-plan.md:250:- [CONFIRMED] Hub profiles: the 4 `cfg.PulseProfile` rows have t
+docs/migration/catalog-conversion-plan.md:251:- [PENDING] The old database lets one machine's console plan ope
+docs/migration/catalog-conversion-plan.md:290:- [PROPOSED] Rule for the conversion tool: in any row with `IsSe
+docs/migration/catalog-conversion-plan.md:315:[PROPOSED] (format and algorithms [PENDING], decided with the ma
+docs/migration/catalog-conversion-plan.md:333:- The SQL client is a new vendored dependency. [CONFIRMED] appro
+docs/migration/catalog-conversion-plan.md:365:Name [PENDING], for example `tools/Seal-Package.ps1`. Used when 
+docs/migration/catalog-conversion-plan.md:373:Because it uses the issuer key it is built with, or next to, the
+docs/migration/catalog-conversion-plan.md:377:[PROPOSED] A mode or small script of the conversion tool (`tools
+docs/migration/catalog-conversion-plan.md:412:| C-04 | A stale catalog is used without anyone noticing (the ol
+docs/migration/catalog-conversion-plan.md:473:Signing [DECIDED BY DESIGN, approval PENDING]: the tool has no s
+docs/migration/instance-directory-design.md:6:Tags: [CONFIRMED] source or owner decision; [IMPLEMENTED] portab
+docs/migration/obsolete-catalog-metadata-cleanup.md:84:Until that real-snapshot execution is actually performe
+docs/phase0/central-schema-map.md:332:This replaces the previous schema-discovery `[PENDING]` with a narrower 
+docs/phase0/current-system-map.md:15:- **[PENDING]** requires later evidence or a technical spike.
+docs/phase0/current-system-map.md:353:- **Unproven technical-spike items marked:** yes, with `[PENDING]` or `[
+docs/phase0/engine-porting-matrix.md:14:- **[PENDING]** evidence/decision still required.
+docs/phase0/engine-porting-matrix.md:75:**[PENDING]**
+docs/phase0/engine-porting-matrix.md:215:**[PENDING]**
+docs/phase0/engine-porting-matrix.md:401:These are now **[CONFIRMED-CODE]**, not `[PENDING]`.
+docs/phase0/engine-porting-matrix.md:452:- Remaining `[PENDING]` items are now primarily technical/runtime val
+docs/phase0/risk-register.md:13:- **[PENDING]** requires Phase 1 or later proof, or a decision.
+docs/phase0/risk-register.md:34:| R-007 | Private machine key is exportable/copyable with portable folder | Po
+docs/phase0/risk-register.md:41:| R-014 | Process exits while destructive operation is running | Pode is inten
+docs/phase0/risk-register.md:66:| R-039 | Current central action approval/schedule model is accidentally recre
+docs/phase0/risk-register.md:71:| R-044 | Stale catalog: the catalog no longer matches the real servers, or th
+docs/phase0/risk-register.md:72:| R-045 | Loss or compromise of the issuer key (credential tool signing key) |
+docs/phase0/risk-register.md:73:| R-046 | Loss of the vault passphrase or of the vault file | [CONFIRMED] afte
+docs/phase0/risk-register.md:74:| R-047 | Manual edit of the catalog bypasses review: a mistake, an invalid ca
+docs/phase0/risk-register.md:76:| R-049 | Delivery and integrity of the SQL client files (25 files) that go in
+docs/phase1/evidence/README.md:46:- [PENDING] owner/reviewer decision or missing execution;
+docs/phase1/evidence/phase1b-machine-identity-37377769448/README.md:147:[PENDING] Reviewer/owner acceptance is
+docs/phase1/evidence/phase1b-machine-identity/README.md:118:[PENDING] Final product key name and CNG ACL/appli
+docs/phase1/evidence/phase1b-sqlite-provider-37392036026/README.md:64:[PENDING] Before product adoption, decid
+docs/phase1/evidence/phase1b-sqlite-provider-37392036026/README.md:133:[PENDING] Owner/reviewer approval is re
+docs/phase1/evidence/phase1b-sqlite-provider-37392036026/README.md:135:[PENDING] Resolve or explicitly accept 
+docs/phase1/evidence/phase1c-local-web-security-37382909046/README.md:95:[PENDING] The actual vanilla-JS boots
+docs/phase1/evidence/phase1c-local-web-security-37382909046/README.md:97:[PENDING] Session lifetime/idle exten
+docs/phase1/evidence/phase1c-local-web-security-37382909046/README.md:99:[PENDING] Operation idempotency and c
+docs/phase1/evidence/phase1c-local-web-security/README.md:142:[PENDING] Prove real vanilla-JS URL-fragment boo
+docs/phase1/evidence/phase1c-local-web-security/README.md:144:[PENDING] Final session lifetime/idle-extension 
+docs/phase1/evidence/phase1c-local-web-security/README.md:146:[PENDING] Operation idempotency and controlled s
+docs/phase1/evidence/phase1c-operation-coordinator/README.md:164:[PENDING] Each real engine still requires exp
+docs/phase1/iis-reconcile-mwa-equivalence.md:7:[PROPOSED] analysis or design proposal; [PENDING] test or decis
+docs/phase1/iis-reconcile-mwa-equivalence.md:30:Execution order in the script (apply mode): prerequisites; aut
+docs/phase1/iis-reconcile-mwa-equivalence.md:80:"Covered" means exercised by the Phase 1A-2 write spike (22 of
+docs/phase1/iis-reconcile-mwa-equivalence.md:87:- Test missing: [PENDING] query and install of one feature und
+docs/phase1/iis-reconcile-mwa-equivalence.md:94:- Test missing: [PENDING] read of the collection under PowerSh
+docs/phase1/iis-reconcile-mwa-equivalence.md:101:- Test missing: [PENDING] neither is exercised by the 1A-2 sp
+docs/phase1/iis-reconcile-mwa-equivalence.md:111:- Test missing: [PENDING] drift detection for each property o
+docs/phase1/iis-reconcile-mwa-equivalence.md:115:- Test missing: ADR-0006 condition 3 [PENDING][V]: real crede
+docs/phase1/iis-reconcile-mwa-equivalence.md:118:- Test missing: [PENDING] behaviour of `State` while WAS is s
+docs/phase1/iis-reconcile-mwa-equivalence.md:127:- Test missing: [PENDING][V] start right after a WAS restart,
+docs/phase1/iis-reconcile-mwa-equivalence.md:141:Covered by 1A-2 (8 sites). Difference to check: `New-Website`
+docs/phase1/iis-reconcile-mwa-equivalence.md:151:Test missing: [PENDING] names with an apostrophe (the script 
+docs/phase1/iis-reconcile-mwa-equivalence.md:163:- Test missing: ADR-0006 condition 2 [PENDING][V]: locked sec
+docs/phase1/iis-reconcile-mwa-equivalence.md:165:**IIS-16 Site state and start.** `$site.State`, `$site.Start(
+docs/phase1/iis-reconcile-mwa-equivalence.md:178:- Test missing: [PENDING] folder only, vdir only, vdir plus f
+docs/phase1/iis-reconcile-mwa-equivalence.md:191:- Test missing: [PENDING][V] conversion of a plain folder, a 
+docs/phase1/iis-reconcile-mwa-equivalence.md:199:- Test missing: [PENDING] flag change on an existing bound ce
+docs/phase1/iis-reconcile-mwa-equivalence.md:208:- Test missing: [PENDING] wildcard and SAN-only certificates 
+docs/phase1/iis-reconcile-mwa-equivalence.md:212:- Test missing: [PENDING] re-assignment over an existing regi
+docs/phase1/iis-reconcile-mwa-equivalence.md:214:**IIS-28 http.sys registry.** `netsh http show|add|delete ssl
+docs/phase1/iis-reconcile-mwa-equivalence.md:218:- Test missing: [PENDING][V] CCS on a real server with a file
+docs/phase1/iis-reconcile-mwa-equivalence.md:222:**IIS-30 Backup.** `appcmd.exe add backup <name>` then `Copy-
+docs/phase1/iis-reconcile-mwa-equivalence.md:227:**IIS-32 Local pool account and `IIS_IUSRS`.** `Get-LocalUser
+docs/phase1/iis-reconcile-mwa-equivalence.md:237:7. [PENDING] Pool passwords today come from `PoolIdentityPass
+docs/phase1/iis-reconcile-mwa-equivalence.md:240:10. [PENDING][V] Behaviour of `State`, `Start()` and `Stop()`
+docs/phase1/iis-reconcile-mwa-equivalence.md:246:| T-01 ServerManager features under PowerShell 7 (query, inst
+docs/phase1/iis-reconcile-mwa-equivalence.md:247:| T-02 `LocalAccounts` module under PowerShell 7 | IIS-32 | C
+docs/phase1/iis-reconcile-mwa-equivalence.md:248:| T-03 Global module, auto-start providers and application au
+docs/phase1/iis-reconcile-mwa-equivalence.md:249:| T-04 Application folder, vdir and nested conversion cases |
+docs/phase1/iis-reconcile-mwa-equivalence.md:252:| T-07 SNI flag change, shared IP and port, re-assignment ove
+docs/phase1/iis-reconcile-mwa-equivalence.md:254:| T-09 Transient `0x80070425` handling and exception types | 
+docs/phase1/iis-reconcile-mwa-equivalence.md:260:- [PENDING] IIS-01 mechanism: compatibility session, DISM, or
+docs/phase1/iis-reconcile-mwa-equivalence.md:261:- [PENDING] IIS-20 policy: convert automatically, or report a
+docs/phase1/iis-reconcile-mwa-equivalence.md:262:- [PENDING] Whether central certificate store bindings are in
+docs/phase1/iis-reconcile-mwa-equivalence.md:263:- [PENDING] Whether swallowed errors (finding 3) become warni
+docs/phase1/iis-reconcile-mwa-equivalence.md:264:- [PENDING] Backup mechanism: keep `appcmd.exe`, or copy the 
+docs/phase1/iis-reconcile-mwa-equivalence.md:265:- [PENDING] Credential interface for pool passwords (finding 
+docs/phase1/iis-reconcile-mwa-equivalence.md:266:- [PENDING] The four plan procedures (`cfg.GetIis*`) were not
+docs/phase1/phase1a-results.md:5:Vocabulary: [CONFIRMED] demonstrated by a run, [PROPOSED] recommended, not ap
+docs/phase1/phase1a-results.md:58:- [PENDING] An equivalence matrix between every `IIS_RECONCILE` rule (about 
+docs/phase1/phase1a-results.md:59:- [PENDING] Application pool identity with real credentials, SNI and central
+docs/phase1/phase1a-results.md:77:| Equivalence matrix between `IIS_RECONCILE` and MWA | [PENDING] |
+docs/phase1/phase1a-results.md:78:| Write spike on a sandbox with a real topology | [PENDING] [V] |
+docs/phase1/phase1a-results.md:79:| Pool identity with credentials, SNI and central certificate store bindings
+docs/phase1/phase1a-results.md:80:| Batched commits and certificate store name `MY` | [PENDING] (applies when 
+docs/phase1/phase1b-machine-identity-cng.md:8:Tags: [CONFIRMED] repository content or recorded execution is ve
+docs/phase1/phase1b-machine-identity-cng.md:26:[PENDING] DPAPI remains a fallback only if CNG fails a required
+docs/phase1/phase1b-machine-identity-cng.md:139:[PENDING] A later ADR/contract update should close the Phase 1
+docs/phase1/phase1b-machine-identity-cng.md:141:## 10. [PENDING] / [V]
+docs/phase1/phase1b-sqlite-provider.md:8:Tags: [CONFIRMED] demonstrated by repository evidence or an executed 
+docs/phase1/phase1b-sqlite-provider.md:132:[PENDING] Packaging policy must explicitly choose one of these appr
+docs/phase1/phase1b-sqlite-provider.md:162:[PENDING] Owner/reviewer approval of the runtime dependency.
+docs/phase1/phase1c-local-web-security.md:8:Tags: `[CONFIRMED]` verified source or execution evidence; `[PROPO
+docs/phase1/phase1c-local-web-security.md:23:[PENDING] Operation idempotency, active-operation shutdown and ca
+docs/phase1/phase1c-local-web-security.md:80:[PENDING] The real fragment-to-header JavaScript flow is not part
+docs/phase1/phase1c-local-web-security.md:104:[PENDING] Final UI assets may require a reviewed CSP adjustment.
+docs/phase1/phase1c-local-web-security.md:180:2. [PENDING] Prove real browser URL-fragment bootstrap, explicit
+docs/phase1/phase1c-local-web-security.md:181:3. [PENDING] Keep session/CSRF credentials only in JS memory in 
+docs/phase1/phase1c-local-web-security.md:182:4. [PENDING] Decide final session lifetime and idle-extension po
+docs/phase1/phase1c-local-web-security.md:183:5. [PENDING] Implement/test operation idempotency and controlled
+docs/phase1/phase1c-operation-coordinator.md:8:Tags: `[CONFIRMED]` verified source/evidence; `[PROPOSED]` cand
+docs/phase1/phase1c-operation-coordinator.md:75:[PENDING] The exact shared lock names per engine belong in eac
+docs/phase1/phase1c-operation-coordinator.md:161:2. [PENDING] choose the final public REST status/cancel/shutd
+docs/phase1/phase1c-operation-coordinator.md:162:3. [PENDING] define safe cancellation mode per engine;
+docs/phase1/phase1c-operation-coordinator.md:163:4. [PENDING] define shared-resource lock keys per engine;
+docs/phase1/phase1c-operation-coordinator.md:164:5. [PENDING] decide UI behavior when shutdown is blocked;
+docs/phase1/sqlclient-pin.md:6:Tags: [CONFIRMED] measured in the run; [PROPOSED] design proposal; [PENDING] op
+docs/phase1/sqlclient-pin.md:73:- [PENDING] How the 25 files reach the operator machine: (a) a `tools/Initiali
+docs/phase1/sqlclient-pin.md:74:- [PENDING] Connection security defaults: Microsoft.Data.SqlClient 4 and later
+docs/phase1/sqlclient-pin.md:75:- [PENDING] Updating the pin: a new version needs a new run of the workflow an
+docs/phase3/evidence/runtime-logging-37395610886/README.md:78:[PENDING] Integration into the real startup/boot
+docs/phase3/evidence/runtime-logging-37395610886/README.md:80:[PENDING] Integration of normalized engine opera
+docs/phase3/runtime-bootstrap.md:116:[PENDING] The guarded-creation/retention-deferral and final-file hardenin
+docs/phase3/runtime-catalog.md:20:[PENDING] The package-manifest contract currently hashes every shipped provi
+docs/phase3/runtime-catalog.md:111:[PENDING] Wire this factory after the signed-manifest verification gate in 
+docs/phase3/runtime-catalog.md:113:[PENDING] Vendor the exact provider payload into the release package and co
+docs/phase3/runtime-catalog.md:115:[PENDING] Record the two SQLite roles semantically in manifest/package inte
+docs/phase3/runtime-logging-hardening.md:4:**Status:** [CONFIRMED] technical hardening validated on Windows Se
+docs/phase3/runtime-logging-hardening.md:84:[PENDING] fresh Codex security review of the final corrected head.
+docs/phase3/runtime-logging.md:77:[PENDING] Integrate this logger with the real Phase 3 bootstrap/runtime afte
+docs/phase3/runtime-logging.md:79:[PENDING] The future engine adapter must write normalized operation lifecycl
+docs/phase3/runtime-logging.md:81:[PENDING] Final REST/UI exposure of log information is outside this PR.
+docs/roadmap.md:5:Tags: [CONFIRMED] demonstrated, [PROPOSED] recommended, [PENDING] undecided, [V] needs a rea
+docs/roadmap.md:71:- [DECIDED 2026-10-05] Links pages stay as today: the general page on the main instance, an
+docs/security/threat-model.md:6:Tags: [CONFIRMED] implemented and evidenced; [PROPOSED] design not yet impleme
+docs/security/threat-model.md:61:Status of a control: **[CONFIRMED]** implemented and tested in this repositor
+docs/security/threat-model.md:71:| T-API-5 | R | an operation cannot be attributed | one line per operation wi
+docs/security/threat-model.md:77:| T-API-11 | S | the bootstrap token leaks through the browser history or pro
+docs/security/threat-model.md:83:| T-PKG-1 | T | a file of the folder is swapped (script, module, DLL, SQL cli
+docs/security/threat-model.md:84:| T-PKG-2 | T | an older, validly signed folder is put back (rollback) | not 
+docs/security/threat-model.md:86:| T-PKG-4 | E | the tool runs elevated from a folder a standard user can writ
+docs/security/threat-model.md:88:| T-PKG-6 | I | the development flag that skips verification is used in produ
+docs/security/threat-model.md:94:| T-CAT-1 | T | a hand edit adds a wrong value, a destructive path or a secre
+docs/security/threat-model.md:95:| T-CAT-2 | T | the catalog no longer matches the real servers, or a director
+docs/security/threat-model.md:97:| T-CAT-4 | E | SQL or command text stored as data is executed | never execut
+docs/security/threat-model.md:109:| T-MAN-4 | R | who sealed what and when | seal log outside the package [CON
+docs/security/threat-model.md:118:| T-CRD-4 | I | secrets linger in memory, dumps or crash reports | minimise 
+docs/security/threat-model.md:135:| T-VLT-1 | I | the vault file is stolen and attacked offline | passphrase-d
+docs/security/threat-model.md:137:| T-VLT-3 | S | the issuer private key is stolen | storage and custody not d
+docs/security/threat-model.md:138:| T-VLT-4 | D | passphrase, vault or issuer key lost | two encrypted backups
+docs/security/threat-model.md:148:| T-TLS-3 | T | a tampered SQL client or runtime | per-file SHA-256 pins and
+docs/security/threat-model.md:150:| T-TLS-5 | S | a malicious signer script is supplied | the tool never sees 
+docs/security/threat-model.md:157:| T-ENG-2 | T | an engine runs data as code | local versioned modules only; 
+docs/security/threat-model.md:158:| T-ENG-3 | I | secrets in engine results, logs, status files or backups | r
+docs/security/threat-model.md:162:| T-ENG-7 | E | a task or service registered with the instance identity runs
+docs/security/threat-model.md:166:- **Single operator, elevated process.** V1 has no user model beyond the boo
+docs/security/threat-model.md:198:## 8. Gaps [PENDING]
+docs/skills/bootstrap-new-server/SKILL.md:32:[PENDING] Final workflow depends on Phase 1B, the per-machine cat
+docs/skills/config-repair-rule-authoring/SKILL.md:30:- `[PENDING]` and `[V]` items.
+docs/skills/config-repair-rule-authoring/SKILL.md:34:[PENDING] Final workflow depends on the ported CONFIG_REP
+docs/skills/credential-portability/SKILL.md:34:[PENDING] Final workflow depends on Phase 1B machine-key ADR an
+docs/skills/keycloak-client-provisioning/SKILL.md:33:[PENDING] Final workflow depends on credential-package ap
+docs/skills/rename-instance/SKILL.md:33:- `[PENDING]` and `[V]` validation items.
+docs/skills/rename-instance/SKILL.md:37:[PENDING] Final workflow depends on approved engine ports and the appr
