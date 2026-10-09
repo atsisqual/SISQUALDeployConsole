@@ -58,5 +58,6 @@ None in this engine. The same configuration file holds secrets (the administrato
 
 ## Host contract
 
-- Engine class: `MUTATING` (retired; behaviour is absorbed by `CONFIG_REPAIR`).
+- Engine class: `N/A - RETIRED / not an active host target`.
+- `V8_KEYCLOAK_CONFIG` is not ported as an autonomous engine. Its behavior is absorbed by `CONFIG_REPAIR`; engine-host class gates do not apply and no standalone module should be created or invoked.
 - Credential references: none.
