@@ -1,7 +1,7 @@
 # Roadmap to completion
 
-**Date:** 2026-10-05 (updated after ADR-0007)
-**Status:** accepted as the working plan (PR #9 was merged on the owner's instruction); updated by the reviewer for ADR-0007 and the owner decisions of 2026-10-05, which are in `docs/decisions-log.md`.
+**Date:** 2026-10-09
+**Status:** accepted as the working plan (PR #9 was merged on the owner's instruction); updated by the reviewer for ADR-0007 and the owner decisions recorded in `docs/decisions-log.md`. Repository status below is refreshed from `main` and the named pull requests on 2026-10-09.
 Tags: [CONFIRMED] demonstrated, [PROPOSED] recommended, [PENDING] undecided, [V] needs a real server.
 
 ## 1. Where we are
@@ -15,6 +15,15 @@ Integrated in `main`:
 - Conversion chain B1 to B5: `Export-ManagementEngines`, `Convert-ManagementDb` (new-machine and cut modes), a LocalDB integration test, `Test-CatalogConversion` and `Seal-Package`; `Microsoft.Data.SqlClient` 7.1.1 pinned.
 - Credential tooling B6.1 through B6.3b: package crypto/contract implementation, encrypted vault and issuer signing, vault secret model, and the one-time credential importer with DryRun/Import/Verify and LocalDB integration coverage.
 - Phase 3 runtime foundations: bootstrap, read-only runtime catalog factory and hardened text logging.
+- ADR-0008 engine host runtime, integrated by PR #66.
+- D2 action cross-reference decision brief, integrated by PR #70; D3 SQL-action replacement decision brief, integrated by PR #71.
+- The date-dependent logging rollover test correction, integrated by PR #72.
+- `runtime/` source tracking and the `[DECIDED]`/`[CLOSED]` status vocabulary, integrated by PR #73.
+
+In review, not integrated in `main`:
+- PR #67 is a draft `DEPLOYMENT_PREFLIGHT` port. Its current source declares incomplete coverage of 29 of the 59 original review issue codes; the PR discussion records owner decision A for this explicitly incomplete first slice.
+- PR #68 documents engine host contracts.
+- PR #69 carries the engine porting guide and work queue.
 
 The complete portable application is not finished: machine identity and Phase 1C controls are validated but still need final product integration, B6.4 per-machine credential-package issue remains, and the production engine ports plus `FULL_DEPLOYMENT` orchestration remain to be implemented.
 
