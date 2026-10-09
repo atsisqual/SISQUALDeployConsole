@@ -74,3 +74,8 @@ The plan procedures become a plan builder over the catalog and the directory. `c
 2. [PENDING] Machines without a policy that have a general page instance (PRESALES, TENDERS): they stop with "policy missing" as decided; confirm that is intended for the pilot.
 3. [PENDING] The assigned user name on the page (task 1c).
 4. [PENDING] The 5 obsolete profile-instance rows are not carried; confirm no page depends on them (owner decided they are obsolete).
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: none.

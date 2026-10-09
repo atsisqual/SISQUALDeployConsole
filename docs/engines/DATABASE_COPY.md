@@ -79,3 +79,8 @@ The interactive menus become browser choices; the script that calls itself once 
 4. [PENDING] Whether the settings sync after the copy is mandatory (recommend yes unless explicitly skipped and logged).
 5. [PENDING] Whether the destination's Keycloak database should be refreshed or reset after a copy.
 6. [PENDING] The permissions of the operator on the SQL instances (backup and restore, the logon rights) [V].
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: none.

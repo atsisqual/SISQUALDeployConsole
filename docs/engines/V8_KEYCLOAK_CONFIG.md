@@ -55,3 +55,9 @@ None in this engine. The same configuration file holds secrets (the administrato
 1. [DECIDED 2026-10-06, owner Q3] The retirement is confirmed. The catalog change that removes the action, the engine row and step 63 is a separate change (roadmap follow-ups).
 2. [PENDING] The case this engine seems to serve, repointing the database after an environment is moved to another machine. Confirm that `CONFIG_REPAIR` run on the new machine is the intended way (recommended).
 3. [PENDING] Whether the host name rule and the port rules are all expected to stay in sync with the instance data (they are, by the same engine).
+
+## Host contract
+
+- Engine class: `N/A - RETIRED / not an active host target`.
+- `V8_KEYCLOAK_CONFIG` is not ported as an autonomous engine. Its behavior is absorbed by `CONFIG_REPAIR`; engine-host class gates do not apply and no standalone module should be created or invoked.
+- Credential references: none.

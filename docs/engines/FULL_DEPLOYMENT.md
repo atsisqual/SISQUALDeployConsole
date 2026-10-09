@@ -96,3 +96,9 @@ The job queue and its tables (`app.Job`, `JobStep`, `JobLog`, `JobTarget`, claim
 4. [PENDING] Stop the whole run or only that instance when one instance fails. Recommendation: stop the instance, continue the others, and fail at the end with the counts.
 5. [PENDING] Whether to require a successful preview before apply (none was ever run). Recommendation: yes, via the fingerprint.
 6. [PENDING] The Keycloak and software update path (Keycloak files, application files) is not a step: it belongs to the update operation outside the 19 engines (analysis of copy operations, PR #28).
+
+## Host contract
+
+- Engine class: `N/A - COMPOSITE / orchestrator`.
+- `FULL_DEPLOYMENT` is not an engine and has no engine script. Engine-host class gates do not apply to this action; its side effects are the union of the enabled child-engine side effects and are orchestrator semantics.
+- Credential references: none at the orchestrator level. Each child engine declares and receives its own approved credential references; the orchestrator passes only `credentialRef` values and does not consume child credentials itself.

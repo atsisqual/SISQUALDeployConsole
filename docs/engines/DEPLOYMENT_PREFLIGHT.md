@@ -23,7 +23,7 @@ From the machine's catalog (the local machine only; `dbo_ManagedServer` has exac
 | `cfg_ConfigFileRepairPolicy` | `RepairMode` (`PATCH` 7 rows, `REPLACE` 1 row; default `PATCH`) | whether the file itself or only its folder must exist |
 | `cfg_WindowsServiceDefinition` | `ServiceCode`, `ExecutablePathTemplate`, `AccountSource` (1 row) | service executables to check |
 | the review list | one entry per review code (section 3.4) | model reviews |
-| credential package | `credentialRef` of the instance `IIS_IDENTITY` | presence only |
+| credential package | per-instance `IIS_IDENTITY` and `WEB_ACCESS` credential references | presence only for the reviews that require them |
 
 Parameters [PROPOSED]: `InstanceCode` (optional, must be an instance of this machine). No SQL instance or database parameter any more.
 
@@ -87,3 +87,9 @@ Not applicable (read-only).
 4. [DECIDED 2026-10-07] Add a check that the catalog build time is not older than a limit (risk R-044)? Recommendation: report it as `INFO` with the date, no limit.
 
 The owner accepted the recommendation of all four ("Aceito as 8 sugestoes", 2026-10-07, covering this engine and the other wave 1 engine); see `docs/decisions-log.md`.
+
+## Host contract
+
+- Engine class: `READ_ONLY`.
+- Intended credential references: `IIS_IDENTITY.*`, `WEB_ACCESS.*`.
+- Executable host acceptance: in current `main`, none; the contract is empty and the host accepts exact references only. After PR #67 is integrated, `IIS_IDENTITY.*` and `WEB_ACCESS.*` are declared for `DEPLOYMENT_PREFLIGHT` and accepted by family for active catalog instances. PR #67 adds the `TYPE.*` family form only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, limited to active catalog instances.

@@ -74,3 +74,8 @@ The template expansion ran in the central database through a SQL function: it mo
 1. [PENDING] Convert the 61 filters to structured predicates in a conversion step (a change to the conversion tool and the catalog contract, in a separate PR). Recommendation: yes, before this engine is ported.
 2. [PENDING] Keycloak data through the database or through its admin interface. Recommendation: test [V]; keep the database path only if a running Keycloak picks up the change.
 3. [PENDING] Whether this engine runs at step 30 on a clean server, before the Keycloak and View databases are populated. Recommendation: skip missing databases with a warning and run the engine again after the service steps.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `MOBILE_APP_TOKEN.*`.
