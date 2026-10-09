@@ -23,7 +23,7 @@ From the machine's catalog (the local machine only; `dbo_ManagedServer` has exac
 | `cfg_ConfigFileRepairPolicy` | `RepairMode` (`PATCH` 7 rows, `REPLACE` 1 row; default `PATCH`) | whether the file itself or only its folder must exist |
 | `cfg_WindowsServiceDefinition` | `ServiceCode`, `ExecutablePathTemplate`, `AccountSource` (1 row) | service executables to check |
 | the review list | one entry per review code (section 3.4) | model reviews |
-| credential package | per-instance `IIS_IDENTITY` and `WEB_ACCESS` credential references | presence only for the reviews that require them |
+| credential package | per-instance `IIS_IDENTITY.<InstanceCode>` and `WEB_ACCESS.<InstanceCode>` credential references | presence for reviews that require them; the original Web Access review emits `WEB_ACCESS_PASSWORD_MISSING` as an `ERROR` when the per-instance password is empty, and the owner decided on 2026-10-07 to port all twelve reviews with all codes |
 
 Parameters [PROPOSED]: `InstanceCode` (optional, must be an instance of this machine). No SQL instance or database parameter any more.
 
@@ -64,7 +64,7 @@ Not applicable (read-only).
 
 ## 10. Secret risks
 
-- The old plan rows carried the service account password in clear to the engine. [PROPOSED] The port never reads the value into the result: it only asks whether the credential entry exists (and, if the owner wants, whether it decrypts to a non-empty value in memory, discarding it).
+- The old plans carried the service-account password in clear to the engine, and the original Web Access review also checked the per-instance Web Access password: `WEB_ACCESS_PASSWORD_MISSING` is an `ERROR` when that password is empty. The owner decision of 2026-10-07 requires all twelve reviews with all their issue codes. [PROPOSED] The port therefore consumes both `IIS_IDENTITY.<InstanceCode>` and `WEB_ACCESS.<InstanceCode>` from the credential package, but never writes either secret into the result; it only tests the presence/decryption conditions required by the corresponding review and discards the value in memory.
 - No path, user name or issue text may include a secret; reviews report names and codes only.
 - A marker-secret test checks the log and the result.
 
