@@ -1,0 +1,57 @@
+PASS  direct valid PREVIEW JSON retains every required request field?
+PASS  direct valid PREVIEW JSON stays below the request limit?
+PASS  synthetic catalog path is fully qualified and exists before child launch?
+PASS  direct valid PREVIEW envelope is accepted by the engine?
+PASS  direct valid PREVIEW keeps stdout and stderr silent?
+PASS  READ_ONLY preflight succeeds on the complete synthetic model?
+PASS  READ_ONLY preflight returns PREVIEW mode?
+PASS  PREVIEW leaves managed filesystem byte-identical?
+PASS  catalog build time is INFO only?
+PASS  normalized result arithmetic is valid?
+PASS  the result says the coverage of the original reviews is incomplete (INFO)?
+PASS  an optional file that is not deployed is not reported as missing (cfg_ConfigFile.IsRequired)?
+PASS  an unassigned QR asset is INFO, as in the original review?
+PASS  an instance whose customer has its QR_CHANNEL_<CustomerCode> asset has no missing-asset issue?
+PASS  canary A absent from normalized result?
+PASS  canary B absent from normalized result?
+PASS  missing IIS identity credential is an ERROR?
+PASS  a shared account whose other instances have no credential in the request cannot be verified (ERROR for the selected instance)?
+PASS  a missing Web Access credential is WEB_ACCESS_PASSWORD_MISSING, an ERROR for that instance (as in the original review)?
+PASS  missing credential run still does not alter managed filesystem?
+PASS  READ_ONLY engine cannot be invoked as APPLY through host?
+PASS  the same Windows account with the same password on two instances is not a conflict (INST1 stays the one good instance)?
+PASS  Windows account names are compared without case, and a run for one instance finds the shared account with another password on an instance that is not selected (svc-user selected, SVC-USER not)?
+PASS  a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)?
+PASS  failedTargets counts every instance with an error, not just one?
+PASS  a machine without a Pulse profile reports not applicable (INFO) and does not fail on Pulse?
+PASS  a catalog without a table the engine reads is CATALOG_TABLE_MISSING, never an empty table or not applicable?
+PASS  a run that ends on a missing table marks every selected instance failed, not one (all-instances run)?
+PASS  a cancelled all-instances run marks every selected instance failed (the catalog is open, so the targets are known)?
+DIAG  path-escape: errorMessage=PREFLIGHT_ERRORS; exitCode=1; summary={"targetCount":1,"succeededTargets":0,"failedTargets":1,"warningCount":0,"errorCount":1}?
+DIAG  path-escape:   ERROR REQUIRED_PATH_OUTSIDE_ROOT:3 [INST1] [APPLICATION_TREE]?
+PASS  a required file whose path leaves the application folder is REQUIRED_PATH_OUTSIDE_ROOT, even if a file exists there?
+PASS  a host name that leaves the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT, even if the folder exists?
+PASS  a run for one instance finds a service name that another enabled instance also gets (DUPLICATE_SERVICE_NAME on the selected instance)?
+PASS  a run for one instance finds a Web Access user that another enabled instance also has, without case (web-user and WEB-USER)?
+PASS  every selected instance that gets the same service name fails, not only the first (all-instances run)?
+PASS  every selected instance that has the same Web Access user fails, not only the first (all-instances run)?
+PASS  both instances that share an account with different passwords fail, not only the first (all-instances run)?
+PASS  unique service names and Web Access users give no duplicate in the all-instances run?
+PASS  an instance folder that is a junction pointing outside the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT?
+PASS  a service executable path that leaves the instance folder is SERVICE_EXECUTABLE_OUTSIDE_ROOT, even if a file exists there?
+DIAG  junction: errorMessage=PREFLIGHT_ERRORS; exitCode=1; summary={"targetCount":1,"succeededTargets":0,"failedTargets":1,"warningCount":0,"errorCount":1}?
+DIAG  junction:   ERROR REQUIRED_PATH_OUTSIDE_ROOT:5 [INST1] [APPLICATION_TREE]?
+PASS  a required file reached through a junction that points outside the application folder is REQUIRED_PATH_OUTSIDE_ROOT?
+DIAG  access-denied: errorMessage=PREFLIGHT_ERRORS; exitCode=1; summary={"targetCount":1,"succeededTargets":0,"failedTargets":1,"warningCount":0,"errorCount":1}?
+DIAG  access-denied:   ERROR PATH_ACCESS_DENIED:4 [INST1] [APPLICATION_TREE]?
+PASS  a file in a folder that cannot be read is PATH_ACCESS_DENIED for that item and the run still completes?
+DIAG  tampered-module: errorMessage=PREFLIGHT_ERRORS; exitCode=1; summary={"targetCount":1,"succeededTargets":0,"failedTargets":1,"warningCount":0,"errorCount":1}?
+DIAG  tampered-module:   ERROR PREFLIGHT_INTERNAL_ERROR [] [PREFLIGHT]?
+PASS  a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)?
+PASS  invalid request exits 2?
+PASS  invalid request emits no stdout/stderr data?
+PASS  direct APPLY request is invalid for READ_ONLY engine and exits 2?
+PASS  direct APPLY rejection is silent?
+PASS  canary values are absent from package and managed files?
+INFO cleanup deferred: Access to the path 'C:\Users\runneradmin\AppData\Local\Temp\sisqual-preflight-8ec18b885f784764bf883ddb407f883f\package\runtime\sqlite-provider\e_sqlite3.dll' is denied.?
+SUMMARY: 47 passed, 0 failed?
