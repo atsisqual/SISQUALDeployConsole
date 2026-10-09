@@ -2,21 +2,19 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewExtendedApplicationModel`
-**Verification base:** `main@a32141cbec584d349f1591a4aa5a801137463278`
+**Verification base:** `main@28d4dc52c2d02bdce2add2101a306845041690b3`
 
 ## Evidence boundary
 
-The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt` at the verification base. Its header says the five procedures were extracted verbatim from the reviewer-verified Management Console snapshot. The requested port set and rules 6 and 7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69 head `80240090ba5dc37e13a64d359f9378a1c033fcc4`.
+The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt` at the verification base. Its header records the exact T-SQL comparison semantics and includes the verbatim `cfg.IisServiceAutoStartProviderCatalog` view used by this procedure. The requested port set and rules 6 and 7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69.
 
-SQLite table/column names below were checked against `tests/Fixtures/carried-schema.json` at the verification base. SQL Server names map by replacing the schema separator with `_`, for example `cfg.IisApplicationDefinition` -> `cfg_IisApplicationDefinition`.
+SQLite table/column names below were checked against `tests/Fixtures/carried-schema.json`. SQL Server table names map to SQLite by replacing the schema separator with `_`, for example `cfg.IisApplicationDefinition` -> `cfg_IisApplicationDefinition`.
 
-The requested `tests/Fixtures/preflight-legacy-codes.json` is not present in `main@a32141cbec584d349f1591a4aa5a801137463278`. For this text-only specification, every severity is therefore checked against the literal severity in the extracted T-SQL and against the 10-code table in `preflight-port-gap.md`. No severity is inferred from a code name.
+`docs/decisions-log.md` records the 2026-10-05 owner decision that every source database uses `Latin1_General_CI_AS`, that stored text is not case-normalized, and that catalog codes in the new system compare exactly. Therefore the legacy source behavior is known: case-insensitive and accent-sensitive. For non-code provider names, enum/template values, and Windows-name accent handling, the portable behavior is still `[PENDING]` unless an owner rule below fixes it. Catalog codes are exact by decision even where this intentionally differs from legacy CI_AS equality.
 
-Two legacy read surfaces are relevant to this review. `cfg.IisServiceAutoStartProviderCatalog` is a SQL Server view and has no `cfg_IisServiceAutoStartProviderCatalog` table in `carried-schema.json`; the conversion plan says this pure-read view must be recreated as a portable query. This document does not invent that query.
+The T-SQL header also fixes these boundaries: equality pads ordinary spaces; `NULLIF(x,'')` therefore treats a spaces-only value as empty; `LEN` ignores trailing ordinary spaces; one-argument `LTRIM`/`RTRIM` remove ordinary spaces only, not tabs or other whitespace.
 
-### Text comparison policy
-
-The extracted procedure has no `COLLATE`, so legacy text equality/grouping follows the source database default collation, which the snapshot does not state. The port-gap rule says Windows names are compared without case and catalog codes exactly. This document applies those explicit portable rules where the field is clearly in one of those classes. Trim/empty and length tests are collation-independent. For provider names/templates and IIS enum/template text, where neither rule fixes case semantics, the case-only boundary is marked `[PENDING]` rather than guessed.
+The legacy `cfg.IisServiceAutoStartProviderCatalog` is not a carried table, but it is no longer a blocker. Its exact view definition derives from carried `dbo.ManagedServer`, `dbo.ManagedInstance`, `cfg.IisApplicationAutoStartDefinition`, and `cfg.IisServiceAutoStartProviderDefinition`. It exposes `ProviderCode = P.ProviderName` and derives `ProviderName` by replacing `{INSTANCE_CODE}`, `{HOST_NAME}`, and `{HOST_NAME_SAFE}` in `ProviderNameTemplate`, with `{HOST_NAME_SAFE}` equal to `HostName` with `.` replaced by `_`.
 
 ## `AUTO_START_PROVIDER_TYPE_MISSING`
 
@@ -28,17 +26,17 @@ WHERE IsEnabled = 1
   AND NULLIF(LTRIM(RTRIM(ProviderType)), N'') IS NULL;
 ```
 
-**SQLite inputs:** `cfg_IisServiceAutoStartProviderDefinition(ProviderName, ProviderType, IsEnabled)`. All three columns exist in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisServiceAutoStartProviderDefinition(ProviderName, ProviderType, IsEnabled)`. All exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. The definition is global. If this review is run for one selected instance, report the issue on that selected instance because the invalid global definition affects its deployment; do not manufacture a conflict with another instance.
+**Rule 6:** No cross-instance comparison. This is a global definition check; report it for the selected instance whose deployment consumes the definition.
 
-**Rule 7:** No catalog filesystem path is used.
+**Rule 7:** No catalog filesystem path.
 
-**Text comparison:** `LTRIM`/`RTRIM` plus empty-string detection is collation-independent. Keep that behavior exactly.
+**Text comparison:** The source trigger is ordinary-spaces trim plus SQL padded `NULLIF`. No collation decision is needed for this emptiness predicate.
 
-**Tests:** Trigger: enabled row with `ProviderType = '   '`. Non-trigger: enabled row with a nonblank `ProviderType`. Boundary: disabled row with blank `ProviderType` must not fire.
+**Tests:** Trigger: enabled row with `ProviderType = '   '`. Non-trigger: enabled nonblank value. Boundary: enabled `ProviderType` containing only a tab does **not** trigger; disabled spaces-only row does not trigger.
 
 **Ambiguity:** None in the predicate.
 
@@ -52,17 +50,17 @@ WHERE IsEnabled = 1
   AND NULLIF(LTRIM(RTRIM(ProviderNameTemplate)), N'') IS NULL;
 ```
 
-**SQLite inputs:** `cfg_IisServiceAutoStartProviderDefinition(ProviderName, ProviderNameTemplate, IsEnabled)`. All exist in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisServiceAutoStartProviderDefinition(ProviderName, ProviderNameTemplate, IsEnabled)`. All exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. Report on the selected instance when the global definition is relevant to that preflight run.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** No catalog filesystem path is used.
+**Rule 7:** No catalog filesystem path.
 
-**Text comparison:** Trim/empty only; collation-independent.
+**Text comparison:** Ordinary spaces only. `.Trim()`-style all-whitespace semantics would be wrong.
 
-**Tests:** Trigger: enabled row with whitespace-only `ProviderNameTemplate`. Non-trigger: enabled row with a nonblank template. Boundary: disabled blank-template row must not fire.
+**Tests:** Trigger: enabled row whose template contains only ordinary spaces. Non-trigger: enabled nonblank template. Boundary: a template containing only a tab does **not** trigger; a disabled spaces-only row does not trigger.
 
 **Ambiguity:** None in the predicate.
 
@@ -80,19 +78,19 @@ WHERE D.IsEnabled = 1
   AND P.ProviderName IS NULL;
 ```
 
-**SQLite inputs:** `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartProvider, ServiceAutoStartEnabled, IsEnabled)` and `cfg_IisServiceAutoStartProviderDefinition(ProviderName, IsEnabled)`. These columns exist in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartProvider, ServiceAutoStartEnabled, IsEnabled)` and `cfg_IisServiceAutoStartProviderDefinition(ProviderName, IsEnabled)`. All exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; both inputs are definitions. Report the failure on the selected instance whose preflight consumes the definition.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** No catalog filesystem path is used.
+**Rule 7:** No catalog filesystem path.
 
-**Text comparison:** `P.ProviderName = D.ServiceAutoStartProvider` depends on the unknown legacy collation. These are provider identifiers but are not named as catalog `...Code` fields and rule 7 does not explicitly classify them. **[PENDING]** Decide whether a case-only difference is a match in the portable port. Until decided, do not silently choose ordinal or case-insensitive comparison.
+**Text comparison:** Legacy `ProviderName = ServiceAutoStartProvider` is confirmed CI_AS: case-insensitive, accent-sensitive. These are provider identifiers, not catalog `...Code` fields. **[PENDING]** Decide whether the portable port preserves CI_AS semantics for this non-code identifier or deliberately uses exact comparison. That decision covers both case-only and accent-only differences.
 
-**Tests:** Trigger: enabled auto-start definition points to a missing or disabled provider. Non-trigger: matching enabled provider exists. Boundary: provider differs only by case; expected result is **[PENDING]** the comparison decision above.
+**Tests:** Trigger: enabled auto-start definition references a missing/disabled provider. Non-trigger: matching enabled provider. Boundaries: case-only provider difference and accent-only provider difference, expected result `[PENDING]` the portable comparison decision.
 
-**Ambiguity:** The case-only provider-name behavior is unresolved; predicate shape is otherwise exact.
+**Ambiguity:** Portable comparison policy for this non-code provider identifier only.
 
 ## `AUTO_START_PROVIDER_EXPANDED_NAME_INVALID`
 
@@ -108,19 +106,19 @@ WHERE (@MachineName IS NULL OR C.MachineName = @MachineName)
   );
 ```
 
-**SQLite inputs:** There is no carried `cfg_IisServiceAutoStartProviderCatalog` table. The legacy view exposes at least `InstanceCode`, `MachineName`, and `ProviderName` to this statement. The portable query that reproduces those fields is not present in `carried-schema.json`; its base-table derivation must be supplied before implementation.
+**SQLite inputs:** Recreate the legacy view from carried `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`, `dbo_ManagedInstance(InstanceCode, ServerCode, HostName, IsEnabled)`, `cfg_IisApplicationAutoStartDefinition(ServiceAutoStartProvider, ServiceAutoStartEnabled, IsEnabled)`, and `cfg_IisServiceAutoStartProviderDefinition(ProviderName, ProviderNameTemplate, ProviderType, IsRequired, SortOrder, IsEnabled)`. Derived `ProviderName` uses the exact nested `REPLACE` sequence in the view.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** This is a per-row validation, not a comparison between instances. A one-instance preflight must report it on the selected instance only when the selected instance owns the derived provider row; invalid rows belonging only to other instances must not be relabeled as the selected instance's issue.
+**Rule 6:** Per-row validation, not a conflict check. Report on the selected instance only when its derived provider row is invalid.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** Machine name is a Windows name, so portable filtering is case-insensitive. Blank and `LEN > 80` are collation-independent.
+**Text comparison:** The machine filter was legacy CI_AS. Portable Windows-name comparison is case-insensitive by rule 7; **[PENDING]** accent behavior for Windows names is not otherwise specified. Empty-name behavior uses ordinary-space `LTRIM/RTRIM` plus padded `NULLIF`. `LEN` ignores trailing ordinary spaces.
 
-**Tests:** Trigger: selected instance has a derived provider name that is blank or 81 characters. Non-trigger: selected instance has a nonblank provider name of at most 80 characters. Boundary: exactly 80 characters must not fire.
+**Tests:** Trigger: selected instance derives an empty/spaces-only provider name or a name whose SQL `LEN` is 81. Non-trigger: nonblank name with SQL `LEN <= 80`. Boundaries: tab-only provider name does not count as empty; 80 non-space characters plus one trailing space does **not** trigger because SQL `LEN` is 80; 81 non-space characters does trigger.
 
-**Ambiguity:** **[PENDING]** What exact portable query recreates `cfg.IisServiceAutoStartProviderCatalog` and its `InstanceCode`, `MachineName`, and `ProviderName` values? Stop implementation of this code until that derivation is defined from carried tables.
+**Ambiguity:** Only the portable accent rule for Windows `MachineName` remains `[PENDING]`.
 
 ## `AUTO_START_PROVIDER_EXPANDED_NAME_DUPLICATE`
 
@@ -133,19 +131,19 @@ GROUP BY C.ProviderName
 HAVING COUNT(*) > 1;
 ```
 
-**SQLite inputs:** No carried `cfg_IisServiceAutoStartProviderCatalog` table exists. Required derived fields are `InstanceCode`, `MachineName`, and `ProviderName`; their portable derivation is **[PENDING]**.
+**SQLite inputs:** Same exact carried-table recreation of `cfg.IisServiceAutoStartProviderCatalog` described above. `ProviderCode = P.ProviderName`; `ProviderName` is the expanded template result.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** Yes. The duplicate set must be calculated across provider rows for **every enabled instance of the local machine**, not only selected instances. Report the issue on the selected instance only if one of that instance's derived provider rows has a name in a duplicate group. A conflict with an unselected enabled instance must still fire for the selected participant.
+**Rule 6:** Yes. Build provider rows for every enabled instance of the local machine. Report the duplicate on the selected instance when it participates; a conflict with an unselected enabled instance must still fire for the selected participant.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** Machine name is case-insensitive. `GROUP BY C.ProviderName` inherits the unknown legacy collation. Provider-name case semantics are not fixed by the portable rules. **[PENDING]** Decide whether `ProviderA` and `providera` are one duplicate group.
+**Text comparison:** Legacy grouping is confirmed CI_AS: `ProviderA` and `providera` are one group; accent-distinct names remain different. **[PENDING]** Decide whether portable grouping preserves CI_AS for this non-code provider name or deliberately uses exact comparison. Test both case-only and accent-only boundaries.
 
-**Tests:** Trigger: selected instance and another enabled unselected instance derive the same provider name. Non-trigger: all derived provider names on the machine are unique. Boundary: names differ only by case; expected result is **[PENDING]** the provider-name comparison decision.
+**Tests:** Trigger: selected and unselected enabled instances derive the same provider name. Non-trigger: all machine provider names unique. Boundaries: case-only names group under legacy CI_AS; accent-only names do not. Portable expected behavior remains `[PENDING]` until the non-code provider-name policy is approved.
 
-**Ambiguity:** Two blockers: the exact portable recreation of the legacy view, and case-only provider-name grouping.
+**Ambiguity:** Portable non-code provider-name collation policy only.
 
 ## `AUTO_START_POOL_NOT_ALWAYS_RUNNING`
 
@@ -160,19 +158,19 @@ WHERE D.IsEnabled = 1
   AND A.PoolStartMode <> 'AlwaysRunning';
 ```
 
-**SQLite inputs:** `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartEnabled, IsEnabled)` and `cfg_IisApplicationDefinition(IisApplicationCode, PoolStartMode)`. All exist in `carried-schema.json`.
+**SQLite inputs:** `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartEnabled, IsEnabled)` and `cfg_IisApplicationDefinition(IisApplicationCode, PoolStartMode)`. All exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. This is a definition-to-definition join. Report on the selected instance whose IIS deployment consumes the invalid definition.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `IisApplicationCode` is a catalog code and is compared exactly in the portable engine. `PoolStartMode <> 'AlwaysRunning'` is not a catalog-code comparison and the legacy collation is unknown. **[PENDING]** Decide whether a case-only value such as `alwaysrunning` is accepted or rejected; do not infer that from the code name.
+**Text comparison:** `IisApplicationCode` is exact in the new system by owner decision. Legacy `PoolStartMode <> 'AlwaysRunning'` is CI_AS. `alwaysrunning` therefore did not trigger in the source; accent sensitivity is also defined by CI_AS even though it is not meaningful for this literal. **[PENDING]** Decide whether the portable non-code enum preserves CI_AS or uses exact comparison.
 
-**Tests:** Trigger: enabled auto-start application whose joined definition has `PoolStartMode = 'OnDemand'`. Non-trigger: exact `AlwaysRunning`. Boundary: `alwaysrunning`; expected result is **[PENDING]** the enum-case decision.
+**Tests:** Trigger: `PoolStartMode = 'OnDemand'`. Non-trigger: `AlwaysRunning`. Boundary: `alwaysrunning` is a legacy non-trigger; portable expected result is `[PENDING]` the enum comparison decision.
 
-**Ambiguity:** Case-only `PoolStartMode` behavior only.
+**Ambiguity:** Portable enum comparison policy only.
 
 ## `AUTO_START_APPLICATION_PROVIDER_NOT_EXPANDED`
 
@@ -194,19 +192,19 @@ WHERE I.IsEnabled = 1
   AND C.ProviderName IS NULL;
 ```
 
-**SQLite inputs:** `dbo_ManagedInstance(InstanceCode, ServerCode, IsEnabled)`, `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`, and `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartProvider, ServiceAutoStartEnabled, IsEnabled)` exist. `cfg_IisServiceAutoStartProviderCatalog` is not carried; the required derived `InstanceCode`, `ProviderCode`, and `ProviderName` mapping is **[PENDING]**.
+**SQLite inputs:** `dbo_ManagedInstance(InstanceCode, ServerCode, HostName, IsEnabled)`, `dbo_ManagedServer(ServerCode, MachineName, IsEnabled)`, `cfg_IisApplicationAutoStartDefinition(IisApplicationCode, ServiceAutoStartProvider, ServiceAutoStartEnabled, IsEnabled)`, and the exact derived view from those tables plus `cfg_IisServiceAutoStartProviderDefinition`. In the view, `ProviderCode = P.ProviderName` and `ProviderName` is the expanded template.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** The legacy query enumerates all enabled instances on the machine, but it does not compare one instance's value to another. In a selected-instance preflight, evaluate the selected instance's provider expansion; do not report another instance's missing expansion as the selected instance's issue. The full enabled set may still be needed to recreate the legacy view, but that does not turn this predicate into a conflict check.
+**Rule 6:** The source enumerates all enabled instances on the machine but does not compare one instance value against another. In a selected-instance run, evaluate/report the selected instance row. The full enabled set is still used to reproduce the legacy view.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `ServerCode` and `InstanceCode` are catalog codes and remain exact; `MachineName` is case-insensitive. `C.ProviderCode = D.ServiceAutoStartProvider` cannot have its portable case semantics fixed until the missing view derivation defines what `ProviderCode` represents. **[PENDING]** for a case-only provider identifier.
+**Text comparison:** `ServerCode`, `InstanceCode`, and application codes are exact in the new system. Legacy provider-code equality is CI_AS because `ProviderCode` is the legacy view's `P.ProviderName`; **[PENDING]** decide whether that non-code provider identifier remains CI_AS or becomes exact. Machine-name case is insensitive by rule 7; accent behavior remains `[PENDING]`.
 
-**Tests:** Trigger: selected enabled instance plus enabled auto-start definition has no matching derived provider row. Non-trigger: the derived row exists and has non-null `ProviderName`. Boundary: only another enabled instance lacks the row; selected instance must not receive that issue.
+**Tests:** Trigger: selected enabled instance plus enabled auto-start definition has no matching derived provider row. Non-trigger: matching row has non-null `ProviderName`. Boundaries: only another instance missing the row must not relabel the selected instance; case-only and accent-only provider identifier differences exercise the `[PENDING]` provider comparison policy.
 
-**Ambiguity:** Exact recreation of `cfg.IisServiceAutoStartProviderCatalog`, including `ProviderCode`, is required before implementation.
+**Ambiguity:** Portable non-code provider and Windows-name accent policies only; the view derivation is now confirmed.
 
 ## `AUTO_START_ASSEMBLY_LOADABILITY`
 
@@ -217,19 +215,19 @@ FROM cfg.IisServiceAutoStartProviderCatalog AS C
 WHERE (@MachineName IS NULL OR C.MachineName = @MachineName);
 ```
 
-**SQLite inputs:** No carried `cfg_IisServiceAutoStartProviderCatalog` table exists. The statement needs derived `InstanceCode`, `MachineName`, and `ProviderName`.
+**SQLite inputs:** Exact recreation of the legacy view from the four carried tables above, using derived `InstanceCode`, `MachineName`, and `ProviderName`.
 
 **Original severity:** `WARNING`.
 
-**Rule 6:** No cross-instance comparison. The source emits one warning for every provider-catalog row in scope. In a selected-instance preflight, report the warning only for the selected instance's derived row(s); do not reinterpret the warning as an actual assembly probe.
+**Rule 6:** No cross-instance comparison. The source emits one warning for every provider-catalog row in scope; in a selected-instance run, report only selected-instance rows and do not invent an assembly probe.
 
-**Rule 7:** No filesystem path is used by this predicate.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** Only the machine filter compares text. `MachineName` is a Windows name and is case-insensitive in the portable behavior.
+**Text comparison:** Only `MachineName` is compared. Case-insensitive Windows-name behavior is fixed by rule 7; Windows-name accent behavior remains `[PENDING]`.
 
-**Tests:** Trigger: selected instance has one derived provider-catalog row; the warning fires. Non-trigger: selected instance has no derived provider row. Boundary: provider rows exist only for another enabled instance; selected instance must not receive their warning.
+**Tests:** Trigger: selected instance has one derived provider row. Non-trigger: selected instance has none. Boundary: only another enabled instance has provider rows; selected instance gets no warning.
 
-**Ambiguity:** **[PENDING]** The portable derivation of the legacy provider-catalog view is required. The T-SQL itself performs no loadability test; a port must not invent one under this issue code.
+**Ambiguity:** Windows-name accent behavior only. The T-SQL performs no loadability probe.
 
 ## `PROCESS_HANGFIRE_RULE_MISSING`
 
@@ -245,19 +243,19 @@ IF NOT EXISTS
 )
 ```
 
-**SQLite inputs:** `cfg_ConfigRule(RuleCode, IsEnabled)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_ConfigRule(RuleCode, IsEnabled)`. Both exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison; this is a global rule-definition check. Report on the selected instance because its Process configuration depends on the rule.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `RuleCode` is a catalog code. Portable behavior keeps exact code comparison as required by rule 7, even though an unknown case-insensitive legacy collation might have matched a case-only variant.
+**Text comparison:** Legacy equality was CI_AS, but `RuleCode` is a catalog code. The 2026-10-05 owner decision makes codes exact in the new system, including case and accents. This is decided, not `[PENDING]`.
 
-**Tests:** Trigger: no exact enabled `WFM_PROCESS_USE_HANGFIRE` row. Non-trigger: exact enabled row exists. Boundary: enabled `wfm_process_use_hangfire` only; portable exact-code behavior must still fire.
+**Tests:** Trigger: exact enabled `WFM_PROCESS_USE_HANGFIRE` absent. Non-trigger: exact enabled row exists. Boundary: case-only variant does not satisfy the portable exact-code check even though legacy CI_AS would have matched it.
 
-**Ambiguity:** None after applying the explicit exact-code rule.
+**Ambiguity:** None after the recorded exact-code decision.
 
 ## `PROCESS_OWIN_RULE_MISSING`
 
@@ -273,20 +271,20 @@ IF NOT EXISTS
 )
 ```
 
-**SQLite inputs:** `cfg_ConfigRule(RuleCode, IsEnabled)`, confirmed in `carried-schema.json`.
+**SQLite inputs:** `cfg_ConfigRule(RuleCode, IsEnabled)`. Both exist.
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** No cross-instance comparison. Report on the selected instance whose Process configuration depends on the rule.
+**Rule 6:** No cross-instance comparison.
 
-**Rule 7:** No filesystem path is used.
+**Rule 7:** No filesystem path.
 
-**Text comparison:** `RuleCode` is a catalog code and remains exact per rule 7.
+**Text comparison:** Same recorded exact-code decision as above. Portable comparison is exact for case and accents.
 
-**Tests:** Trigger: exact enabled rule is absent or disabled. Non-trigger: exact enabled `WFM_PROCESS_OWIN_AUTOSTART` exists. Boundary: case-only variant must not satisfy the portable exact-code check.
+**Tests:** Trigger: exact enabled rule absent/disabled. Non-trigger: exact enabled row exists. Boundary: case-only variant must not satisfy the portable exact-code check.
 
-**Ambiguity:** None after applying the explicit exact-code rule.
+**Ambiguity:** None after the recorded exact-code decision.
 
 ## Implementation stop points
 
-This document specifies the ten requested legacy predicates; it does not authorize code. Before any later engine PR implements the four codes that depend on `cfg.IisServiceAutoStartProviderCatalog`, the project needs the exact portable query that recreates that legacy view. Provider-name and `PoolStartMode` case-only semantics also remain `[PENDING]` where called out above. No predicate may be reconstructed from the issue-code name.
+The legacy provider-catalog view is now fully specified by the evidence file and is not a blocker. Remaining `[PENDING]` items are portable comparison-policy decisions only: non-code provider identifiers/names, `PoolStartMode`, and accent behavior for Windows machine names. Source behavior for each is known as Latin1_General_CI_AS; catalog codes are already decided exact. No predicate may be reconstructed from the issue-code name.
