@@ -1,0 +1,6 @@
+PASS  canonical plan fingerprint ignores map insertion order?
+PASS  mutation: empty array fingerprint differs from null?
+PASS  mutation: singleton array fingerprint differs from scalar?
+PASS  mutation: array order changes the fingerprint?
+PASS  aggregate fingerprint is deterministic by ordered child identity?
+EngineHost fingerprint tests: 5 passed / 0 failed?
