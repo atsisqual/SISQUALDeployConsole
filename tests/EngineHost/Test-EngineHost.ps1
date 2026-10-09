@@ -320,6 +320,7 @@ try {
     Check 'a kind wildcard does not admit another kind' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'WEB_ACCESS.INST9' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*') } 'SECRET_NOT_DECLARED')
     Check 'a kind wildcard does not admit a code with the wrong shape' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.inst9' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*') } 'SECRET_NOT_DECLARED')
     Check 'a bare wildcard in the contract is invalid' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.INST9' = 'canary-wildcard-value-7f3a' } -Declared @('*') } 'ENGINE_SECRET_CONTRACT_INVALID')
+    Check 'RULE_SECRET has no wildcard: rule secrets are exact references (their code is a rule code, not an instance)' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'RULE_SECRET.KEYCLOAK_BOOTSTRAP' = 'canary-wildcard-value-7f3a' } -Declared @('RULE_SECRET.*') } 'ENGINE_SECRET_CONTRACT_INVALID')
     Check 'a wildcard on an unknown kind in the contract is invalid' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.INST9' = 'canary-wildcard-value-7f3a' } -Declared @('ANYTHING.*') } 'ENGINE_SECRET_CONTRACT_INVALID')
     # A kind wildcard admits only the credential of an instance that exists and is enabled in the verified catalog.
     Set-SisqualTestCatalogInstances -Session $kindCtx.CatalogSession -Instances @{ GOOD = 1; PT01 = 1; PT02 = 0 }

@@ -446,16 +446,17 @@ function Test-SisqualEngineResultSafe {
 }
 
 function Test-SisqualSecretReferenceShape {
-    # A reference in the contract is either exact (KIND.CODE and similar) or a kind wildcard KIND.* for references that exist per instance or rule.
+    # A reference in the contract is either exact (KIND.CODE and similar) or a kind wildcard KIND.* for the kinds whose code is an instance code (IIS_IDENTITY, WEB_ACCESS,
+    # MOBILE_APP_TOKEN). RULE_SECRET has a rule code, not an instance code, so it is always an exact reference.
     param([string]$Reference)
-    return ($Reference -cmatch '^[A-Z0-9_.:-]{1,120}$' -or $Reference -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN|RULE_SECRET)\.\*$')
+    return ($Reference -cmatch '^[A-Z0-9_.:-]{1,120}$' -or $Reference -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN)\.\*$')
 }
 
 function Test-SisqualSecretReferenceDeclared {
     param([string]$Reference, [string[]]$Declared)
     foreach ($item in $Declared) {
         if ([string]::Equals($Reference, $item, [StringComparison]::Ordinal)) { return $true }
-        if ($item -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN|RULE_SECRET)\.\*$') {
+        if ($item -cmatch '^(IIS_IDENTITY|WEB_ACCESS|MOBILE_APP_TOKEN)\.\*$') {
             $prefix = $item.Substring(0, $item.Length - 1)
             if ($Reference.StartsWith($prefix, [StringComparison]::Ordinal) -and $Reference.Substring($prefix.Length) -cmatch '^[A-Z0-9_-]{1,60}$') { return $true }
         }
