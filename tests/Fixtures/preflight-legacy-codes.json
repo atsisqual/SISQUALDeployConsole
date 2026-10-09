@@ -1,0 +1,343 @@
+{
+  "note": "Issue codes and severities of the original model review procedures (cfg.Review*, ops.ReviewOperationsFramework), read from ManagementSync.sql of atsisqual/SISQUALManagementConsole (2026-10-05). Shape only, no data. Used by tests/EngineHost/Test-DeploymentPreflightSchema.ps1 to measure how much of the original reviews the DEPLOYMENT_PREFLIGHT engine implements and to check that the severities match. Corrected on 2026-10-09: the first extraction only knew the form 'CODE','SEVERITY'; seven codes written as IssueCode = CONVERT(varchar(n),'CODE') were missing. Severity is null where the original procedure states none (cfg.ReviewApplicationCatalog, cfg.ReviewManagedAssets): the check of severities skips those. The procedures cfg.ReviewManagementModel and cfg.ReviewRepairModel report findings without an issue code in the original (free text), so they have no entry here.",
+  "ownerSeverityOverrides": [
+    {
+      "code": "IIS_IDENTITY_PASSWORD_PENDING",
+      "legacy": "WARNING",
+      "engine": "ERROR",
+      "decision": "2026-10-07 wave 1: a missing credential package is an ERROR"
+    }
+  ],
+  "codes": [
+    {
+      "code": "CONFIG_FILE_WITHOUT_APPLICATION",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "DUPLICATE_IIS_PATH",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "IIS_APPLICATION_NOT_IN_CATALOG",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "NON_IIS_COMPONENT_HAS_IIS_PATH",
+      "review": "cfg.ReviewApplicationCatalog",
+      "severity": null
+    },
+    {
+      "code": "AUTO_START_APPLICATION_PROVIDER_NOT_EXPANDED",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_ASSEMBLY_LOADABILITY",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "WARNING"
+    },
+    {
+      "code": "AUTO_START_POOL_NOT_ALWAYS_RUNNING",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_PROVIDER_EXPANDED_NAME_DUPLICATE",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_PROVIDER_EXPANDED_NAME_INVALID",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_PROVIDER_NOT_ENABLED",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_PROVIDER_TEMPLATE_MISSING",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "AUTO_START_PROVIDER_TYPE_MISSING",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PROCESS_HANGFIRE_RULE_MISSING",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PROCESS_OWIN_RULE_MISSING",
+      "review": "cfg.ReviewExtendedApplicationModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "CERTIFICATE_POLICY_MISSING",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "DUPLICATE_POOL_TEMPLATE",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "IIS_IDENTITY_PASSWORD_CONFLICT",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "IIS_IDENTITY_PASSWORD_PENDING",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "WARNING"
+    },
+    {
+      "code": "PRIMARY_BINDING_COUNT",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "ROOT_DEFINITION_COUNT",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "ROOT_POOL_NAME_INVALID",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVER_NOT_REGISTERED",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVER_POLICY_MISSING",
+      "review": "cfg.ReviewIisDeploymentModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_BRAND_LOGO_MISSING",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_INDEX_TEMPLATE_MISSING",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_PAGE_POLICY_MISSING",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_WEB_CONFIG_TEMPLATE_MISSING",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "MANAGED_INSTANCE_NOT_ACTIONABLE",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "MANAGED_SERVER_NOT_FOUND",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "NO_PUBLISHED_LINK_APPLICATIONS",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PUBLISHED_APPLICATION_URL_UNRESOLVED",
+      "review": "cfg.ReviewLinksPageModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_PRESENTATION_HASH_MISMATCH",
+      "review": "cfg.ReviewLinksPagePresentationResources",
+      "severity": "ERROR"
+    },
+    {
+      "code": "LINKS_PRESENTATION_RESOURCE_MISSING",
+      "review": "cfg.ReviewLinksPagePresentationResources",
+      "severity": "ERROR"
+    },
+    {
+      "code": "QR_ASSET_MISSING",
+      "review": "cfg.ReviewLinksPageQrCodes",
+      "severity": "WARNING"
+    },
+    {
+      "code": "QR_ASSET_UNASSIGNED",
+      "review": "cfg.ReviewLinksPageQrCodes",
+      "severity": "INFO"
+    },
+    {
+      "code": "QR_CONTENT_HASH_MISMATCH",
+      "review": "cfg.ReviewLinksPageQrCodes",
+      "severity": "ERROR"
+    },
+    {
+      "code": "ENABLED_INSTANCE_LOGO_MISSING",
+      "review": "cfg.ReviewManagedAssets",
+      "severity": null
+    },
+    {
+      "code": "PULSE_HTTP_APPLICATION_MISSING",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PULSE_HUB_NOT_FOUND",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PULSE_LOGO_MISSING",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PULSE_PAGE_TEMPLATE_MISSING",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PULSE_RESOURCE_HASH_MISMATCH",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "PULSE_TASK_CREDENTIAL_MISSING",
+      "review": "cfg.ReviewPulseModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_BACKEND_URL_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_DUPLICATE_LOCAL_USER",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_PASSWORD_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_POLICY_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_PUBLIC_URL_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_TEMPLATE_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEB_ACCESS_USERNAME_MISSING",
+      "review": "cfg.ReviewWebAccessModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEBSITE_BRANDING_ASSET_HASH_MISMATCH",
+      "review": "cfg.ReviewWebsiteBrandingModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEBSITE_BRANDING_PROFILE_MISSING",
+      "review": "cfg.ReviewWebsiteBrandingModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEBSITE_BRANDING_REQUIRED_ASSET_MISSING",
+      "review": "cfg.ReviewWebsiteBrandingModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEBSITE_BRANDING_ROOT_MISSING",
+      "review": "cfg.ReviewWebsiteBrandingModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WEBSITE_BRANDING_TITLE_INVALID",
+      "review": "cfg.ReviewWebsiteBrandingModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "DUPLICATE_SERVICE_NAME",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVICE_ACCOUNT_PASSWORD_MISSING",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVICE_ACCOUNT_USERNAME_MISSING",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVICE_IDENTITY_PASSWORD_CONFLICT",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "SERVICE_NAME_TOO_LONG",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "WINDOWS_SERVICE_DEFINITION_MISSING",
+      "review": "cfg.ReviewWindowsServiceModel",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_ACTION_WITHOUT_ENGINE",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_ENGINE_HASH_MISMATCH",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_LOCAL_SERVER_MISSING",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_PROFILE_MISSING",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    },
+    {
+      "code": "OPS_REQUIRED_OBJECT_MISSING",
+      "review": "ops.ReviewOperationsFramework",
+      "severity": "ERROR"
+    }
+  ]
+}

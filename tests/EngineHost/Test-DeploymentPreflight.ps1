@@ -1,0 +1,482 @@
+#requires -Version 7.0
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][string]$ProviderRoot
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+$engineSource = Join-Path $repo 'engines\Invoke-DeploymentPreflight.ps1'
+$hostModule = Join-Path $repo 'runtime\Sisqual.Runtime.EngineHost.psm1'
+$catalogModuleSource = Join-Path $repo 'runtime\Sisqual.Runtime.Catalog.psm1'
+$catalogCoreSource = Join-Path $repo 'runtime\Sisqual.Runtime.Catalog.Core.ps1'
+. (Join-Path $PSScriptRoot 'TestCatalogSessionStub.ps1')
+
+$script:Passed = 0
+$script:Failed = 0
+function Check([string]$Name,[bool]$Condition) {
+    if ($Condition) { $script:Passed++; Write-Host ('PASS  ' + $Name) }
+    else { $script:Failed++; Write-Host ('FAIL  ' + $Name) }
+}
+function Throws([string]$Name,[scriptblock]$Action,[string]$Expected='') {
+    $ok = $false
+    $caught = ''
+    try { & $Action } catch { $caught = [string]$_.Exception.Message; $ok = [string]::IsNullOrEmpty($Expected) -or $caught -like ('*' + $Expected + '*') }
+    if (-not $ok) { Write-Host ('DIAG  {0}: exception={1}' -f $Name,$caught) }
+    Check $Name $ok
+}
+function Write-SafeResultDiagnostic {
+    param([Parameter(Mandatory)][string]$Label,[AllowNull()][object]$Result)
+    if ($null -eq $Result) {
+        Write-Host ('DIAG  {0}: errorMessage=<no-result>; exitCode=-1; summary={{}}' -f $Label)
+        return
+    }
+    $errorMessage = ''
+    if ($null -ne $Result.PSObject.Properties['errorMessage']) { $errorMessage = [string]$Result.errorMessage }
+    $exitCode = -1
+    if ($null -ne $Result.PSObject.Properties['exitCode']) { $exitCode = [int]$Result.exitCode }
+    $summary = '{}'
+    if ($null -ne $Result.PSObject.Properties['summary'] -and $null -ne $Result.summary) { $summary = $Result.summary | ConvertTo-Json -Compress -Depth 5 }
+    Write-Host ('DIAG  {0}: errorMessage={1}; exitCode={2}; summary={3}' -f $Label,$errorMessage,$exitCode,$summary)
+    # Issue codes and instance codes only: the engine never puts a secret, a path or a user name in a row.
+    if ($null -ne $Result.PSObject.Properties['results']) {
+        foreach ($row in @($Result.results | Where-Object { $null -ne $_ -and [string]$_.status -ceq 'ERROR' } | Select-Object -First 8)) {
+            Write-Host ('DIAG  {0}:   ERROR {1} [{2}] [{3}]' -f $Label,[string]$row.object,[string]$row.instanceCode,[string]$row.operationType)
+        }
+    }
+}
+function FileEntry([string]$PackageRoot,[string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    return [pscustomobject]@{
+        path = [IO.Path]::GetRelativePath($PackageRoot,$item.FullName).Replace('\','/')
+        sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        size = [long]$item.Length
+    }
+}
+function PackageEntries([string]$PackageRoot) {
+    return @(Get-ChildItem -LiteralPath $PackageRoot -Recurse -File | Where-Object Name -ne 'package-manifest.json' | ForEach-Object { FileEntry $PackageRoot $_.FullName } | Sort-Object path)
+}
+function TreeFingerprint([string]$Root) {
+    $rows = foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File | Sort-Object FullName)) {
+        $relative = [IO.Path]::GetRelativePath($Root,$file.FullName).Replace('\','/')
+        $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        '{0}|{1}|{2}' -f $relative,$file.Length,$hash
+    }
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($rows -join "`n"))
+    return ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))).ToLowerInvariant()
+}
+function Invoke-NonQuery($Connection,[string]$Sql) {
+    $command = $Connection.CreateCommand()
+    try { $command.CommandText = $Sql; [void]$command.ExecuteNonQuery() } finally { $command.Dispose() }
+}
+function SqlLiteral([string]$Value) { return "'" + $Value.Replace("'","''") + "'" }
+function Invoke-DirectPreflightRequest {
+    param([Parameter(Mandatory)][string]$Pwsh,[Parameter(Mandatory)][string]$EnginePath,[Parameter(Mandatory)][object]$Request)
+    $info = [Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = $Pwsh
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    foreach ($arg in @('-NoLogo','-NoProfile','-NonInteractive','-File',$EnginePath)) { [void]$info.ArgumentList.Add($arg) }
+    $process = [Diagnostics.Process]::new(); $process.StartInfo = $info
+    try {
+        [void]$process.Start()
+        $process.StandardInput.Write(($Request | ConvertTo-Json -Compress -Depth 30))
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode=$process.ExitCode; Stdout=$stdout; Stderr=$stderr }
+    }
+    finally { $process.Dispose() }
+}
+
+function New-ScenarioPackage {
+    # A copy of the package whose catalog has extra rows, with its own manifest and catalog session.
+    param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][string]$ExtraSql)
+    $dest = Join-Path $temp ('scenario-' + $Name)
+    Copy-Item -LiteralPath $package -Destination $dest -Recurse -Force
+    $copyCatalog = Join-Path $dest 'catalog/catalog-TESTSERVER.db'
+    $copyBuilder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
+    $copyBuilder.DataSource = $copyCatalog
+    $copyBuilder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadWrite
+    $copyBuilder.Pooling = $false
+    $copyConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new($copyBuilder.ConnectionString)
+    $copyConnection.Open()
+    try { Invoke-NonQuery $copyConnection $ExtraSql } finally { $copyConnection.Dispose() }
+    $copyEntries = PackageEntries $dest
+    $copyManifest = [ordered]@{
+        contractVersion='0.1-proposed'; packageId='00000000-0000-4000-8000-000000000112'; productVersion='0.0.0-test'; builtAt='2026-10-08T06:02:00Z'
+        catalog=[ordered]@{ serverCode='TESTSERVER'; file='catalog/catalog-TESTSERVER.db'; schemaVersion=2; origin='conversion-tool'; originReference='synthetic' }
+        files=@($copyEntries)
+        signature=[ordered]@{ issuerKeyId=('0'*64); algorithm='ECDSA-P256-SHA256'; value='AAAAAAAAAAAAAAAAAAAAAAAA' }
+    }
+    [IO.File]::WriteAllText((Join-Path $dest 'package-manifest.json'),($copyManifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
+    $copySession = New-SisqualTestCatalogSession -CatalogPath $copyCatalog -MachineName $machine
+    Set-SisqualTestCatalogRows -Session $copySession -Engine $engine -Action $action
+    return [pscustomobject]@{ Package = $dest; Catalog = $copyCatalog; Entries = $copyEntries; Session = $copySession }
+}
+
+$temp = Join-Path $env:TEMP ('sisqual-preflight-' + [guid]::NewGuid().ToString('N'))
+try {
+    $package = Join-Path $temp 'package'
+    $engines = Join-Path $package 'engines'
+    $runtime = Join-Path $package 'runtime'
+    $provider = Join-Path $runtime 'sqlite-provider'
+    $catalogDir = Join-Path $package 'catalog'
+    $servicesRoot = Join-Path $temp 'managed-services'
+    $instanceRoot = Join-Path $servicesRoot 'preflight-host.invalid'
+    $appRoot = Join-Path $instanceRoot 'App'
+    New-Item -ItemType Directory -Path $engines,$runtime,$catalogDir,$servicesRoot,$instanceRoot,$appRoot -Force | Out-Null
+    Copy-Item -LiteralPath $ProviderRoot -Destination $provider -Recurse -Force
+    Copy-Item -LiteralPath $catalogModuleSource -Destination (Join-Path $runtime 'Sisqual.Runtime.Catalog.psm1')
+    Copy-Item -LiteralPath $catalogCoreSource -Destination (Join-Path $runtime 'Sisqual.Runtime.Catalog.Core.ps1')
+    Copy-Item -LiteralPath $engineSource -Destination (Join-Path $engines 'Invoke-DeploymentPreflight.ps1')
+    [IO.File]::WriteAllText((Join-Path $appRoot 'config.json'),'{}',[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $instanceRoot 'service.exe'),'fixture',[Text.UTF8Encoding]::new($false))
+
+    Import-Module (Join-Path $runtime 'Sisqual.Runtime.Catalog.psm1') -Force
+    $providerEntries = @(Get-ChildItem -LiteralPath $provider -Recurse -File | ForEach-Object { FileEntry $package $_.FullName })
+    [void](Initialize-SisqualRuntimeSqliteProvider -PackageRoot $package -ProviderRoot 'runtime\sqlite-provider' -VerifiedFiles $providerEntries)
+
+    $catalog = Join-Path $catalogDir 'catalog-TESTSERVER.db'
+    $builder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
+    $builder.DataSource = $catalog
+    $builder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadWriteCreate
+    $builder.Pooling = $false
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new($builder.ConnectionString)
+    $connection.Open()
+    try {
+        $machine = [Environment]::MachineName
+        $svc = $servicesRoot.Replace("'","''")
+        $sql = @"
+CREATE TABLE catalog_meta(meta_id INTEGER PRIMARY KEY,schema_version INTEGER,server_code TEXT,source_kind TEXT,source_reference TEXT,built_at_utc TEXT,cut_rule_version INTEGER);
+INSERT INTO catalog_meta VALUES(1,2,'TESTSERVER','conversion-tool','synthetic','2026-10-08T06:00:00Z',3);
+CREATE TABLE dbo_ManagedServer(ServerCode TEXT,MachineName TEXT,ServicesRoot TEXT,ConfigBackupRoot TEXT,IsEnabled INTEGER);
+INSERT INTO dbo_ManagedServer VALUES('TESTSERVER',$(SqlLiteral $machine),'$svc','$svc',1);
+CREATE TABLE dbo_ManagedInstance(InstanceCode TEXT,ServerCode TEXT,HostName TEXT,CountryCode TEXT,CustomerCode TEXT,IisIdentityUserName TEXT,WebAccessUserName TEXT,CustomerLogo BLOB,CustomerLogoSha256 TEXT,IsEnabled INTEGER);
+INSERT INTO dbo_ManagedInstance VALUES('INST1','TESTSERVER','preflight-host.invalid','PT','C1','svc-user','web-user',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST2','TESTSERVER','preflight-host2.invalid','PT','C2','svc-user2','web-user2',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST3','TESTSERVER','preflight-host3.invalid','ES','C3','svc-user3','web-user3',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST4','TESTSERVER','preflight-host4.invalid','BR','C4','svc-user4','web-user4',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST5','TESTSERVER','preflight-host5.invalid','PT','c1','SVC-USER','web-user5',X'0102','01',1);
+CREATE TABLE cfg_Application(ApplicationCode TEXT,PhysicalPathTemplate TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_Application VALUES('APP1','{INSTANCE_ROOT}\\App',1);
+CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,FileFormat TEXT,IsRequired INTEGER,IsEnabled INTEGER);
+INSERT INTO cfg_ConfigFile VALUES(1,'APP1','config.json','JSON',1,1);
+INSERT INTO cfg_ConfigFile VALUES(2,'APP1','optional.json','JSON',0,1);
+CREATE TABLE cfg_ConfigRule(RuleID INTEGER,RuleCode TEXT,FileID INTEGER,IsEnabled INTEGER);
+INSERT INTO cfg_ConfigRule VALUES(1,'APP_CONFIG',1,1);
+INSERT INTO cfg_ConfigRule VALUES(2,'APP_OPTIONAL',2,1);
+CREATE TABLE cfg_ConfigFileRepairPolicy(FileID INTEGER,RepairMode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_ConfigFileRepairPolicy VALUES(1,'PATCH',1);
+CREATE TABLE cfg_WindowsServiceDefinition(ServiceCode TEXT,ServiceNameTemplate TEXT,ExecutablePathTemplate TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_WindowsServiceDefinition VALUES('WFM_MOBILE_APP','svc-{INSTANCE_CODE}','{INSTANCE_ROOT}\\service.exe',1);
+CREATE TABLE cfg_ManagedAssetDestination(AssetType TEXT,DestinationCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_ManagedAssetDestination VALUES('CUSTOMER_LOGO','APP',1);
+CREATE TABLE cfg_IisServerPolicy(ServerCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_IisServerPolicy VALUES('TESTSERVER',1);
+CREATE TABLE cfg_IisApplicationDefinition(IisApplicationCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_IisApplicationDefinition VALUES('APP1',1);
+CREATE TABLE cfg_WebAccessPolicy(ServerCode TEXT,BackendBaseUrlTemplate TEXT,PublicLaunchBaseUrlTemplate TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_WebAccessPolicy VALUES('TESTSERVER','https://127.0.0.1:8443','https://{HOST_NAME}/',1);
+CREATE TABLE cfg_WebAccessTemplate(TemplateCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_WebAccessTemplate VALUES('ROOT_PAGE',1);
+CREATE TABLE cfg_LinksPagePolicy(ServerCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_LinksPagePolicy VALUES('TESTSERVER',1);
+CREATE TABLE cfg_LinksProfile(ProfileCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_LinksProfile VALUES('DEFAULT',1);
+CREATE TABLE cfg_LinksProfileInstance(ProfileCode TEXT,InstanceCode TEXT);
+INSERT INTO cfg_LinksProfileInstance VALUES('DEFAULT','INST1');
+CREATE TABLE cfg_LinksPageTemplate(TemplateCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_LinksPageTemplate VALUES('INDEX',1);
+CREATE TABLE cfg_LinksPagePresentationResource(ResourceCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_LinksPagePresentationResource VALUES('TEXT',1);
+CREATE TABLE cfg_LinksPageAsset(AssetCode TEXT,FileName TEXT,MimeType TEXT,Content BLOB,ContentSha256 TEXT,IsEnabled INTEGER,ModifiedAt TEXT);
+INSERT INTO cfg_LinksPageAsset VALUES('QR_CHANNEL_C1','qr.png','image/png',X'01','',1,NULL);
+INSERT INTO cfg_LinksPageAsset VALUES('QR_CHANNEL_ZZ','zz.png','image/png',X'02','',1,NULL);
+CREATE TABLE cfg_PulseProfile(HubInstanceCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_PulseProfile VALUES('INST1',1);
+CREATE TABLE cfg_PulseHttpPolicy(ApplicationCode TEXT,IsEnabled INTEGER);
+INSERT INTO cfg_PulseHttpPolicy VALUES('APP1',1);
+CREATE TABLE cfg_PulseResource(ResourceCode TEXT,ContentSha256 TEXT,TextContent TEXT,BinaryContent BLOB,IsEnabled INTEGER);
+INSERT INTO cfg_PulseResource VALUES('PULSE_INDEX_HTML','',NULL,X'01',1),('PULSE_LOGO','',NULL,X'02',1);
+CREATE TABLE ops_Engine(EngineCode TEXT,SourceFileName TEXT,IsEnabled INTEGER);
+INSERT INTO ops_Engine VALUES('DEPLOYMENT_PREFLIGHT','Invoke-DeploymentPreflight.ps1',1);
+CREATE TABLE ops_Action(ActionCode TEXT,ActionType TEXT,EngineCode TEXT,IsEnabled INTEGER);
+INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLIGHT',1);
+"@
+        Invoke-NonQuery $connection $sql
+    }
+    finally { $connection.Dispose() }
+    Remove-Module Sisqual.Runtime.Catalog -Force -ErrorAction SilentlyContinue
+
+    # The package carries what the host verifies before it starts the engine: the launcher and the approved secret contract.
+    New-Item -ItemType Directory -Path (Join-Path $package 'runtime') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $hostModule) 'Invoke-SisqualEngineLauncher.ps1') -Destination (Join-Path $package 'runtime/Invoke-SisqualEngineLauncher.ps1')
+    New-Item -ItemType Directory -Path (Join-Path $package 'contracts') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $package 'contracts/engine-secret-references.json'),'{"contractVersion":"0.1-proposed","engines":{"DEPLOYMENT_PREFLIGHT":["IIS_IDENTITY.*","WEB_ACCESS.*"]}}',[Text.UTF8Encoding]::new($false))
+    $entries = PackageEntries $package
+    $manifest = [ordered]@{
+        contractVersion='0.1-proposed'; packageId='00000000-0000-4000-8000-000000000111'; productVersion='0.0.0-test'; builtAt='2026-10-08T06:01:00Z'
+        catalog=[ordered]@{ serverCode='TESTSERVER'; file='catalog/catalog-TESTSERVER.db'; schemaVersion=2; origin='conversion-tool'; originReference='synthetic' }
+        files=@($entries)
+        signature=[ordered]@{ issuerKeyId=('0'*64); algorithm='ECDSA-P256-SHA256'; value='AAAAAAAAAAAAAAAAAAAAAAAA' }
+    }
+    [IO.File]::WriteAllText((Join-Path $package 'package-manifest.json'),($manifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
+
+    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!'; 'IIS_IDENTITY.INST5'='canary-preflight-secret-A!' }
+    $directResultPath = Join-Path $temp 'direct-preview-result.json'
+    $directRequest = [ordered]@{
+        contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000301'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
+        catalogPath=$catalog; planFingerprint=$null; deadlineUtc=[DateTime]::UtcNow.AddMinutes(15).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        cancelPath=(Join-Path $temp 'direct-preview.cancel'); resultPath=$directResultPath; secrets=$secrets
+    }
+    $directJson = $directRequest | ConvertTo-Json -Compress -Depth 30
+    $directRoundTrip = $directJson | ConvertFrom-Json -Depth 30
+    $requiredEnvelope = @('contractVersion','operationId','engineCode','mode','catalogPath','deadlineUtc','cancelPath','resultPath','secrets')
+    Check 'direct valid PREVIEW JSON retains every required request field' (@($requiredEnvelope | Where-Object { $null -eq $directRoundTrip.PSObject.Properties[$_] }).Count -eq 0)
+    Check 'direct valid PREVIEW JSON stays below the request limit' ([Text.UTF8Encoding]::new($false).GetByteCount($directJson) -lt 1MB)
+    Check 'synthetic catalog path is fully qualified and exists before child launch' ([IO.Path]::IsPathFullyQualified($catalog) -and (Test-Path -LiteralPath $catalog -PathType Leaf))
+    $direct = Invoke-DirectPreflightRequest -Pwsh (Get-Process -Id $PID).Path -EnginePath (Join-Path $engines 'Invoke-DeploymentPreflight.ps1') -Request $directRequest
+    Check 'direct valid PREVIEW envelope is accepted by the engine' ($direct.ExitCode -ne 2)
+    Check 'direct valid PREVIEW keeps stdout and stderr silent' ([string]::IsNullOrEmpty($direct.Stdout) -and [string]::IsNullOrEmpty($direct.Stderr))
+    $directResult = $null
+    if (Test-Path -LiteralPath $directResultPath -PathType Leaf) { try { $directResult = [IO.File]::ReadAllText($directResultPath) | ConvertFrom-Json -Depth 30 } catch {} }
+    if ($direct.ExitCode -eq 2 -or $null -eq $directResult) { Write-Host ('DIAG  direct-preview: processExitCode={0}; resultPresent={1}' -f $direct.ExitCode,($null -ne $directResult)) }
+
+    Initialize-SisqualEngineHostCatalogStub
+    Import-Module $hostModule -Force
+    $session = New-SisqualTestCatalogSession -CatalogPath $catalog -MachineName ([Environment]::MachineName)
+    $engine = [pscustomobject]@{ EngineCode='DEPLOYMENT_PREFLIGHT'; EngineVersion='1.0.0'; SourceFileName='Invoke-DeploymentPreflight.ps1'; IsEnabled=1; MinimumPowerShell='7.0'; RequiresAdministrator=0 }
+    $action = [pscustomobject]@{ ActionCode='DEPLOYMENT_PREFLIGHT'; ActionType='ENGINE'; EngineCode='DEPLOYMENT_PREFLIGHT'; IsEnabled=1; ModePolicy='NONE'; RequiresInstanceSelection=1; AllowAllInstances=1; PassInstanceCode=1; PassApply=0; CommandTimeoutSeconds=0; ConfirmationText='' }
+    Set-SisqualTestCatalogRows -Session $session -Engine $engine -Action $action
+    $preflightActionCode = [string]$action.ActionCode   # not read as $action inside Throws blocks: the helper has a parameter of that name
+    $before = TreeFingerprint $servicesRoot
+    $result = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $after = TreeFingerprint $servicesRoot
+    if (-not [bool]$result.succeeded) { Write-SafeResultDiagnostic -Label 'complete-model' -Result $result }
+
+    Check 'READ_ONLY preflight succeeds on the complete synthetic model' ([bool]$result.succeeded)
+    Check 'READ_ONLY preflight returns PREVIEW mode' ([string]$result.mode -ceq 'PREVIEW')
+    Check 'PREVIEW leaves managed filesystem byte-identical' ($before -ceq $after)
+    Check 'catalog build time is INFO only' (@($result.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' -and $_.status -ceq 'INFO' }).Count -eq 1)
+    Check 'normalized result arithmetic is valid' (([int]$result.summary.succeededTargets + [int]$result.summary.failedTargets) -le [int]$result.summary.targetCount -and [int]$result.summary.errorCount -eq 0)
+    Check 'the result says the coverage of the original reviews is incomplete (INFO)' (@($result.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1)
+    Check 'an optional file that is not deployed is not reported as missing (cfg_ConfigFile.IsRequired)' (@($result.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+    Check 'an unassigned QR asset is INFO, as in the original review' (@($result.results | Where-Object { $_.object -ceq 'QR_ASSET_UNASSIGNED:QR_CHANNEL_ZZ' -and $_.status -ceq 'INFO' }).Count -eq 1)
+    Check 'an instance whose customer has its QR_CHANNEL_<CustomerCode> asset has no missing-asset issue' (@($result.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' }).Count -eq 0)
+    $serialized = $result | ConvertTo-Json -Compress -Depth 30
+    Check 'canary A absent from normalized result' (-not $serialized.Contains([string]$secrets['IIS_IDENTITY.INST1'],[StringComparison]::Ordinal))
+    Check 'canary B absent from normalized result' (-not $serialized.Contains([string]$secrets['WEB_ACCESS.INST1'],[StringComparison]::Ordinal))
+
+    $missingSecret = @{ 'WEB_ACCESS.INST1'='another-canary-value' }
+    $missing = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $missingSecret
+    $missingHasExpectedError = (-not [bool]$missing.succeeded -and @($missing.results | Where-Object { $_.object -like 'IIS_IDENTITY_PASSWORD_PENDING*' -or $_.object -like 'SERVICE_ACCOUNT_PASSWORD_MISSING*' }).Count -ge 1)
+    if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
+    Check 'missing IIS identity credential is an ERROR' $missingHasExpectedError
+    $noWeb = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!' }
+    Check 'a shared account whose other instances have no credential in the request cannot be verified (ERROR for the selected instance)' (@($noWeb.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_UNVERIFIED:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    Check 'a missing Web Access credential is WEB_ACCESS_PASSWORD_MISSING, an ERROR for that instance (as in the original review)' (@($noWeb.results | Where-Object { $_.object -ceq 'WEB_ACCESS_PASSWORD_MISSING:INST1' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
+
+    Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
+
+    # All instances: INST1 is fine; INST2 (PT), INST3 (ES) and INST4 (BR) have no instance root. INST2 and INST3 have no QR asset, INST4 is not PT or ES.
+    # INST5 uses the Windows account SVC-USER, which is INST1's svc-user written in capitals; here both have the same password, so INST1 is the one good instance.
+    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'the same Windows account with the same password on two instances is not a conflict (INST1 stays the one good instance)' (@($all.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_*' }).Count -eq 0)
+    # The shared account is checked against every enabled instance, also when only one instance is run (as FULL_DEPLOYMENT does).
+    $oneSecrets = @{}; foreach ($key in $secrets.Keys) { $oneSecrets[$key] = $secrets[$key] }
+    $oneSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
+    $oneConflict = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $oneSecrets
+    Check 'Windows account names are compared without case, and a run for one instance finds the shared account with another password on an instance that is not selected (svc-user selected, SVC-USER not)' (@($oneConflict.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
+    Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)' ($qrMissing.Count -eq 3 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3|QR_ASSET_MISSING:INST5 / c1') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
+    $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
+    Check 'failedTargets counts every instance with an error, not just one' ([int]$all.summary.targetCount -eq 5 -and [int]$all.summary.failedTargets -eq 4 -and [int]$all.summary.succeededTargets -eq 1) $summaryText
+
+    # Owner decision of 2026-10-06: a machine without a Pulse profile is 'not applicable', not an error (PRESALES and TENDERS have none).
+    $noPulse = New-ScenarioPackage -Name 'nopulse' -ExtraSql 'DELETE FROM cfg_PulseProfile;'
+    $noPulseRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noPulse.Package -CatalogPath $noPulse.Catalog -CatalogSession $noPulse.Session -ManifestEntries $noPulse.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a machine without a Pulse profile reports not applicable (INFO) and does not fail on Pulse' (@($noPulseRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' -and $_.status -ceq 'INFO' }).Count -eq 1 -and @($noPulseRun.results | Where-Object { $_.object -like 'PULSE_*' -and $_.status -ceq 'ERROR' }).Count -eq 0 -and [bool]$noPulseRun.succeeded)
+
+    # A table that is missing is not an empty table: a catalog edited by hand and sealed again without cfg_PulseProfile must not read as 'not applicable'.
+    $noTable = New-ScenarioPackage -Name 'notable' -ExtraSql 'DROP TABLE cfg_PulseProfile;'
+    $noTableRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a catalog without a table the engine reads is CATALOG_TABLE_MISSING, never an empty table or not applicable' (@($noTableRun.results | Where-Object { $_.object -ceq 'CATALOG_TABLE_MISSING:cfg_PulseProfile' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($noTableRun.results | Where-Object { $_.object -like 'PULSE_NOT_APPLICABLE*' }).Count -eq 0 -and -not [bool]$noTableRun.succeeded -and [string]$noTableRun.errorMessage -ceq 'PREFLIGHT_ERRORS')
+
+    # When the run ends before the reviews (a table is missing), no instance was verified: every selected instance is a failed target.
+    $noTableAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'a run that ends on a missing table marks every selected instance failed, not one (all-instances run)' ([int]$noTableAll.summary.targetCount -eq 5 -and [int]$noTableAll.summary.failedTargets -eq 5 -and [int]$noTableAll.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noTableAll.summary.targetCount,$noTableAll.summary.failedTargets,$noTableAll.summary.succeededTargets))
+
+    # A cancelled run that has the catalog open knows its targets, and none of them was verified: all of them are failed targets.
+    $cancelFile = Join-Path $temp 'direct-all.cancel'
+    [IO.File]::WriteAllText($cancelFile,'cancel',[Text.UTF8Encoding]::new($false))
+    $cancelResultPath = Join-Path $temp 'direct-all-result.json'
+    $cancelRequest = [ordered]@{
+        contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000302'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode=$null
+        catalogPath=$catalog; planFingerprint=$null; deadlineUtc=[DateTime]::UtcNow.AddMinutes(15).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        cancelPath=$cancelFile; resultPath=$cancelResultPath; secrets=$secrets
+    }
+    $cancelDirect = Invoke-DirectPreflightRequest -Pwsh (Get-Process -Id $PID).Path -EnginePath (Join-Path $engines 'Invoke-DeploymentPreflight.ps1') -Request $cancelRequest
+    $cancelled = if (Test-Path -LiteralPath $cancelResultPath -PathType Leaf) { [IO.File]::ReadAllText($cancelResultPath) | ConvertFrom-Json -Depth 30 -DateKind String } else { $null }
+    Check 'a cancelled all-instances run marks every selected instance failed (the catalog is open, so the targets are known)' ($null -ne $cancelled -and [string]$cancelled.errorMessage -ceq 'CANCELLED' -and [int]$cancelled.summary.targetCount -eq 5 -and [int]$cancelled.summary.failedTargets -eq 5 -and [int]$cancelled.summary.succeededTargets -eq 0) (('exit={0} target={1} failed={2}' -f $cancelDirect.ExitCode,$cancelled.summary.targetCount,$cancelled.summary.failedTargets))
+
+    # A policy belongs to one server: policies for another ServerCode are not this machine's policies.
+    $otherServer = New-ScenarioPackage -Name 'otherserver' -ExtraSql "UPDATE cfg_IisServerPolicy SET ServerCode = 'OTHER_SERVER'; UPDATE cfg_WebAccessPolicy SET ServerCode = 'OTHER_SERVER'; UPDATE cfg_LinksPagePolicy SET ServerCode = 'OTHER_SERVER';"
+    $otherServerRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $otherServer.Package -CatalogPath $otherServer.Catalog -CatalogSession $otherServer.Session -ManifestEntries $otherServer.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $policyCodes = @($otherServerRun.results | Where-Object { $_.status -ceq 'ERROR' -and ($_.object -like 'SERVER_POLICY_MISSING*' -or $_.object -like 'WEB_ACCESS_POLICY_MISSING*' -or $_.object -like 'LINKS_PAGE_POLICY_MISSING*') } | ForEach-Object { ([string]$_.object).Split(':')[0] } | Sort-Object)
+    Check 'policies that belong to another server do not count as this machine policy (IIS, Web Access and Links)' (($policyCodes -join ',') -ceq 'LINKS_PAGE_POLICY_MISSING,SERVER_POLICY_MISSING,WEB_ACCESS_POLICY_MISSING') ($policyCodes -join ',')
+
+    # A catalog that opens and has no enabled instance has zero targets, not one.
+    $noInstances = New-ScenarioPackage -Name 'noinstances' -ExtraSql 'UPDATE dbo_ManagedInstance SET IsEnabled = 0;'
+    $noInstancesRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noInstances.Package -CatalogPath $noInstances.Catalog -CatalogSession $noInstances.Session -ManifestEntries $noInstances.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'an all-instances run on a catalog with no enabled instance reports zero targets, not a fabricated one' ([int]$noInstancesRun.summary.targetCount -eq 0 -and [int]$noInstancesRun.summary.failedTargets -eq 0 -and [int]$noInstancesRun.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noInstancesRun.summary.targetCount,$noInstancesRun.summary.failedTargets,$noInstancesRun.summary.succeededTargets))
+
+    # A UNC path in the catalog is refused on its text, before anything is probed: probing \\server\share opens a network connection (and an unroutable server makes the probe wait).
+    $unc = New-ScenarioPackage -Name 'unc' -ExtraSql "UPDATE cfg_Application SET PhysicalPathTemplate = '\\10.255.255.1\share\app' WHERE ApplicationCode = 'APP1'; UPDATE cfg_WindowsServiceDefinition SET ExecutablePathTemplate = '\\10.255.255.1\share\service.exe';"
+    $uncWatch = [Diagnostics.Stopwatch]::StartNew()
+    $uncRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $unc.Package -CatalogPath $unc.Catalog -CatalogSession $unc.Session -ManifestEntries $unc.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $uncWatch.Stop()
+    $uncCodes = @($uncRun.results | Where-Object { $_.status -ceq 'ERROR' -and ($_.object -like 'APPLICATION_PATH_OUTSIDE_ROOT*' -or $_.object -like 'SERVICE_EXECUTABLE_OUTSIDE_ROOT*') } | ForEach-Object { ([string]$_.object).Split(':')[0] } | Sort-Object -Unique)
+    Check 'a UNC application folder and a UNC service executable are refused on their text, without a network probe (no wait on an unroutable server)' (($uncCodes -join ',') -ceq 'APPLICATION_PATH_OUTSIDE_ROOT,SERVICE_EXECUTABLE_OUTSIDE_ROOT' -and $uncWatch.Elapsed.TotalSeconds -lt 10) (('{0} in {1:n1} s' -f ($uncCodes -join ','), $uncWatch.Elapsed.TotalSeconds))
+
+    # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
+    [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
+    $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"
+    $escaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $escape.Package -CatalogPath $escape.Catalog -CatalogSession $escape.Session -ManifestEntries $escape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Write-SafeResultDiagnostic -Label 'path-escape' -Result $escaped
+    Check 'a required file whose path leaves the application folder is REQUIRED_PATH_OUTSIDE_ROOT, even if a file exists there' (@($escaped.results | Where-Object { $_.object -ceq 'REQUIRED_PATH_OUTSIDE_ROOT:3' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and @($escaped.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+
+    # An instance whose host name is a path leaves the services root: its folder exists there, and must not be treated as the instance folder.
+    New-Item -ItemType Directory -Path (Join-Path (Split-Path -Parent $servicesRoot) 'outside') -Force | Out-Null
+    $hostEscape = New-ScenarioPackage -Name 'hostescape' -ExtraSql "INSERT INTO dbo_ManagedInstance VALUES('INST6','TESTSERVER','..\\outside','PT','C6','svc-user6','web-user6',X'0102','01',1);"
+    $hostEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $hostEscape.Package -CatalogPath $hostEscape.Catalog -CatalogSession $hostEscape.Session -ManifestEntries $hostEscape.Entries -Mode PREVIEW -InstanceCode INST6 -Secrets $secrets
+    Check 'a host name that leaves the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT, even if the folder exists' (@($hostEscaped.results | Where-Object { $_.object -ceq 'INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT:INST6' -and $_.status -ceq 'ERROR' }).Count -ge 1 -and @($hostEscaped.results | Where-Object { $_.object -like 'INSTANCE_ROOT_MISSING*' }).Count -eq 0)
+
+    # Uniqueness is checked against every enabled instance of the machine, also when one instance is run: the other instances are not selected.
+    $dupService = New-ScenarioPackage -Name 'dupservice' -ExtraSql "UPDATE cfg_WindowsServiceDefinition SET ServiceNameTemplate = 'shared-service';"
+    $dupServiceRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupService.Package -CatalogPath $dupService.Catalog -CatalogSession $dupService.Session -ManifestEntries $dupService.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a run for one instance finds a service name that another enabled instance also gets (DUPLICATE_SERVICE_NAME on the selected instance)' (@($dupServiceRun.results | Where-Object { $_.object -ceq 'DUPLICATE_SERVICE_NAME:shared-service' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    $dupUser = New-ScenarioPackage -Name 'dupuser' -ExtraSql "UPDATE dbo_ManagedInstance SET WebAccessUserName = 'WEB-USER' WHERE InstanceCode = 'INST2';"
+    $dupUserRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupUser.Package -CatalogPath $dupUser.Catalog -CatalogSession $dupUser.Session -ManifestEntries $dupUser.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a run for one instance finds a Web Access user that another enabled instance also has, without case (web-user and WEB-USER)' (@($dupUserRun.results | Where-Object { $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
+    # In a run for all instances every selected holder fails, not only the first one.
+    $dupServiceAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupService.Package -CatalogPath $dupService.Catalog -CatalogSession $dupService.Session -ManifestEntries $dupService.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    $serviceHolders = @($dupServiceAll.results | Where-Object { $_.object -ceq 'DUPLICATE_SERVICE_NAME:shared-service' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'every selected instance that gets the same service name fails, not only the first (all-instances run)' (($serviceHolders -join ',') -ceq 'INST1,INST2,INST3,INST4,INST5') ($serviceHolders -join ',')
+    $dupUserAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $dupUser.Package -CatalogPath $dupUser.Catalog -CatalogSession $dupUser.Session -ManifestEntries $dupUser.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    $userHolders = @($dupUserAll.results | Where-Object { $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER:*' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'every selected instance that has the same Web Access user fails, not only the first (all-instances run)' (($userHolders -join ',') -ceq 'INST1,INST2') ($userHolders -join ',')
+    $allDifferent = @{}; foreach ($key in $secrets.Keys) { $allDifferent[$key] = $secrets[$key] }
+    $allDifferent['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
+    $conflictAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $allDifferent
+    $conflictHolders = @($conflictAll.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' } | ForEach-Object { [string]$_.instanceCode } | Sort-Object)
+    Check 'both instances that share an account with different passwords fail, not only the first (all-instances run)' (($conflictHolders -join ',') -ceq 'INST1,INST5') ($conflictHolders -join ',')
+    Check 'unique service names and Web Access users give no duplicate in the all-instances run' (@($all.results | Where-Object { $_.object -like 'DUPLICATE_SERVICE_NAME*' -or $_.object -like 'WEB_ACCESS_DUPLICATE_LOCAL_USER*' }).Count -eq 0)
+
+    # The instance folder is ServicesRoot\<HostName>: if that is a junction that points outside the services root, the lexical path is inside it and the real one is not.
+    if ($IsWindows) {
+        $rootTarget = Join-Path $temp 'junction-root-target'
+        New-Item -ItemType Directory -Path $rootTarget -Force | Out-Null
+        $rootJunction = Join-Path $servicesRoot 'junction-host.invalid'
+        New-Item -ItemType Junction -Path $rootJunction -Target $rootTarget | Out-Null
+        try {
+            $rootLink = New-ScenarioPackage -Name 'rootjunction' -ExtraSql "INSERT INTO dbo_ManagedInstance VALUES('INST7','TESTSERVER','junction-host.invalid','PT','C7','svc-user7','web-user7',X'0102','01',1);"
+            $rootLinkRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $rootLink.Package -CatalogPath $rootLink.Catalog -CatalogSession $rootLink.Session -ManifestEntries $rootLink.Entries -Mode PREVIEW -InstanceCode INST7 -Secrets $secrets
+            Check 'an instance folder that is a junction pointing outside the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT' (@($rootLinkRun.results | Where-Object { $_.object -ceq 'INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT:INST7' -and $_.status -ceq 'ERROR' }).Count -ge 1 -and @($rootLinkRun.results | Where-Object { $_.object -like 'INSTANCE_ROOT_MISSING*' }).Count -eq 0)
+        }
+        finally { [IO.Directory]::Delete($rootJunction) }
+    }
+
+    # A service executable that leaves the instance folder is not probed: the file exists, and must not satisfy the check.
+    $exeOutside = [IO.Path]::GetFullPath((Join-Path $servicesRoot 'preflight-host.invalid\..\..\evil.exe'))
+    [IO.File]::WriteAllText($exeOutside,'x',[Text.UTF8Encoding]::new($false))
+    $exeEscape = New-ScenarioPackage -Name 'exeescape' -ExtraSql "UPDATE cfg_WindowsServiceDefinition SET ExecutablePathTemplate = '{INSTANCE_ROOT}\\..\\..\\evil.exe';"
+    $exeEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $exeEscape.Package -CatalogPath $exeEscape.Catalog -CatalogSession $exeEscape.Session -ManifestEntries $exeEscape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a service executable path that leaves the instance folder is SERVICE_EXECUTABLE_OUTSIDE_ROOT, even if a file exists there' (@($exeEscaped.results | Where-Object { $_.object -ceq 'SERVICE_EXECUTABLE_OUTSIDE_ROOT:WFM_MOBILE_APP' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($exeEscaped.results | Where-Object { $_.object -like 'SERVICE_EXECUTABLE_MISSING*' }).Count -eq 0)
+
+    # A junction inside the application folder that points outside it: the lexical path stays inside the root, the real one does not.
+    if ($IsWindows) {
+        $junctionTarget = Join-Path $temp 'junction-target'
+        New-Item -ItemType Directory -Path $junctionTarget -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $junctionTarget 'data.json'),'{}',[Text.UTF8Encoding]::new($false))
+        $junction = Join-Path $appRoot 'linked'
+        New-Item -ItemType Junction -Path $junction -Target $junctionTarget | Out-Null
+        try {
+            $linked = New-ScenarioPackage -Name 'junction' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(5,'APP1','linked\data.json','JSON',1,1);"
+            $linkedRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $linked.Package -CatalogPath $linked.Catalog -CatalogSession $linked.Session -ManifestEntries $linked.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+            Write-SafeResultDiagnostic -Label 'junction' -Result $linkedRun
+            Check 'a required file reached through a junction that points outside the application folder is REQUIRED_PATH_OUTSIDE_ROOT' (@($linkedRun.results | Where-Object { $_.object -ceq 'REQUIRED_PATH_OUTSIDE_ROOT:5' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and @($linkedRun.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+        }
+        finally { [IO.Directory]::Delete($junction) }
+    }
+
+    # A file in a folder that cannot be read is an ERROR for that item and the run still finishes (specification: not a crash).
+    if ($IsWindows) {
+        $lockedDir = Join-Path $appRoot 'locked'
+        New-Item -ItemType Directory -Path $lockedDir -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $lockedDir 'data.json'),'{}',[Text.UTF8Encoding]::new($false))
+        $denied = New-ScenarioPackage -Name 'denied' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(4,'APP1','locked\data.json','JSON',1,1);"
+        $sid = '*' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        & icacls.exe $lockedDir /deny ($sid + ':(OI)(CI)(RX)') | Out-Null
+        try {
+            $effective = $false
+            try { [void](Test-Path -LiteralPath (Join-Path $lockedDir 'data.json') -ErrorAction Stop) } catch { $effective = $true }
+            if ($effective) {
+                $lockedRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $denied.Package -CatalogPath $denied.Catalog -CatalogSession $denied.Session -ManifestEntries $denied.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+                Write-SafeResultDiagnostic -Label 'access-denied' -Result $lockedRun
+                Check 'a file in a folder that cannot be read is PATH_ACCESS_DENIED for that item and the run still completes' (@($lockedRun.results | Where-Object { $_.object -ceq 'PATH_ACCESS_DENIED:4' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and [string]$lockedRun.errorMessage -ceq 'PREFLIGHT_ERRORS')
+            }
+            else { Write-Host 'DIAG  access-denied: the deny ACL did not stop this process from reading the folder on this runner; the access-denied path was NOT exercised' }
+        }
+        finally { & icacls.exe $lockedDir /remove:d $sid | Out-Null }
+    }
+
+    # A catalog module changed on disk after the manifest was made is not imported: the engine compares it with the manifest before it imports it.
+    $moduleFile = Join-Path $package 'runtime/Sisqual.Runtime.Catalog.Core.ps1'
+    $moduleOriginal = [IO.File]::ReadAllText($moduleFile)
+    try {
+        [IO.File]::WriteAllText($moduleFile, $moduleOriginal + "`n# changed after the manifest was made`n", [Text.UTF8Encoding]::new($false))
+        $tampered = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+        Write-SafeResultDiagnostic -Label 'tampered-module' -Result $tampered
+        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_TARGETS_UNKNOWN*' -and $_.status -ceq 'INFO' }).Count -eq 1) ([string]$tampered.errorMessage)
+    }
+    finally { [IO.File]::WriteAllText($moduleFile, $moduleOriginal, [Text.UTF8Encoding]::new($false)) }
+
+    $invalidInfo = [Diagnostics.ProcessStartInfo]::new()
+    $invalidInfo.FileName = (Get-Process -Id $PID).Path
+    $invalidInfo.UseShellExecute = $false
+    $invalidInfo.CreateNoWindow = $true
+    $invalidInfo.RedirectStandardInput = $true
+    $invalidInfo.RedirectStandardOutput = $true
+    $invalidInfo.RedirectStandardError = $true
+    foreach ($arg in @('-NoLogo','-NoProfile','-NonInteractive','-File',(Join-Path $engines 'Invoke-DeploymentPreflight.ps1'))) { [void]$invalidInfo.ArgumentList.Add($arg) }
+    $invalidProcess = [Diagnostics.Process]::new(); $invalidProcess.StartInfo = $invalidInfo
+    [void]$invalidProcess.Start(); $invalidProcess.StandardInput.Write('{}'); $invalidProcess.StandardInput.Close()
+    $invalidOut = $invalidProcess.StandardOutput.ReadToEnd(); $invalidErr = $invalidProcess.StandardError.ReadToEnd(); $invalidProcess.WaitForExit()
+    Check 'invalid request exits 2' ($invalidProcess.ExitCode -eq 2)
+    Check 'invalid request emits no stdout/stderr data' ([string]::IsNullOrEmpty($invalidOut) -and [string]::IsNullOrEmpty($invalidErr))
+
+    $applyRequest = [ordered]@{ contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000222'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='APPLY'; instanceCode='INST1'; catalogPath=$catalog; planFingerprint=('0'*64); deadlineUtc=[DateTime]::UtcNow.AddMinutes(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); cancelPath=(Join-Path $temp 'cancel'); resultPath=(Join-Path $temp 'direct-result.json'); secrets=@{} }
+    $applyInfo = [Diagnostics.ProcessStartInfo]::new(); $applyInfo.FileName=(Get-Process -Id $PID).Path; $applyInfo.UseShellExecute=$false; $applyInfo.CreateNoWindow=$true; $applyInfo.RedirectStandardInput=$true; $applyInfo.RedirectStandardOutput=$true; $applyInfo.RedirectStandardError=$true
+    foreach ($arg in @('-NoLogo','-NoProfile','-NonInteractive','-File',(Join-Path $engines 'Invoke-DeploymentPreflight.ps1'))) { [void]$applyInfo.ArgumentList.Add($arg) }
+    $applyProcess=[Diagnostics.Process]::new(); $applyProcess.StartInfo=$applyInfo; [void]$applyProcess.Start(); $applyProcess.StandardInput.Write(($applyRequest | ConvertTo-Json -Compress -Depth 20)); $applyProcess.StandardInput.Close(); $applyStdout=$applyProcess.StandardOutput.ReadToEnd(); $applyStderr=$applyProcess.StandardError.ReadToEnd(); $applyProcess.WaitForExit()
+    Check 'direct APPLY request is invalid for READ_ONLY engine and exits 2' ($applyProcess.ExitCode -eq 2)
+    Check 'direct APPLY rejection is silent' ([string]::IsNullOrEmpty($applyStdout) -and [string]::IsNullOrEmpty($applyStderr))
+
+    $packageText = @(Get-ChildItem -LiteralPath $package -Recurse -File | Where-Object { $_.Extension -in @('.json','.ps1','.psm1') } | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+    Check 'canary values are absent from package and managed files' (-not $packageText.Contains('canary-preflight-secret',[StringComparison]::Ordinal))
+}
+finally {
+    Remove-Module Sisqual.Runtime.EngineHost -Force -ErrorAction SilentlyContinue
+    Remove-Module Sisqual.Runtime.Catalog -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction Stop } catch { Write-Host ('INFO cleanup deferred: ' + $_.Exception.Message) }
+}
+Write-Host ("SUMMARY: {0} passed, {1} failed" -f $script:Passed,$script:Failed)
+if ($script:Failed -gt 0) { exit 1 }
+exit 0
