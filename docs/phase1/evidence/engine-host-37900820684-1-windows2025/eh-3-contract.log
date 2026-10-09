@@ -1,0 +1,59 @@
+PASS  SourceFileName from catalog is honored?
+PASS  host does not derive target counts from result row count?
+PASS  rapid successful child exits do not race stdin delivery?
+PASS  machine ownership is read from active catalog session, not caller properties?
+PASS  secret is absent from child arguments and environment?
+PASS  secret leak blocked: SECRET_STDOUT?
+PASS  secret leak blocked: SECRET_STDERR?
+PASS  secret leak blocked: SECRET_RESULT?
+PASS  schema arithmetic is validated without row inference?
+PASS  result must echo request mode?
+PASS  READ_ONLY engine cannot APPLY?
+PASS  SQL catalog actions are refused?
+PASS  PREVIEW_APPLY preview returns fingerprint?
+PASS  APPLY accepts fingerprint from same host session?
+PASS  stale fingerprint is refused before launch?
+PASS  composite fingerprint is aggregate over ordered child identities?
+PASS  timeout writes cancel request and cooperative engine exits?
+PASS  large stdin cannot block timeout enforcement?
+PASS  descendant inheriting redirected pipes cannot block the host?
+PASS  non-mutating timed out child is killed after grace?
+PASS  a synthesised failure keeps the real start of the run (it is not a zero-length result)?
+PASS  a cancel signal that cannot be written still ends in the timeout handling (read-only engine is killed)?
+PASS  a cancel signal that cannot be written: a mutable engine is retained, not left untracked?
+PASS  changing COMPUTERNAME does not make a foreign catalog pass the machine ownership check?
+PASS  an undeclared secret is rejected by the host before launch?
+PASS  an enabled instance of the catalog is accepted?
+PASS  an instance that is not in the catalog is rejected before launch?
+PASS  a disabled instance is rejected before launch?
+PASS  an instance code with the wrong shape is rejected before the catalog is asked?
+PASS  AllowAllInstances lets the instance stay empty (the engine expands it from the catalog)?
+PASS  without AllowAllInstances an empty instance is still required?
+PASS  an action whose selection policy is NONE refuses a selected instance?
+PASS  a variable of the console process does not reach the engine?
+PASS  an action that can apply cannot be declared READ_ONLY?
+PASS  an engine of an action that can apply is retained on timeout whatever class is declared (never killed by the host)?
+PASS  the child executable must be the PowerShell this host runs in?
+PASS  the host no longer accepts engine or action rows from the caller?
+PASS  an action code that is not in the verified catalog is rejected before launch?
+PASS  an action whose engine is not in the verified catalog is rejected before launch?
+PASS  a launcher that does not match its manifest entry is not run?
+PASS  a launcher with no manifest entry is not run?
+PASS  the host no longer accepts a list of declared secrets from the caller?
+PASS  a secret contract that does not match its manifest entry is not trusted?
+PASS  supplying secrets without a contract entry in the manifest is refused?
+PASS  an adapter cannot widen the contract: a secret that the contract does not list is refused?
+PASS  a kind wildcard in the contract admits a reference of that kind for any instance code?
+PASS  a kind wildcard does not admit another kind?
+PASS  a kind wildcard does not admit a code with the wrong shape?
+PASS  a bare wildcard in the contract is invalid?
+PASS  a wildcard on an unknown kind in the contract is invalid?
+PASS  a kind wildcard admits the credential of an enabled instance of the catalog?
+PASS  a kind wildcard does not admit the credential of a disabled instance?
+PASS  a kind wildcard does not admit the credential of an instance that is not in the catalog?
+PASS  an exact declaration needs no catalog lookup?
+PASS  a composite action without an engine code is classified, not looked up as an engine?
+PASS  a SQL action without an engine code is refused as unsupported, not as an invalid session?
+PASS  mutable timeout stays running and is not killed by host?
+PASS  explicit operator action can terminate retained timed-out test process?
+EngineHost tests: 58 passed / 0 failed?
