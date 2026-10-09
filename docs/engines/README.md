@@ -1,8 +1,19 @@
 # Engine host contract summary
 
-This table is derived from the `Host contract` section in each engine specification. It separates intended port requirements from executable host acceptance.
+This summary separates the 17 engine rows carried by the portable catalog from engines that the owner explicitly retired and from composite actions that are not engines.
 
 `Intended credential references` are the reference families or exact references that the ported engine specification expects to need. `Host-accepted references today` records what the executable host contract accepts. In current `main`, `DEPLOYMENT_PREFLIGHT` has no accepted references: the contract is empty and the host accepts exact references only. After PR #67 is integrated, `DEPLOYMENT_PREFLIGHT` declares `IIS_IDENTITY.*` and `WEB_ACCESS.*`, accepted by family for active catalog instances. PR #67 adds host support for the family wildcard form `TYPE.*` only for `IIS_IDENTITY`, `WEB_ACCESS`, `MOBILE_APP_TOKEN`, and `RULE_SECRET`, and only for references belonging to active catalog instances. PR #68 documents that transition and does not modify the executable contract or host.
+
+## Portable catalog engines
+
+Reviewer evidence from the six real converted catalogs used:
+
+```sql
+SELECT COUNT(*) AS EngineCount
+FROM ops_Engine;
+```
+
+and returned `17` in every catalog. The matrix below lists those 17 portable-catalog engine rows.
 
 | Engine | Wave | Engine class | Intended credential references | Host-accepted references today |
 |---|---:|---|---|---|
@@ -22,8 +33,16 @@ This table is derived from the `Host contract` section in each engine specificat
 | `STORAGE_SIZE_SCAN` | 7 | `OBSERVATIONAL` | none | none |
 | `MODEL_REVIEW` | 7 | `READ_ONLY` | none | none |
 | `LINKS_VISIBILITY` | 8 | `OBSERVATIONAL` [PROPOSED] | none | none |
-| `V8_KEYCLOAK_CONFIG` | 8 (retired) | `RETIRED` (not active) | none | none |
 | `DATABASE_COPY` | 9 | `MUTATING` | none | none |
+
+## Retired engines
+
+[DECIDED 2026-10-06] Q3 in `docs/decisions-log.md` says that `DATABASE_SETTINGS` and `V8_KEYCLOAK_CONFIG` are not ported as autonomous engines because their required behavior is provided by newer engines. They are not members of the 17-row portable engine catalog above and are not active host targets.
+
+| Retired engine | Former wave | Engine class | Replacement / retained behavior |
+|---|---:|---|---|
+| `DATABASE_SETTINGS` | 5 | `RETIRED` (not active) | `DATABASE_CONTENT_SYNC`; the executable `DATABASE_SETTINGS` action uses `DATABASE_CONTENT_SYNC`, so the legacy engine is not ported independently |
+| `V8_KEYCLOAK_CONFIG` | 8 | `RETIRED` (not active) | `CONFIG_REPAIR`, through the `KEYCLOAK_DB_URL` rule; no standalone module or host invocation |
 
 ## Composite actions
 
@@ -62,7 +81,7 @@ The non-`NONE` mode means `LINKS_VISIBILITY` is not `READ_ONLY`. It does not mak
 
 Because its `ModePolicy` is not `NONE`, the host does not kill `LINKS_VISIBILITY` when its timeout expires.
 
-The remaining engine classes were rechecked against their current specifications with this rule. No other engine-class changes are required: `DEPLOYMENT_PREFLIGHT` and `MODEL_REVIEW` remain `READ_ONLY`; `ENVIRONMENT_STATE_PROBE` and `STORAGE_SIZE_SCAN` remain `OBSERVATIONAL`; every other active engine in the engine table remains `MUTATING` because its approved side effects change managed targets. `V8_KEYCLOAK_CONFIG` remains retired and is not an active host target; its behaviour is absorbed by `CONFIG_REPAIR`.
+The remaining engine classes were rechecked against their current specifications with this rule. No other engine-class changes are required: `DEPLOYMENT_PREFLIGHT` and `MODEL_REVIEW` remain `READ_ONLY`; `ENVIRONMENT_STATE_PROBE` and `STORAGE_SIZE_SCAN` remain `OBSERVATIONAL`; every other engine in the 17-row portable catalog remains `MUTATING` because its approved side effects change managed targets. The two retired engines are listed separately above and are not active host targets.
 
 ## DEPLOYMENT_PREFLIGHT credential correction
 
