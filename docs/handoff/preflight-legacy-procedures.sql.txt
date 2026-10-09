@@ -1,0 +1,670 @@
+-- Verbatim text of the five original model review procedures whose issue codes DEPLOYMENT_PREFLIGHT does not implement yet (docs/handoff/preflight-port-gap.md).
+-- Source: database/sync/ManagementSync.sql of atsisqual/SISQUALManagementConsole, the 29,516,382 byte snapshot used for every conversion (git blob id 99f8719fced1ffd76236c8250c6d9da9cd73f1e1, SHA-1 of the content b5b355c2f262d2f25a8f9affed3801ca14a25ea7).
+-- Extracted by the reviewer on 2026-10-09: from CREATE to the next GO, CR removed, non-ASCII shown as '?'. Nothing else is changed.
+-- Verified: the text of these five procedures is identical (compared by hash) in the snapshot at Management Console reference a62e49a7 (git blob 99f8719f) and at 8af01403 (git blob 9aa6f5e9);
+-- the older reference 9756ba95 (git blob 9401e2c3, quoted by docs/migration/analysis-pulse.md) has the same size and was not compared.
+-- This is T-SQL. None of the five procedures has a COLLATE clause, so their string comparisons follow the default collation of the source database, which the snapshot does not state
+-- (the SQL Server default is case-insensitive). The engine compares catalog codes exactly. A port must say, for every string comparison, which behaviour it keeps and why.
+
+-- ======================================================================
+-- cfg.ReviewExtendedApplicationModel  (163 lines, 10 issue codes)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE cfg.ReviewExtendedApplicationModel
+    @MachineName sysname = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Issues TABLE
+    (
+        IssueCode varchar(100),
+        Severity varchar(10),
+        ObjectName nvarchar(255),
+        Details nvarchar(2000)
+    );
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_PROVIDER_TYPE_MISSING',
+        'ERROR',
+        ProviderName,
+        N'ProviderType is empty.'
+    FROM cfg.IisServiceAutoStartProviderDefinition
+    WHERE IsEnabled = 1
+      AND NULLIF(LTRIM(RTRIM(ProviderType)), N'') IS NULL;
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_PROVIDER_TEMPLATE_MISSING',
+        'ERROR',
+        ProviderName,
+        N'ProviderNameTemplate is empty.'
+    FROM cfg.IisServiceAutoStartProviderDefinition
+    WHERE IsEnabled = 1
+      AND NULLIF(LTRIM(RTRIM(ProviderNameTemplate)), N'') IS NULL;
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_PROVIDER_NOT_ENABLED',
+        'ERROR',
+        D.IisApplicationCode,
+        N'Application auto-start references a provider definition that is missing or disabled.'
+    FROM cfg.IisApplicationAutoStartDefinition AS D
+    LEFT JOIN cfg.IisServiceAutoStartProviderDefinition AS P
+        ON P.ProviderName = D.ServiceAutoStartProvider
+       AND P.IsEnabled = 1
+    WHERE D.IsEnabled = 1
+      AND D.ServiceAutoStartEnabled = 1
+      AND P.ProviderName IS NULL;
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_PROVIDER_EXPANDED_NAME_INVALID',
+        'ERROR',
+        CONCAT(C.InstanceCode, N' / ', C.ProviderName),
+        N'The expanded provider name is empty or exceeds 80 characters.'
+    FROM cfg.IisServiceAutoStartProviderCatalog AS C
+    WHERE (@MachineName IS NULL OR C.MachineName = @MachineName)
+      AND
+      (
+          NULLIF(LTRIM(RTRIM(C.ProviderName)), N'') IS NULL
+          OR LEN(C.ProviderName) > 80
+      );
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_PROVIDER_EXPANDED_NAME_DUPLICATE',
+        'ERROR',
+        C.ProviderName,
+        N'The expanded provider name is used by more than one website.'
+    FROM cfg.IisServiceAutoStartProviderCatalog AS C
+    WHERE (@MachineName IS NULL OR C.MachineName = @MachineName)
+    GROUP BY C.ProviderName
+    HAVING COUNT(*) > 1;
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_POOL_NOT_ALWAYS_RUNNING',
+        'ERROR',
+        D.IisApplicationCode,
+        N'The associated application pool must use startMode AlwaysRunning.'
+    FROM cfg.IisApplicationAutoStartDefinition AS D
+    INNER JOIN cfg.IisApplicationDefinition AS A
+        ON A.IisApplicationCode = D.IisApplicationCode
+    WHERE D.IsEnabled = 1
+      AND D.ServiceAutoStartEnabled = 1
+      AND A.PoolStartMode <> 'AlwaysRunning';
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_APPLICATION_PROVIDER_NOT_EXPANDED',
+        'ERROR',
+        CONCAT(I.InstanceCode, N' / ', D.IisApplicationCode),
+        N'No per-website provider name could be expanded for this application.'
+    FROM dbo.ManagedInstance AS I
+    INNER JOIN dbo.ManagedServer AS S
+        ON S.ServerCode = I.ServerCode
+       AND S.IsEnabled = 1
+    INNER JOIN cfg.IisApplicationAutoStartDefinition AS D
+        ON D.IsEnabled = 1
+       AND D.ServiceAutoStartEnabled = 1
+    LEFT JOIN cfg.IisServiceAutoStartProviderCatalog AS C
+        ON C.InstanceCode = I.InstanceCode
+       AND C.ProviderCode = D.ServiceAutoStartProvider
+    WHERE I.IsEnabled = 1
+      AND (@MachineName IS NULL OR S.MachineName = @MachineName)
+      AND C.ProviderName IS NULL;
+
+    INSERT @Issues
+    SELECT
+        'AUTO_START_ASSEMBLY_LOADABILITY',
+        'WARNING',
+        CONCAT(C.InstanceCode, N' / ', C.ProviderName),
+        N'Provider is unique to this website. Ensure SISQUAL.WebService.WFM.AutoStartProvider is loadable by the website Process application.'
+    FROM cfg.IisServiceAutoStartProviderCatalog AS C
+    WHERE (@MachineName IS NULL OR C.MachineName = @MachineName);
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.ConfigRule
+        WHERE RuleCode = 'WFM_PROCESS_USE_HANGFIRE'
+          AND IsEnabled = 1
+    )
+        INSERT @Issues
+        VALUES
+        (
+            'PROCESS_HANGFIRE_RULE_MISSING',
+            'ERROR',
+            N'WFM_PROCESS_USE_HANGFIRE',
+            N'UseHangfire repair rule is missing.'
+        );
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.ConfigRule
+        WHERE RuleCode = 'WFM_PROCESS_OWIN_AUTOSTART'
+          AND IsEnabled = 1
+    )
+        INSERT @Issues
+        VALUES
+        (
+            'PROCESS_OWIN_RULE_MISSING',
+            'ERROR',
+            N'WFM_PROCESS_OWIN_AUTOSTART',
+            N'OWIN automatic startup repair rule is missing.'
+        );
+
+    SELECT
+        IssueCode,
+        Severity,
+        ObjectName,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity
+            WHEN 'ERROR' THEN 1
+            WHEN 'WARNING' THEN 2
+            ELSE 3
+        END,
+        IssueCode,
+        ObjectName;
+END;
+
+-- ======================================================================
+-- cfg.ReviewIisDeploymentModel  (150 lines, 9 issue codes)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewIisDeploymentModel]
+    @MachineName sysname = NULL
+WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ResolvedMachineName sysname =
+        COALESCE(NULLIF(@MachineName, N''), CONVERT(sysname, SERVERPROPERTY('MachineName')));
+
+    DECLARE @Issues TABLE
+    (
+        IssueCode   varchar(100)   NOT NULL,
+        Severity    varchar(10)    NOT NULL,
+        ObjectName  nvarchar(255)  NULL,
+        Details     nvarchar(2000) NOT NULL
+    );
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.ManagedServer
+        WHERE IsEnabled = 1
+          AND MachineName = @ResolvedMachineName
+    )
+    BEGIN
+        INSERT INTO @Issues
+        VALUES
+        (
+            'SERVER_NOT_REGISTERED', 'ERROR', @ResolvedMachineName,
+            N'The current machine is not registered as an enabled ManagedServer.'
+        );
+    END;
+
+    INSERT INTO @Issues
+    SELECT
+        'SERVER_POLICY_MISSING', 'ERROR', S.ServerCode,
+        N'An enabled ManagedServer has no enabled IIS server policy.'
+    FROM dbo.ManagedServer AS S
+    LEFT JOIN cfg.IisServerPolicy AS P
+        ON P.ServerCode = S.ServerCode
+       AND P.IsEnabled = 1
+    WHERE S.IsEnabled = 1
+      AND S.MachineName = @ResolvedMachineName
+      AND P.ServerCode IS NULL;
+
+    IF (SELECT COUNT(*) FROM cfg.IisApplicationDefinition WHERE IsEnabled = 1 AND IsSiteRoot = 1) <> 1
+    BEGIN
+        INSERT INTO @Issues
+        VALUES
+        (
+            'ROOT_DEFINITION_COUNT', 'ERROR', N'cfg.IisApplicationDefinition',
+            N'Exactly one enabled IIS application definition must be marked IsSiteRoot = 1.'
+        );
+    END;
+
+    INSERT INTO @Issues
+    SELECT
+        'ROOT_POOL_NAME_INVALID', 'ERROR', IisApplicationCode,
+        N'The root pool template must be exactly {HOST_NAME}; no _ROOT suffix is allowed.'
+    FROM cfg.IisApplicationDefinition
+    WHERE IsEnabled = 1
+      AND IsSiteRoot = 1
+      AND PoolNameTemplate <> N'{HOST_NAME}';
+
+    INSERT INTO @Issues
+    SELECT
+        'DUPLICATE_POOL_TEMPLATE', 'ERROR', PoolNameTemplate,
+        N'Every application must have an individual application pool.'
+    FROM cfg.IisApplicationDefinition
+    WHERE IsEnabled = 1
+    GROUP BY PoolNameTemplate
+    HAVING COUNT(*) > 1;
+
+    IF (SELECT COUNT(*) FROM cfg.IisBindingDefinition WHERE IsEnabled = 1 AND IsPrimary = 1) <> 1
+    BEGIN
+        INSERT INTO @Issues
+        VALUES
+        (
+            'PRIMARY_BINDING_COUNT', 'ERROR', N'cfg.IisBindingDefinition',
+            N'Exactly one enabled IIS binding must be marked IsPrimary = 1.'
+        );
+    END;
+
+    INSERT INTO @Issues
+    SELECT
+        'CERTIFICATE_POLICY_MISSING', 'ERROR', P.ServerCode,
+        N'HTTPS is enabled but the certificate subject or store is not configured.'
+    FROM cfg.IisServerPolicy AS P
+    WHERE P.IsEnabled = 1
+      AND EXISTS
+      (
+          SELECT 1
+          FROM cfg.IisBindingDefinition AS B
+          WHERE B.IsEnabled = 1
+            AND B.UseCertificate = 1
+      )
+      AND
+      (
+          NULLIF(P.CertificateSubjectTemplate, N'') IS NULL
+          OR NULLIF(P.CertificateStoreName, '') IS NULL
+      );
+
+
+    INSERT INTO @Issues
+    SELECT
+        'IIS_IDENTITY_PASSWORD_PENDING', 'WARNING', I.InstanceCode,
+        N'No per-instance IIS identity password is stored. The executor will retain its interactive fallback when a password is required.'
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @ResolvedMachineName
+      AND NULLIF(I.IisIdentityPassword, N'') IS NULL;
+
+    ;WITH IdentityRows AS
+    (
+        SELECT
+            I.ServerCode,
+            I.InstanceCode,
+            IdentityName = LOWER(COALESCE(NULLIF(I.IisIdentityUserName, N''), P.PoolIdentityTemplate)),
+            I.IisIdentityPassword
+        FROM dbo.ManagedServer AS S
+        INNER JOIN cfg.ManagedInstanceRuntime AS I
+            ON I.ServerCode = S.ServerCode
+           AND I.IsEnabled = 1
+        INNER JOIN cfg.IisServerPolicy AS P
+            ON P.ServerCode = I.ServerCode
+           AND P.IsEnabled = 1
+        WHERE S.IsEnabled = 1
+          AND S.MachineName = @ResolvedMachineName
+          AND NULLIF(I.IisIdentityPassword, N'') IS NOT NULL
+    )
+    INSERT INTO @Issues
+    SELECT
+        'IIS_IDENTITY_PASSWORD_CONFLICT', 'ERROR', IdentityName,
+        N'The same local IIS identity has different passwords across enabled instances on this server.'
+    FROM IdentityRows
+    GROUP BY ServerCode, IdentityName
+    HAVING COUNT(DISTINCT IisIdentityPassword) > 1;
+
+    SELECT IssueCode, Severity, ObjectName, Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity WHEN 'ERROR' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END,
+        IssueCode,
+        ObjectName;
+END;
+
+-- ======================================================================
+-- cfg.ReviewLinksPageModel  (138 lines, 8 issue codes)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE cfg.ReviewLinksPageModel
+    @MachineName sysname,
+    @InstanceCode varchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ServerCode varchar(30);
+
+    SELECT @ServerCode = S.ServerCode
+    FROM dbo.ManagedServer AS S
+    WHERE S.MachineName = @MachineName
+      AND S.IsEnabled = 1;
+
+    DECLARE @Issues table
+    (
+        IssueCode    varchar(100)   NOT NULL,
+        Severity     varchar(10)    NOT NULL,
+        InstanceCode varchar(20)    NULL,
+        Details      nvarchar(2000) NOT NULL
+    );
+
+    IF @ServerCode IS NULL
+    BEGIN
+        INSERT @Issues VALUES
+        (
+            'MANAGED_SERVER_NOT_FOUND',
+            'ERROR',
+            NULL,
+            N'No enabled ManagedServer matches the supplied machine.'
+        );
+    END;
+
+    IF @ServerCode IS NOT NULL
+       AND NOT EXISTS
+       (
+           SELECT 1
+           FROM cfg.LinksPagePolicy
+           WHERE ServerCode = @ServerCode
+             AND IsEnabled = 1
+       )
+    BEGIN
+        INSERT @Issues VALUES
+        (
+            'LINKS_PAGE_POLICY_MISSING',
+            'ERROR',
+            NULL,
+            N'No enabled cfg.LinksPagePolicy row exists for the local managed server.'
+        );
+    END;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.LinksPageTemplate
+        WHERE TemplateCode = 'LINKS_INDEX_HTML'
+          AND IsEnabled = 1
+    )
+        INSERT @Issues VALUES ('LINKS_INDEX_TEMPLATE_MISSING', 'ERROR', NULL, N'The LINKS_INDEX_HTML template is missing or disabled.');
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.LinksPageTemplate
+        WHERE TemplateCode = 'LINKS_WEB_CONFIG'
+          AND IsEnabled = 1
+    )
+        INSERT @Issues VALUES ('LINKS_WEB_CONFIG_TEMPLATE_MISSING', 'ERROR', NULL, N'The LINKS_WEB_CONFIG template is missing or disabled.');
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.LinksPageAsset
+        WHERE AssetCode = 'SISQUAL_LOGO'
+          AND IsEnabled = 1
+          AND DATALENGTH(Content) > 0
+    )
+        INSERT @Issues VALUES ('LINKS_BRAND_LOGO_MISSING', 'ERROR', NULL, N'The SISQUAL_LOGO asset is missing, disabled, or empty.');
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.Application
+        WHERE IsEnabled = 1
+          AND PublishInLinks = 1
+    )
+        INSERT @Issues VALUES ('NO_PUBLISHED_LINK_APPLICATIONS', 'ERROR', NULL, N'No enabled application is marked PublishInLinks = 1.');
+
+    INSERT @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        Details
+    )
+    SELECT
+        'PUBLISHED_APPLICATION_URL_UNRESOLVED',
+        'ERROR',
+        NULL,
+        N'Application ' + A.ApplicationCode + N' has no LinksUrlTemplate and no IisPath.'
+    FROM cfg.Application AS A
+    WHERE A.IsEnabled = 1
+      AND A.PublishInLinks = 1
+      AND NULLIF(A.LinksUrlTemplate, N'') IS NULL
+      AND NULLIF(A.IisPath, N'') IS NULL;
+
+    IF @ServerCode IS NOT NULL
+       AND @InstanceCode IS NOT NULL
+       AND NOT EXISTS
+       (
+           SELECT 1
+           FROM dbo.ManagedInstance
+           WHERE ServerCode = @ServerCode
+             AND InstanceCode = @InstanceCode
+             AND IsEnabled = 1
+       )
+    BEGIN
+        INSERT @Issues VALUES
+        (
+            'MANAGED_INSTANCE_NOT_ACTIONABLE',
+            'ERROR',
+            @InstanceCode,
+            N'The requested instance is missing, disabled, or is not hosted by the local managed server.'
+        );
+    END;
+
+    SELECT
+        IssueCode,
+        Severity,
+        InstanceCode,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity WHEN 'ERROR' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END,
+        InstanceCode,
+        IssueCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewLinksPagePresentationResources  (61 lines, 1 issue codes)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE cfg.ReviewLinksPagePresentationResources
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Required TABLE
+    (
+        ResourceCode varchar(80) NOT NULL PRIMARY KEY
+    );
+
+    INSERT @Required(ResourceCode)
+    VALUES
+        ('COMPONENT_APPLICATION_CARD'),
+        ('COMPONENT_ENVIRONMENT_CARD'),
+        ('COMPONENT_SEARCH_BLOCK'),
+        ('TEXT_PAGE_CONTEXT_ALL'),
+        ('TEXT_PAGE_EYEBROW_ALL'),
+        ('TEXT_PAGE_EYEBROW_SINGLE'),
+        ('TEXT_PAGE_DESCRIPTION_ALL'),
+        ('TEXT_CODE_WITH_CUSTOMER'),
+        ('TEXT_CODE_WITHOUT_CUSTOMER'),
+        ('TEXT_CODE_USER_SUFFIX'),
+        ('ICON_LINK');
+
+    SELECT
+        IssueCode = CONVERT(varchar(100),'LINKS_PRESENTATION_RESOURCE_MISSING'),
+        Severity = CONVERT(varchar(10),'ERROR'),
+        ObjectCode = R.ResourceCode,
+        Details = CONVERT(nvarchar(2000),N'Required links-page presentation resource is missing or disabled.')
+    FROM @Required AS R
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.LinksPagePresentationResource AS P
+        WHERE P.ResourceCode = R.ResourceCode
+          AND P.IsEnabled = 1
+          AND NULLIF(P.ResourceText,N'') IS NOT NULL
+    )
+
+    UNION ALL
+
+    SELECT
+        'LINKS_PRESENTATION_HASH_MISMATCH',
+        'ERROR',
+        P.ResourceCode,
+        N'ContentSha256 does not match ResourceText.'
+    FROM cfg.LinksPagePresentationResource AS P
+    WHERE P.IsEnabled = 1
+      AND P.ContentSha256 <>
+          LOWER
+          (
+              CONVERT
+              (
+                  char(64),
+                  HASHBYTES('SHA2_256',CONVERT(varbinary(max),P.ResourceText)),
+                  2
+              )
+          )
+    ORDER BY IssueCode,ObjectCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewWebsiteBrandingModel  (136 lines, 5 issue codes)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE cfg.ReviewWebsiteBrandingModel
+    @MachineName sysname = NULL,
+    @InstanceCode varchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Issues TABLE
+    (
+        IssueCode varchar(100) NOT NULL,
+        Severity varchar(10) NOT NULL,
+        ObjectName nvarchar(300) NOT NULL,
+        Details nvarchar(2000) NOT NULL
+    );
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.WebsiteBrandingProfile
+        WHERE ProfileCode = 'DEFAULT'
+          AND IsEnabled = 1
+    )
+        INSERT @Issues
+        VALUES
+        (
+            'WEBSITE_BRANDING_PROFILE_MISSING',
+            'ERROR',
+            N'DEFAULT',
+            N'The default website-branding profile is missing or disabled.'
+        );
+
+    INSERT @Issues
+    SELECT
+        'WEBSITE_BRANDING_ASSET_HASH_MISMATCH',
+        'ERROR',
+        AssetCode,
+        N'The stored binary does not match ContentSha256.'
+    FROM cfg.WebsiteBrandingAsset
+    WHERE IsEnabled = 1
+      AND LOWER
+          (
+              CONVERT
+              (
+                  char(64),
+                  HASHBYTES('SHA2_256', BinaryContent),
+                  2
+              )
+          ) <> ContentSha256;
+
+    INSERT @Issues
+    SELECT
+        'WEBSITE_BRANDING_REQUIRED_ASSET_MISSING',
+        'ERROR',
+        V.AssetCode,
+        N'A required website-branding asset is missing or disabled.'
+    FROM
+    (
+        VALUES
+            ('WEBSITE_FAVICON_ICO'),
+            ('WEBSITE_FAVICON_PNG'),
+            ('WEBSITE_APPLE_TOUCH_ICON')
+    ) AS V(AssetCode)
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.WebsiteBrandingAsset AS A
+        WHERE A.AssetCode = V.AssetCode
+          AND A.IsEnabled = 1
+    );
+
+    IF @MachineName IS NOT NULL
+    BEGIN
+        DECLARE @Plan TABLE
+        (
+            ServerCode varchar(30),
+            MachineName sysname,
+            InstanceCode varchar(20),
+            CountryCode char(2),
+            CustomerCode int,
+            CustomerName nvarchar(200),
+            HostName sysname,
+            WebsiteRoot nvarchar(2000),
+            DocumentTitle nvarchar(300),
+            PulseDocumentTitle nvarchar(300),
+            ThemeColor char(7)
+        );
+
+        INSERT @Plan
+        EXEC cfg.GetWebsiteBrandingPlan
+            @MachineName = @MachineName,
+            @InstanceCode = @InstanceCode;
+
+        INSERT @Issues
+        SELECT
+            'WEBSITE_BRANDING_TITLE_INVALID',
+            'ERROR',
+            InstanceCode,
+            CONCAT
+            (
+                N'Links title: ',
+                DocumentTitle,
+                N'; Pulse title: ',
+                PulseDocumentTitle
+            )
+        FROM @Plan
+        WHERE NULLIF(LTRIM(RTRIM(DocumentTitle)), N'') IS NULL
+           OR NULLIF(LTRIM(RTRIM(PulseDocumentTitle)), N'') IS NULL
+           OR DocumentTitle LIKE N'%{%}%'
+           OR PulseDocumentTitle LIKE N'%{%}%';
+
+        INSERT @Issues
+        SELECT
+            'WEBSITE_BRANDING_ROOT_MISSING',
+            'ERROR',
+            InstanceCode,
+            N'The website root path is empty.'
+        FROM @Plan
+        WHERE NULLIF(LTRIM(RTRIM(WebsiteRoot)), N'') IS NULL;
+    END;
+
+    SELECT
+        IssueCode,
+        Severity,
+        ObjectName,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity
+            WHEN 'ERROR' THEN 1
+            WHEN 'WARNING' THEN 2
+            ELSE 3
+        END,
+        IssueCode,
+        ObjectName;
+END;
