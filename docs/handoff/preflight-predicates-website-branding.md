@@ -2,7 +2,7 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewWebsiteBrandingModel`
-**Verification base:** `main@a32141cbec584d349f1591a4aa5a801137463278`
+**Verification base:** `main@28d4dc52c2d02bdce2add2101a306845041690b3`
 
 ## Evidence boundary
 
@@ -24,7 +24,7 @@ It does not edit the paused Pulse brief. It also does not resolve the separate b
 
 ### Text comparison policy
 
-The procedure has no `COLLATE`, so legacy text equality follows the source database default collation, which is not stated. Portable rule 7 keeps catalog codes exact and Windows names case-insensitive. Trim/empty and brace-token checks below are independent of letter case. The hexadecimal hash comparison has a case-only ambiguity because the source lowercases the computed hash but does not normalize the stored value; that boundary is `[PENDING]` rather than guessed.
+The procedure has no `COLLATE`. `docs/decisions-log.md` records the 2026-10-05 owner fact that every source database uses `Latin1_General_CI_AS`, so legacy text comparison here is case-insensitive and accent-sensitive. The same decision says catalog codes in the new system compare exactly. Therefore code fields below use exact portable comparison even where that intentionally differs from legacy CI_AS, while non-code source text follows the confirmed CI_AS semantics unless another rule says otherwise. Trim/empty and brace-token checks below do not depend on letter case.
 
 ## `WEBSITE_BRANDING_PROFILE_MISSING`
 
@@ -48,7 +48,7 @@ IF NOT EXISTS
 
 **Rule 7:** No filesystem path is used.
 
-**Text comparison:** `ProfileCode` is a catalog code and remains exact in the portable engine. A case-only `default` row does not satisfy the exact portable code match.
+**Text comparison:** `ProfileCode` is a catalog code and remains exact in the portable engine. A case-only `default` row does not satisfy the exact portable code match, even though the legacy CI_AS comparison would have matched it.
 
 **Tests:** Trigger: exact enabled `DEFAULT` profile is absent/disabled. Non-trigger: exact enabled row exists. Boundary: only enabled `default` exists; portable exact-code behavior still fires.
 
@@ -80,11 +80,11 @@ WHERE IsEnabled = 1
 
 **Rule 7:** No filesystem path is used; the predicate hashes a carried BLOB.
 
-**Text comparison:** The computed SHA-256 is converted to lowercase hexadecimal, then compared to stored `ContentSha256` under the unknown legacy collation. **[PENDING]** Decide whether a stored uppercase representation of the same hash is accepted. The cryptographic bytes are unambiguous; only textual hex case is unresolved.
+**Text comparison:** The computed SHA-256 is lowercase hexadecimal and the source comparison is confirmed `Latin1_General_CI_AS`. For hexadecimal text, accent sensitivity is irrelevant and case is ignored. Therefore a stored uppercase representation of the same 64 hex digits compares equal in the legacy predicate and does **not** fire. The portable predicate should preserve this source behavior for hash text; `ContentSha256` is hash content, not a catalog code.
 
-**Tests:** Trigger: enabled asset has content whose computed SHA-256 differs from stored hash. Non-trigger: stored lowercase hash equals computed lowercase hash. Boundary: stored uppercase hex represents the same bytes; expected result remains **[PENDING]** the hash-text case decision.
+**Tests:** Trigger: enabled asset has content whose computed SHA-256 differs from stored hash digits. Non-trigger: stored lowercase hash equals computed lowercase hash. Boundary: stored uppercase hex for the same digest must also be a non-trigger.
 
-**Ambiguity:** Case-only hexadecimal comparison only.
+**Ambiguity:** None after applying the recorded source collation.
 
 ## `WEBSITE_BRANDING_REQUIRED_ASSET_MISSING`
 
@@ -173,7 +173,7 @@ This predicate is executed only inside the `IF @MachineName IS NOT NULL` gate ab
 
 **Rule 7:** No filesystem path is read by this title predicate.
 
-**Text comparison:** Blank detection uses trim and is collation-independent. `LIKE N'%{%}%'` looks for an opening brace followed later by a closing brace; letter case is irrelevant. Preserve those exact structural semantics.
+**Text comparison:** Blank detection uses trim and padded empty-string semantics; the brace-pattern check is structural and letter case is irrelevant. Preserve those exact structural semantics.
 
 **Tests:** Trigger: selected plan row has blank `DocumentTitle`, blank `PulseDocumentTitle`, or a remaining `{TOKEN}`-style brace pair in either title. Non-trigger: both titles are nonblank and contain no `{...}` pair. Boundary: a title containing a lone `{` with no later `}` does not match `%{%}%` and must not fire on that reason alone.
 
@@ -198,9 +198,9 @@ This predicate is executed only inside the same `IF @MachineName IS NOT NULL` ga
 
 **Rule 7:** Yes. `WebsiteRoot` is a filesystem path. The source predicate itself only detects null/blank. Once a nonblank portable root is derived, any existence/read/write probe must first resolve symlinks/junctions and prove confinement under its approved root using rule 7. The approved-root derivation is part of the missing plan evidence and must not be guessed.
 
-**Text comparison:** Trim/blank detection is collation-independent.
+**Text comparison:** Trim/blank detection does not depend on case or accents.
 
-**Tests:** Trigger: selected plan row has null, empty, or whitespace-only `WebsiteRoot`. Non-trigger: nonblank derived root. Boundary: nonblank path that lexically appears contained but resolves through a junction outside the approved root must pass this *missing* predicate but be rejected by the separate rule-7 containment validation before any probe.
+**Tests:** Trigger: selected plan row has null, empty, or ordinary-spaces-only `WebsiteRoot`. Non-trigger: nonblank derived root. Boundary: nonblank path that lexically appears contained but resolves through a junction outside the approved root must pass this *missing* predicate but be rejected by the separate rule-7 containment validation before any probe.
 
 **Ambiguity:** **[PENDING]** Extract `cfg.GetWebsiteBrandingPlan` to define the exact carried inputs and approved root used to derive `WebsiteRoot`. Do not implement a guessed `ServicesRoot + HostName` expression under this issue code without source evidence.
 
