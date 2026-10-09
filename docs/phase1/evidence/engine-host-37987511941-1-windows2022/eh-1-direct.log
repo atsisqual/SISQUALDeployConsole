@@ -1,0 +1,3 @@
+PASS  fake engine invalid request exits 2?
+PASS  fake engine rejects wrong contract version with exit 2?
+FakeEngine direct conformance: 2 passed / 0 failed?
