@@ -1,5 +1,6 @@
-# Runtime and local state
-runtime/
+# Local state. runtime/ itself is source code (the engine host, the catalog and logging modules) and is tracked:
+# only the SQLite provider payload that is materialized into it is not committed.
+runtime/sqlite-provider/
 data/
 logs/
 backups/
