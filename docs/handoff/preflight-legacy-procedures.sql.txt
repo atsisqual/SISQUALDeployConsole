@@ -3,8 +3,15 @@
 -- Extracted by the reviewer on 2026-10-09: from CREATE to the next GO, CR removed, non-ASCII shown as '?'. Nothing else is changed.
 -- Verified: the text of these five procedures is identical (compared by hash) in the snapshot at Management Console reference a62e49a7 (git blob 99f8719f) and at 8af01403 (git blob 9aa6f5e9);
 -- the older reference 9756ba95 (git blob 9401e2c3, quoted by docs/migration/analysis-pulse.md) has the same size and was not compared.
--- This is T-SQL. None of the five procedures has a COLLATE clause, so their string comparisons follow the default collation of the source database, which the snapshot does not state
--- (the SQL Server default is case-insensitive). The engine compares catalog codes exactly. A port must say, for every string comparison, which behaviour it keeps and why.
+-- This is T-SQL, and its string semantics are not those of SQLite or .NET. A port must say, for every string comparison, which behaviour it keeps and why:
+-- 1. Collation. None of the five procedures has a COLLATE clause, so they follow the collation of the source database, which the owner recorded as Latin1_General_CI_AS for every database
+--    (docs/decisions-log.md, 2026-10-05): case-insensitive and accent-sensitive. The same decision says that in the new system nothing stored changes case and codes are compared exactly.
+--    A case-only difference that the original treated as equal is therefore a decision of the port, not an accident.
+-- 2. Space padding. SQL Server pads strings with spaces before an equality comparison: a string of spaces equals the empty string, and 'a' equals 'a '. NULLIF(x, '') therefore returns NULL for a
+--    value made only of spaces. SQLite and .NET do not do this by default.
+-- 3. LEN ignores trailing spaces ('abc ' has length 3); SQLite length() and .NET Length count them.
+-- 4. LTRIM and RTRIM (one argument) remove ordinary spaces only, not tabs or other whitespace; .NET Trim() removes all whitespace.
+-- Where a boundary depends on one of these, the specification names it and the test covers it. Do not rely on the behaviour of the language you port to.
 
 -- ======================================================================
 -- cfg.ReviewExtendedApplicationModel  (163 lines, 10 issue codes)
