@@ -20,7 +20,7 @@ For anyone who ports an engine (ADR-0008, `runtime/Sisqual.Runtime.EngineHost.ps
 - Inside a script block run by a helper, a variable can be hidden by a parameter of the helper with the same name (`$Action`). Copy values to uniquely named variables first.
 - `$?` is false after a non-zero `exit`: test `$LASTEXITCODE` first.
 - The engine starts with a **minimal environment** (system folders, `PATH`, `TEMP`, user profile folders, `PSModulePath`). Do not read other environment variables; do not use one as a test hook (use a file next to the engine).
-- Use `git add -f` for files under `runtime/`: `.gitignore` ignores that folder and a plain `git add` can stop a command chain without a message.
+- `runtime/` is tracked source code (owner decision of 2026-10-09, PR #73): a plain `git add` works, and only `runtime/sqlite-provider/` (the materialized provider binaries) is ignored. Whatever you add, check with `git status` that the file is staged before you commit: a chain `git add && git commit` stops without a message if the add fails.
 
 ## 4. Secrets
 - Secrets reach the engine only in the request field `secrets`. Never in arguments, environment, logs, or the result, and never written to a file except the managed target that the engine's specification explicitly approves (for example the repaired application configuration of `CONFIG_REPAIR`, the machine-protected credential file of `WEB_ACCESS`, or the database row that `KEYCLOAK_CLIENT_SECRETS` updates).
