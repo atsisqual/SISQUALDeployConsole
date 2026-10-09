@@ -321,6 +321,12 @@ try {
     Check 'a kind wildcard does not admit a code with the wrong shape' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.inst9' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*') } 'SECRET_NOT_DECLARED')
     Check 'a bare wildcard in the contract is invalid' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.INST9' = 'canary-wildcard-value-7f3a' } -Declared @('*') } 'ENGINE_SECRET_CONTRACT_INVALID')
     Check 'a wildcard on an unknown kind in the contract is invalid' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.INST9' = 'canary-wildcard-value-7f3a' } -Declared @('ANYTHING.*') } 'ENGINE_SECRET_CONTRACT_INVALID')
+    # A kind wildcard admits only the credential of an instance that exists and is enabled in the verified catalog.
+    Set-SisqualTestCatalogInstances -Session $kindCtx.CatalogSession -Instances @{ GOOD = 1; PT01 = 1; PT02 = 0 }
+    Check 'a kind wildcard admits the credential of an enabled instance of the catalog' ([bool](Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.PT01' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*')).succeeded)
+    Check 'a kind wildcard does not admit the credential of a disabled instance' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.PT02' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*') } 'SECRET_NOT_DECLARED')
+    Check 'a kind wildcard does not admit the credential of an instance that is not in the catalog' (Throws-Code { Invoke-TestHost -Context $kindCtx -Secrets @{ 'IIS_IDENTITY.PT99' = 'canary-wildcard-value-7f3a' } -Declared @('IIS_IDENTITY.*') } 'SECRET_NOT_DECLARED')
+    Check 'an exact declaration needs no catalog lookup' ([bool](Invoke-TestHost -Context $kindCtx -Secrets @{ 'RULE_SECRET.KEYCLOAK_BOOTSTRAP' = 'canary-wildcard-value-7f3a' } -Declared @('RULE_SECRET.KEYCLOAK_BOOTSTRAP')).succeeded)
     # An action that does not run an engine is classified before any engine is looked up.
     $composite = New-TestContext; $composite.Action.ActionType = 'COMPOSITE'; $composite.Action.EngineCode = $null
     Check 'a composite action without an engine code is classified, not looked up as an engine' (Throws-Code { Invoke-TestHost -Context $composite } 'ACTION_TYPE_REQUIRES_ORCHESTRATOR')

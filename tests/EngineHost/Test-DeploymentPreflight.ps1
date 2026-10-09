@@ -228,7 +228,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     }
     [IO.File]::WriteAllText((Join-Path $package 'package-manifest.json'),($manifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
 
-    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!' }
+    $secrets = @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!'; 'WEB_ACCESS.INST1'='canary-preflight-secret-B!'; 'IIS_IDENTITY.INST5'='canary-preflight-secret-A!' }
     $directResultPath = Join-Path $temp 'direct-preview-result.json'
     $directRequest = [ordered]@{
         contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000301'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode='INST1'
@@ -279,6 +279,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     if (-not $missingHasExpectedError) { Write-SafeResultDiagnostic -Label 'missing-iis-credential' -Result $missing }
     Check 'missing IIS identity credential is an ERROR' $missingHasExpectedError
     $noWeb = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets @{ 'IIS_IDENTITY.INST1'='canary-preflight-secret-A!' }
+    Check 'a shared account whose other instances have no credential in the request cannot be verified (ERROR for the selected instance)' (@($noWeb.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_UNVERIFIED:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
     Check 'a missing Web Access credential is WEB_ACCESS_PASSWORD_MISSING, an ERROR for that instance (as in the original review)' (@($noWeb.results | Where-Object { $_.object -ceq 'WEB_ACCESS_PASSWORD_MISSING:INST1' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
     Check 'missing credential run still does not alter managed filesystem' ((TreeFingerprint $servicesRoot) -ceq $before)
 
@@ -289,7 +290,12 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $allSecrets = @{}; foreach ($key in $secrets.Keys) { $allSecrets[$key] = $secrets[$key] }
     $allSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
     $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $allSecrets
-    Check 'Windows account names are compared without case: svc-user and SVC-USER with different passwords conflict' (@($all.results | Where-Object { $_.object -ceq 'SERVICE_IDENTITY_PASSWORD_CONFLICT:SVC-USER' -and $_.status -ceq 'ERROR' }).Count -eq 1)
+    Check 'Windows account names are compared without case: svc-user and SVC-USER with different passwords conflict' (@($all.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' }).Count -eq 1)
+    # The shared account is checked against every enabled instance, also when only one instance is run (as FULL_DEPLOYMENT does).
+    $oneSecrets = @{}; foreach ($key in $secrets.Keys) { $oneSecrets[$key] = $secrets[$key] }
+    $oneSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
+    $oneConflict = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $oneSecrets
+    Check 'a run for one instance finds the shared account with another password on an instance that is not selected' (@($oneConflict.results | Where-Object { $_.object -like 'SERVICE_IDENTITY_PASSWORD_CONFLICT:*' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1)
     $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
     Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)' ($qrMissing.Count -eq 3 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3|QR_ASSET_MISSING:INST5 / c1') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
     $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
@@ -314,6 +320,22 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $exeEscape = New-ScenarioPackage -Name 'exeescape' -ExtraSql "UPDATE cfg_WindowsServiceDefinition SET ExecutablePathTemplate = '{INSTANCE_ROOT}\\..\\..\\evil.exe';"
     $exeEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $exeEscape.Package -CatalogPath $exeEscape.Catalog -CatalogSession $exeEscape.Session -ManifestEntries $exeEscape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     Check 'a service executable path that leaves the instance folder is SERVICE_EXECUTABLE_OUTSIDE_ROOT, even if a file exists there' (@($exeEscaped.results | Where-Object { $_.object -ceq 'SERVICE_EXECUTABLE_OUTSIDE_ROOT:WFM_MOBILE_APP' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($exeEscaped.results | Where-Object { $_.object -like 'SERVICE_EXECUTABLE_MISSING*' }).Count -eq 0)
+
+    # A junction inside the application folder that points outside it: the lexical path stays inside the root, the real one does not.
+    if ($IsWindows) {
+        $junctionTarget = Join-Path $temp 'junction-target'
+        New-Item -ItemType Directory -Path $junctionTarget -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $junctionTarget 'data.json'),'{}',[Text.UTF8Encoding]::new($false))
+        $junction = Join-Path $appRoot 'linked'
+        New-Item -ItemType Junction -Path $junction -Target $junctionTarget | Out-Null
+        try {
+            $linked = New-ScenarioPackage -Name 'junction' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(5,'APP1','linked\data.json','JSON',1,1);"
+            $linkedRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $linked.Package -CatalogPath $linked.Catalog -CatalogSession $linked.Session -ManifestEntries $linked.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+            Write-SafeResultDiagnostic -Label 'junction' -Result $linkedRun
+            Check 'a required file reached through a junction that points outside the application folder is REQUIRED_PATH_OUTSIDE_ROOT' (@($linkedRun.results | Where-Object { $_.object -ceq 'REQUIRED_PATH_OUTSIDE_ROOT:5' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and @($linkedRun.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+        }
+        finally { [IO.Directory]::Delete($junction) }
+    }
 
     # A file in a folder that cannot be read is an ERROR for that item and the run still finishes (specification: not a crash).
     if ($IsWindows) {
@@ -343,7 +365,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
         [IO.File]::WriteAllText($moduleFile, $moduleOriginal + "`n# changed after the manifest was made`n", [Text.UTF8Encoding]::new($false))
         $tampered = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
         Write-SafeResultDiagnostic -Label 'tampered-module' -Result $tampered
-        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0) ([string]$tampered.errorMessage)
+        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1) ([string]$tampered.errorMessage)
     }
     finally { [IO.File]::WriteAllText($moduleFile, $moduleOriginal, [Text.UTF8Encoding]::new($false)) }
 

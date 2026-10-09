@@ -146,6 +146,32 @@ function Test-PathUnderRoot {
     return ($full.Equals($rootFull,[StringComparison]::OrdinalIgnoreCase) -or $full.StartsWith($rootFull + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase))
 }
 
+function Resolve-RealPath {
+    # Follows every junction and symbolic link of the part of a path that exists, so a folder inside the approved root that points outside it is seen for what it is.
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $full = [IO.Path]::GetFullPath($Path)
+        $pathRoot = [IO.Path]::GetPathRoot($full)
+        $current = $pathRoot
+        $separators = [char[]]@([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
+        foreach ($part in $full.Substring($pathRoot.Length).Split($separators,[StringSplitOptions]::RemoveEmptyEntries)) {
+            $candidate = [IO.Path]::Combine($current,$part)
+            $info = if ([IO.Directory]::Exists($candidate)) { [IO.DirectoryInfo]::new($candidate) } elseif ([IO.File]::Exists($candidate)) { [IO.FileInfo]::new($candidate) } else { $null }
+            if ($null -eq $info) { $current = $candidate; continue }
+            $target = $null
+            if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { $target = $info.ResolveLinkTarget($true) }
+            $current = if ($null -ne $target) { $target.FullName } else { $candidate }
+        }
+        return $current
+    }
+    catch { return [IO.Path]::GetFullPath($Path) }
+}
+
+function Test-RealPathUnderRoot {
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Root)
+    return (Test-PathUnderRoot -Path (Resolve-RealPath $Path) -Root (Resolve-RealPath $Root))
+}
+
 function Test-PathChecked {
     # 'EXISTS', 'MISSING' or 'DENIED'. A path that cannot be read is a result for that item, never an exception that ends the run.
     param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][ValidateSet('Leaf','Container')][string]$PathType)
@@ -325,15 +351,34 @@ function Invoke-ReviewWindowsServices {
             }
         }
     }
-    $userHashes = New-IgnoreCaseMap
-    foreach ($instance in $Context.SelectedInstances) {
-        $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
+    # An account shared by several enabled instances must have one password. The selected instances are compared with EVERY enabled instance of the machine
+    # (a run for one instance of FULL_DEPLOYMENT included); the credentials of the others come in the request, never from the catalog, so an account whose other
+    # instances have no credential in the request cannot be verified, and that is an ERROR: the reconciliation that follows could reset the shared account.
+    $selectedCodes = New-OrdinalMap
+    foreach ($selected in $Context.SelectedInstances) { $selectedCodes[[string](Get-Field $selected 'InstanceCode' '')] = $true }
+    $accounts = New-IgnoreCaseMap
+    foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
-        $hash = Get-SecretHash ('IIS_IDENTITY.' + $instanceCode)
-        if (-not [string]::IsNullOrWhiteSpace($user) -and -not [string]::IsNullOrWhiteSpace($hash)) {
-            if ($userHashes.ContainsKey($user) -and $userHashes[$user] -cne $hash) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_CONFLICT $user }
-            else { $userHashes[$user] = $hash }
+        if ([string]::IsNullOrWhiteSpace($user)) { continue }
+        if (-not $accounts.ContainsKey($user)) { $accounts[$user] = [System.Collections.Generic.List[object]]::new() }
+        $accounts[$user].Add($instance)
+    }
+    foreach ($user in @($accounts.Keys)) {
+        $members = @($accounts[$user])
+        if ($members.Count -lt 2) { continue }
+        $selectedMembers = @($members | Where-Object { $selectedCodes.ContainsKey([string](Get-Field $_ 'InstanceCode' '')) })
+        if ($selectedMembers.Count -eq 0) { continue }
+        $passwordHashes = New-OrdinalMap
+        $unverified = $false
+        foreach ($member in $members) {
+            $memberCode = [string](Get-Field $member 'InstanceCode' '')
+            $memberHash = Get-SecretHash ('IIS_IDENTITY.' + $memberCode)
+            if (-not [string]::IsNullOrWhiteSpace($memberHash)) { $passwordHashes[$memberHash] = $memberCode }
+            elseif (-not $selectedCodes.ContainsKey($memberCode)) { $unverified = $true }
         }
+        $targetCode = [string](Get-Field $selectedMembers[0] 'InstanceCode' '')
+        if ($passwordHashes.Count -gt 1) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_CONFLICT $user $targetCode }
+        elseif ($unverified) { Add-Issue ERROR WINDOWS_SERVICES SERVICE_IDENTITY_PASSWORD_UNVERIFIED $user $targetCode }
     }
 }
 
@@ -489,9 +534,9 @@ function Invoke-RequiredFileChecks {
             $relative = [string](Get-Field $file 'RelativePath' '')
             if ([string]::IsNullOrWhiteSpace($relative) -or [string]::IsNullOrWhiteSpace($basePath)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PATH_EMPTY $fileId $instanceCode; continue }
             # A sealed catalog can still be edited by hand and sealed again: neither the application folder nor the file may leave the folder they belong to.
-            if (-not (Test-PathUnderRoot -Path $basePath -Root $instanceRoot)) { Add-Issue ERROR APPLICATION_TREE APPLICATION_PATH_OUTSIDE_ROOT $applicationCode $instanceCode; continue }
+            if (-not (Test-RealPathUnderRoot -Path $basePath -Root $instanceRoot)) { Add-Issue ERROR APPLICATION_TREE APPLICATION_PATH_OUTSIDE_ROOT $applicationCode $instanceCode; continue }
             $fullPath = [IO.Path]::GetFullPath((Join-Path $basePath $relative))
-            if (-not (Test-PathUnderRoot -Path $fullPath -Root $basePath)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PATH_OUTSIDE_ROOT $fileId $instanceCode; continue }
+            if (-not (Test-RealPathUnderRoot -Path $fullPath -Root $basePath)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PATH_OUTSIDE_ROOT $fileId $instanceCode; continue }
             $mode = if ($policies.ContainsKey($fileId)) { $policies[$fileId] } else { 'PATCH' }
             if ($mode -ceq 'REPLACE') {
                 $parentState = Test-PathChecked (Split-Path -Parent $fullPath) Container
@@ -519,7 +564,7 @@ function Invoke-ServiceFileChecks {
             $template = [string](Get-Field $definition 'ExecutablePathTemplate' '')
             $path = Expand-LocalTemplate $template $Context.Server $instance
             # The executable of an instance service lives in the instance folder: an absolute path or a parent reference in the template would otherwise point at any program on the machine.
-            if (-not [string]::IsNullOrWhiteSpace($path) -and -not [string]::IsNullOrWhiteSpace($serviceInstanceRoot) -and -not (Test-PathUnderRoot -Path $path -Root $serviceInstanceRoot)) { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_OUTSIDE_ROOT ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode; continue }
+            if (-not [string]::IsNullOrWhiteSpace($path) -and -not [string]::IsNullOrWhiteSpace($serviceInstanceRoot) -and -not (Test-RealPathUnderRoot -Path $path -Root $serviceInstanceRoot)) { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_OUTSIDE_ROOT ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode; continue }
             $exeState = if ([string]::IsNullOrWhiteSpace($path)) { 'MISSING' } else { Test-PathChecked $path Leaf }
             if ($exeState -ceq 'DENIED') { Add-Issue ERROR WINDOWS_SERVICE PATH_ACCESS_DENIED ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
             elseif ($exeState -cne 'EXISTS') { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_MISSING ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
@@ -565,6 +610,10 @@ function Open-PreflightCatalog {
 function Write-EngineResult {
     param([Parameter(Mandatory)][string]$ResultPath,[Parameter(Mandatory)][datetime]$StartedAt,[bool]$Cancelled = $false)
     $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    # Every result says the coverage is incomplete, including one that ends early (manifest, catalog, machine or instance selection failed).
+    if (@($script:Issues | Where-Object { $_.Code -ceq 'PREFLIGHT_COVERAGE_INCOMPLETE' }).Count -eq 0) {
+        Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews; a clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
+    }
     $errorCount = @($script:Issues | Where-Object Severity -eq 'ERROR').Count
     $warningCount = @($script:Issues | Where-Object Severity -eq 'WARNING').Count
     # When the catalog could not be opened (a module that no longer matches the manifest, the provider, the file) there is nothing to count, and the result
@@ -651,7 +700,6 @@ try {
     $context = [pscustomobject]@{ Server=$server; Servers=$servers; Instances=$instances; SelectedInstances=$selected; PackageRoot=$packageRoot; ManifestFiles=$manifestFiles }
 
     $meta = @(Get-CatalogRows 'catalog_meta')
-    Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews; a clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
     if ($meta.Count -eq 1) { Add-Issue INFO CATALOG CATALOG_BUILT_AT ([string](Get-Field $meta[0] 'built_at_utc' '')) '' 'Catalog build time; no age limit is applied.' }
 
     Invoke-RequiredFileChecks $context

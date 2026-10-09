@@ -646,8 +646,18 @@ function Invoke-SisqualEngineHost {
     # a caller error and nothing is started. The contract is read only when secrets are supplied.
     if ($null -ne $Secrets -and @($Secrets.Keys).Count -gt 0) {
         $declaredSecretReferences = @(Get-SisqualDeclaredSecretReferences -PackageRoot $PackageRoot -ManifestEntries $ManifestEntries -EngineCode $engineCode)
+        $secretInstanceReader = Get-Command -Name 'Get-SisqualRuntimeCatalogInstance' -Module 'Sisqual.Runtime.Catalog' -ErrorAction SilentlyContinue
+        if ($null -eq $secretInstanceReader) { throw 'CATALOG_SESSION_REQUIRED' }
         foreach ($secretReference in @($Secrets.Keys)) {
             if ([string]$secretReference -cnotmatch '^[A-Z0-9_.:-]{1,120}$' -or -not (Test-SisqualSecretReferenceDeclared ([string]$secretReference) $declaredSecretReferences)) { throw 'SECRET_NOT_DECLARED' }
+            # A reference admitted only by a kind wildcard (KIND.*) must belong to an instance that exists and is enabled in the verified catalog: the wildcard
+            # never admits a credential of something the catalog does not know. Exact declarations need no such check.
+            if ($declaredSecretReferences -cnotcontains [string]$secretReference) {
+                $referenceCode = ([string]$secretReference).Substring(([string]$secretReference).IndexOf('.') + 1)
+                try { $referenceInstance = & $secretInstanceReader -Session $CatalogSession -InstanceCode $referenceCode }
+                catch { throw 'CATALOG_SESSION_INVALID' }
+                if ($null -eq $referenceInstance -or [int]$referenceInstance.IsEnabled -ne 1) { throw 'SECRET_NOT_DECLARED' }
+            }
         }
     }
     [string[]]$normalizedLocks = @($LockKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object -Unique)
