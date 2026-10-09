@@ -1,0 +1,18 @@
+PASS  every table the engine names is in the carried schema?
+PASS  every field the engine reads is a column of a table it uses?
+PASS  every table of the synthetic catalog is a carried table?
+PASS  every column of the synthetic catalog is a real column?
+PASS  the engine reads at least the tables of the reviews it implements?
+PASS  the engine requires exactly the tables it reads (catalog_meta aside)?
+PASS  the synthetic catalog creates every table the engine requires?
+PASS  the engine declares exactly how many of the original issue codes it implements?
+DIAG  severity not stated in the original, not compared: ENABLED_INSTANCE_LOGO_MISSING?
+PASS  every implemented issue code has the severity of the original review (or an owner decision)?
+DIAG  not yet ported from cfg.ReviewApplicationCatalog: CONFIG_FILE_WITHOUT_APPLICATION, DUPLICATE_IIS_PATH, IIS_APPLICATION_NOT_IN_CATALOG, NON_IIS_COMPONENT_HAS_IIS_PATH?
+DIAG  not yet ported from cfg.ReviewExtendedApplicationModel: AUTO_START_APPLICATION_PROVIDER_NOT_EXPANDED, AUTO_START_ASSEMBLY_LOADABILITY, AUTO_START_POOL_NOT_ALWAYS_RUNNING, AUTO_START_PROVIDER_EXPANDED_NAME_DUPLICATE, AUTO_START_PROVIDER_EXPANDED_NAME_INVALID, AUTO_START_PROVIDER_NOT_ENABLED, AUTO_START_PROVIDER_TEMPLATE_MISSING, AUTO_START_PROVIDER_TYPE_MISSING, PROCESS_HANGFIRE_RULE_MISSING, PROCESS_OWIN_RULE_MISSING?
+DIAG  not yet ported from cfg.ReviewIisDeploymentModel: CERTIFICATE_POLICY_MISSING, DUPLICATE_POOL_TEMPLATE, IIS_IDENTITY_PASSWORD_CONFLICT, PRIMARY_BINDING_COUNT, ROOT_DEFINITION_COUNT, ROOT_POOL_NAME_INVALID, SERVER_NOT_REGISTERED?
+DIAG  not yet ported from cfg.ReviewLinksPageModel: LINKS_BRAND_LOGO_MISSING, LINKS_INDEX_TEMPLATE_MISSING, LINKS_WEB_CONFIG_TEMPLATE_MISSING, MANAGED_INSTANCE_NOT_ACTIONABLE, MANAGED_SERVER_NOT_FOUND, NO_PUBLISHED_LINK_APPLICATIONS, PUBLISHED_APPLICATION_URL_UNRESOLVED?
+DIAG  not yet ported from cfg.ReviewLinksPagePresentationResources: LINKS_PRESENTATION_HASH_MISMATCH?
+DIAG  not yet ported from cfg.ReviewWebsiteBrandingModel: WEBSITE_BRANDING_ASSET_HASH_MISMATCH, WEBSITE_BRANDING_PROFILE_MISSING, WEBSITE_BRANDING_REQUIRED_ASSET_MISSING, WEBSITE_BRANDING_ROOT_MISSING, WEBSITE_BRANDING_TITLE_INVALID?
+DIAG  not yet ported from ops.ReviewOperationsFramework: OPS_PROFILE_MISSING?
+Preflight schema conformance: 9 passed / 0 failed?
