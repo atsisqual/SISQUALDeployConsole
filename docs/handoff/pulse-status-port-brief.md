@@ -31,7 +31,7 @@ The portable catalog column inventory in section 3 was rechecked against `tests/
 5. Expand the Pulse page template. Any unresolved token is an error.
 6. **[PENDING]** Check-plan construction remains blocked (`bloqueado`) until the exact applicability predicate in `cfg.GetPulseCheckPlan` is extracted from the snapshot. Confirmed behavior is that the hub scope is enabled instances on the same server and in the same country and that enabled HTTP policies participate. This brief does **not** assert a Cartesian product between every in-scope instance and every enabled policy.
 7. Preview prints the hub, public URL, destination directory, collector path, scheduled-task name, interval, and endpoint count. Preview writes nothing.
-8. Apply backs up the existing page, web config, logo and collector under `ConfigBackupRoot\Pulse\<timestamp>`.
+8. Apply backs up the existing page, web config, logo and collector under `ConfigBackupRoot\Pulse\<timestamp>`. The original backup set does **not** include the website-branding assets. **[PENDING]** Whether the port should add backup coverage for those branding assets is an owner/design decision; this brief does not add it.
 9. Apply verifies resource/branding content hashes and writes the live branding assets, page, web config, logo and collector atomically. The production write pattern is a temporary file in the destination directory followed by replacement of the live target; this atomic live-asset replacement is source behavior, not part of the unapproved A6 persistence proposal.
 10. Apply grants modify rights on the page and collector directories to the scheduled-task identity.
 11. Apply registers the scheduled task using the hub IIS identity and password.
@@ -231,7 +231,7 @@ Additional integration/security tests after the blocking source questions are an
 - a contained reparse target remains accepted;
 - preview writes nothing;
 - live branding/page/web-config/logo/collector writes use a temporary file and atomic replacement of the live target;
-- unconditional live-target recovery: inject a failure on the later collector write after earlier branding/page/web-config/logo targets have already been replaced; require recovery from the step-8 backups for every production target in the branding/page/web-config/logo/collector set, including all targets already replaced, and verify every target is byte-for-byte identical to its pre-apply state. This recovery test is unconditional and does not depend on A6;
+- unconditional live-target recovery for the original safeguarded set: inject a failure on the later collector write after page, web config and logo have already been replaced; require the step-8 backups to restore page, web config, logo and collector to byte-for-byte equality with their pre-apply state, regardless of which of those targets had already been replaced. Website-branding assets are intentionally excluded from this recovery assertion because the original step 8 does not back them up; adding such backup coverage remains the `[PENDING]` decision recorded above;
 - bounded parallel checks respect the overall deadline;
 - HTTPS certificate validation is enabled by default;
 - healthy, responding-as-healthy, redirect, timeout/refused and failed responses preserve `HealthyStatusCodes`/`RespondingStatusCodes` semantics;
