@@ -313,6 +313,19 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $noTableAll = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noTable.Package -CatalogPath $noTable.Catalog -CatalogSession $noTable.Session -ManifestEntries $noTable.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
     Check 'a run that ends on a missing table marks every selected instance failed, not one (all-instances run)' ([int]$noTableAll.summary.targetCount -eq 5 -and [int]$noTableAll.summary.failedTargets -eq 5 -and [int]$noTableAll.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noTableAll.summary.targetCount,$noTableAll.summary.failedTargets,$noTableAll.summary.succeededTargets))
 
+    # A cancelled run that has the catalog open knows its targets, and none of them was verified: all of them are failed targets.
+    $cancelFile = Join-Path $temp 'direct-all.cancel'
+    [IO.File]::WriteAllText($cancelFile,'cancel',[Text.UTF8Encoding]::new($false))
+    $cancelResultPath = Join-Path $temp 'direct-all-result.json'
+    $cancelRequest = [ordered]@{
+        contractVersion='0.1-proposed'; operationId='00000000-0000-4000-8000-000000000302'; engineCode='DEPLOYMENT_PREFLIGHT'; mode='PREVIEW'; instanceCode=$null
+        catalogPath=$catalog; planFingerprint=$null; deadlineUtc=[DateTime]::UtcNow.AddMinutes(15).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        cancelPath=$cancelFile; resultPath=$cancelResultPath; secrets=$secrets
+    }
+    $cancelDirect = Invoke-DirectPreflightRequest -Pwsh (Get-Process -Id $PID).Path -EnginePath (Join-Path $engines 'Invoke-DeploymentPreflight.ps1') -Request $cancelRequest
+    $cancelled = if (Test-Path -LiteralPath $cancelResultPath -PathType Leaf) { [IO.File]::ReadAllText($cancelResultPath) | ConvertFrom-Json -Depth 30 -DateKind String } else { $null }
+    Check 'a cancelled all-instances run marks every selected instance failed (the catalog is open, so the targets are known)' ($null -ne $cancelled -and [string]$cancelled.errorMessage -ceq 'CANCELLED' -and [int]$cancelled.summary.targetCount -eq 5 -and [int]$cancelled.summary.failedTargets -eq 5 -and [int]$cancelled.summary.succeededTargets -eq 0) (('exit={0} target={1} failed={2}' -f $cancelDirect.ExitCode,$cancelled.summary.targetCount,$cancelled.summary.failedTargets))
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"
@@ -412,7 +425,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
         [IO.File]::WriteAllText($moduleFile, $moduleOriginal + "`n# changed after the manifest was made`n", [Text.UTF8Encoding]::new($false))
         $tampered = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
         Write-SafeResultDiagnostic -Label 'tampered-module' -Result $tampered
-        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1) ([string]$tampered.errorMessage)
+        Check 'a catalog module that no longer matches the manifest is not imported (the run fails before reading the catalog)' (-not [bool]$tampered.succeeded -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_INTERNAL_ERROR*' }).Count -ge 1 -and @($tampered.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' }).Count -eq 0 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1 -and @($tampered.results | Where-Object { $_.object -like 'PREFLIGHT_TARGETS_UNKNOWN*' -and $_.status -ceq 'INFO' }).Count -eq 1) ([string]$tampered.errorMessage)
     }
     finally { [IO.File]::WriteAllText($moduleFile, $moduleOriginal, [Text.UTF8Encoding]::new($false)) }
 

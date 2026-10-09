@@ -672,6 +672,11 @@ function Open-PreflightCatalog {
 function Write-EngineResult {
     param([Parameter(Mandatory)][string]$ResultPath,[Parameter(Mandatory)][datetime]$StartedAt,[bool]$Cancelled = $false,[bool]$AllTargetsFailed = $false)
     $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    # With no catalog connection (a module failed its manifest check, so the catalog was never read) the number of selected instances cannot be known: say so, instead of
+    # presenting the placeholder of one target as a count.
+    if ($null -eq $script:Connection -and @($script:Issues | Where-Object { $_.Code -ceq 'PREFLIGHT_TARGETS_UNKNOWN' }).Count -eq 0) {
+        Add-Issue INFO PREFLIGHT PREFLIGHT_TARGETS_UNKNOWN '' '' 'The catalog was not opened, so the number of selected instances is unknown; targetCount 1 is a placeholder and the run failed as a whole.'
+    }
     # Every result says the coverage is incomplete, including one that ends early (manifest, catalog, machine or instance selection failed).
     if (@($script:Issues | Where-Object { $_.Code -ceq 'PREFLIGHT_COVERAGE_INCOMPLETE' }).Count -eq 0) {
         Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews; a clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
@@ -744,7 +749,6 @@ catch [System.Management.Automation.ExitException] { throw }
 catch { Exit-InvalidRequest }
 
 try {
-    Assert-NotCancelled
     $packageRoot = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
     $manifestPath = Join-Path $packageRoot 'package-manifest.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'PACKAGE_MANIFEST_MISSING' }
@@ -753,6 +757,8 @@ try {
     $manifestFiles = @($manifest.files)
     if ($manifestFiles.Count -eq 0) { throw 'PACKAGE_MANIFEST_FILES_MISSING' }
     $script:Connection = Open-PreflightCatalog -PackageRoot $packageRoot -CatalogPath ([string](Get-Field $script:Request 'catalogPath' '')) -ManifestFiles $manifestFiles
+    # Cancellation is checked once the catalog is open, so a cancelled run still knows how many instances were selected (opening it is quick).
+    Assert-NotCancelled
 
     $missingTables = @($script:RequiredCatalogTables | Where-Object { -not (Test-CatalogTable $_) })
     foreach ($missingTable in $missingTables) { Add-Issue ERROR CATALOG CATALOG_TABLE_MISSING $missingTable }
@@ -801,7 +807,7 @@ try {
 }
 catch [System.OperationCanceledException] {
     Add-Issue ERROR PREFLIGHT CANCELLED
-    $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt -Cancelled
+    $exitCode = Write-EngineResult -ResultPath ([string](Get-Field $script:Request 'resultPath' '')) -StartedAt $startedAt -Cancelled $true -AllTargetsFailed $true
     exit $exitCode
 }
 catch {
