@@ -56,7 +56,7 @@ Pure and repeatable: the same catalog and file tree give the same list in the sa
 - Catalog or manifest invalid, or machine mismatch: stop before any check.
 - A file or folder that cannot be read (access denied) is an `ERROR` for that item, not a crash.
 - A review that throws is reported as an `ERROR` with its review code and the other reviews still run.
-- A missing server policy (IIS, Web Access, links, database copy, Pulse) is an `ERROR` so that `FULL_DEPLOYMENT` stops before an engine would stop on it (decision of 2026-10-05: engines stop without a policy row).
+- A missing server policy for IIS, Web Access, links or database copy is an `ERROR` so that `FULL_DEPLOYMENT` stops before the corresponding engine would stop on it. [DECIDED 2026-10-06] Pulse is the exception: a machine without a Pulse profile is `not applicable` and does not fail, as recorded in `docs/decisions-log.md` and `docs/engines/PULSE_STATUS.md`.
 
 ## 9. Backup and restore
 
