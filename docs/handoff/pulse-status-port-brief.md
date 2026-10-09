@@ -29,10 +29,10 @@ The portable catalog column inventory in section 3 was rechecked against `tests/
 3. Run the Pulse model review. Any `ERROR` blocks before deployment work.
 4. Read one deployment-plan row for the hub, then read the website-branding model/plan/assets and Pulse resources.
 5. Expand the Pulse page template. Any unresolved token is an error.
-6. **[BLOCKED]** Build the HTTPS check plan only after the exact applicability predicate in `cfg.GetPulseCheckPlan` is extracted from the snapshot. Confirmed behavior is that the hub scope is enabled instances on the same server and in the same country and that enabled HTTP policies participate. This brief does **not** assert a Cartesian product between every in-scope instance and every enabled policy.
+6. **[PENDING]** Check-plan construction remains blocked (`bloqueado`) until the exact applicability predicate in `cfg.GetPulseCheckPlan` is extracted from the snapshot. Confirmed behavior is that the hub scope is enabled instances on the same server and in the same country and that enabled HTTP policies participate. This brief does **not** assert a Cartesian product between every in-scope instance and every enabled policy.
 7. Preview prints the hub, public URL, destination directory, collector path, scheduled-task name, interval, and endpoint count. Preview writes nothing.
 8. Apply backs up the existing page, web config, logo and collector under `ConfigBackupRoot\Pulse\<timestamp>`.
-9. Apply verifies resource/branding content hashes and writes branding assets, page, web config, logo and collector.
+9. Apply verifies resource/branding content hashes and writes the live branding assets, page, web config, logo and collector atomically. The production write pattern is a temporary file in the destination directory followed by replacement of the live target; this atomic live-asset replacement is source behavior, not part of the unapproved A6 persistence proposal.
 10. Apply grants modify rights on the page and collector directories to the scheduled-task identity.
 11. Apply registers the scheduled task using the hub IIS identity and password.
 12. Apply runs one collection immediately.
@@ -230,6 +230,7 @@ Additional integration/security tests after the blocking source questions are an
 - page/resource/branding/collector path junction or symlink escaping its approved root is rejected before any probe/write;
 - a contained reparse target remains accepted;
 - preview writes nothing;
+- live branding/page/web-config/logo/collector writes use a temporary file and atomic replacement of the live target;
 - bounded parallel checks respect the overall deadline;
 - HTTPS certificate validation is enabled by default;
 - healthy, responding-as-healthy, redirect, timeout/refused and failed responses preserve `HealthyStatusCodes`/`RespondingStatusCodes` semantics;
