@@ -6,7 +6,7 @@
 
 ## 1. Evidence boundary
 
-### Checked now against the converted real snapshot
+### Checked against the converted real snapshot
 
 The reviewer real-snapshot run on the 2026-10-07 nightly export produced 6 catalogs, 76 instances and 16 redacted values. After the obsolete-metadata cleanup, `Test-CatalogConversion.ps1` reported 131 passed / 6 failed. The six failures are one `action-xref` failure in each catalog, and every catalog reports the same three unresolved adapter references:
 
@@ -16,18 +16,27 @@ The reviewer real-snapshot run on the 2026-10-07 nightly export produced 6 catal
 
 These are therefore three stale global adapter rows repeated in all six catalogs, not six different adapter rows.
 
-I also checked the current specifications and source definitions now to identify the corresponding portable actions and to avoid guessing from the stale names:
+The same reviewer evidence reports the post-cleanup effect on every converted catalog: `ops_Engine` changes from 19 source-era rows to 17 portable rows because the retired engine rows `DATABASE_SETTINGS` and `V8_KEYCLOAK_CONFIG` are removed. The direct count query for the converted catalog is:
+
+```sql
+SELECT COUNT(*) AS EngineCount
+FROM ops_Engine;
+```
+
+The reviewer-provided converted-catalog result is `EngineCount = 17` for each of the six catalogs. This query was not rerun inside this documentation PR; the result is reviewer-local real-snapshot evidence, not CI evidence. The number 19 is therefore retained only when describing the pre-cleanup/source inventory, never as the current portable catalog count.
+
+I also checked the current specifications and source definitions to identify the corresponding portable actions and to avoid guessing from the stale names:
 
 - action `DATABASE_SETTINGS` exists and runs engine `DATABASE_CONTENT_SYNC`; it remains the retained step 30 of `FULL_DEPLOYMENT`;
 - action `WINDOWS_SERVICES` exists and runs engine `WINDOWS_SERVICES`;
-- action `STORAGE_SIZE_SCAN` exists, but it only measures housekeeping-policy storage. The specification explicitly says deletion/cleanup is a separate old-console feature, outside the 19 engines;
+- action `STORAGE_SIZE_SCAN` exists, but it only measures housekeeping-policy storage. The specification explicitly says deletion/cleanup is a separate old-console feature, outside the 17 autonomous engine rows remaining in the post-cleanup portable catalog;
 - the owner decision of 2026-10-06 puts housekeeping itself in a separate phase after wave 9.
 
 The stale target codes `SETTINGS_SYNC`, `HOUSEKEEPING_APPLY` and `SERVICE_RECONCILE` do not resolve to rows in `ops_Action`, which is exactly why the real-snapshot `action-xref` group fails.
 
 ### What was in CI
 
-CI proved the converter/verifier behavior with synthetic and LocalDB/SQL Server fixtures, not the contents of the real nightly snapshot. On the cleanup head, the relevant CI evidence included the C8/action-xref regression suite, the B4 verifier suite and the 41/41 LocalDB/SQL Server integration. The real-snapshot 131 passed / 6 failed result above was a reviewer local run and must not be described as CI evidence.
+CI proved the converter/verifier behavior with synthetic and LocalDB/SQL Server fixtures, not the contents of the real nightly snapshot. On the cleanup head, the relevant CI evidence included the C8/action-xref regression suite, the B4 verifier suite and the 41/41 LocalDB/SQL Server integration. The real-snapshot 131 passed / 6 failed result and the 17-row converted `ops_Engine` count above were reviewer-local evidence and must not be described as CI evidence.
 
 ## 2. The three adapter rows
 
@@ -35,7 +44,7 @@ CI proved the converter/verifier behavior with synthetic and LocalDB/SQL Server 
 |---|---|---|---|---|---|
 | `DATABASE_SETTING` | `DATABASE_SETTING_RULE` | `/actions` | `SETTINGS_SYNC` | `DATABASE_SETTINGS` -> engine `DATABASE_CONTENT_SYNC` | stale name; there is already one approved portable action for this behavior |
 | `WINDOWS_SERVICE` | `WINDOWS_SERVICE` | `/environments` | `SERVICE_RECONCILE` | `WINDOWS_SERVICES` -> engine `WINDOWS_SERVICES` | stale name; there is already one approved portable action for this behavior |
-| `HOUSEKEEPING` | `RETENTION_POLICY` | `/housekeeping` | `HOUSEKEEPING_APPLY` | no equivalent apply action in the 19-engine catalog | stale execution reference; `STORAGE_SIZE_SCAN` is not an apply/cleanup replacement |
+| `HOUSEKEEPING` | `RETENTION_POLICY` | `/housekeeping` | `HOUSEKEEPING_APPLY` | no equivalent apply action in the 17-engine post-cleanup catalog | stale execution reference; `STORAGE_SIZE_SCAN` is not an apply/cleanup replacement |
 
 `cfg_ConfigurationAdapterDefinition.ActionCode` is optional. The verifier deliberately accepts NULL/blank references and only requires a non-empty value to resolve exactly to `ops_Action.ActionCode`.
 
@@ -63,7 +72,7 @@ Until that action exists, either leave `HOUSEKEEPING.ActionCode` NULL or keep th
 
 **Verifier effect:** the database and Windows-service references can become valid immediately. The housekeeping reference becomes valid only when the new action is actually present in `ops_Action`.
 
-**Engine effect:** expands the executable surface beyond the current 19 engines and needs its own specification, safety model, tests and owner-approved phase work. It must not be substituted by `STORAGE_SIZE_SCAN`, because that engine does not delete or move files.
+**Engine effect:** expands the executable surface beyond the current 17 autonomous engine rows and needs its own specification, safety model, tests and owner-approved phase work. It must not be substituted by `STORAGE_SIZE_SCAN`, because that engine does not delete or move files.
 
 ### Option C - disable or detach all three adapters until later UI work
 
