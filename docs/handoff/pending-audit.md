@@ -18,7 +18,7 @@ A grep hit is counted once per output line. A source line that discusses more th
 
 For this correction every one of the **255 live grep lines** was re-reviewed individually. A vocabulary definition, tag legend, documentary mention, evidence gate, validation or still-unresolved implementation item is `keep`. A substantive question whose decision is already closed in `docs/decisions-log.md` or `docs/handoff/pending-decisions-register.md` is `remove`; when the accepted answer is to derive or validate behavior in a test, the stale decision marker is still `remove` while the validation itself remains. A question that still requires an owner decision is `owner question`.
 
-Relative to the previous audit head `f67dcbdda8984f60edcab560cb57324f013cd0a3`, **81 live grep lines changed recommendation**: 43 engine-specification lines and 38 other live-document lines. The census does not change.
+Against correction head `2a75b979ba208cd7e8d50368341482decea9472e`, **6 live grep lines changed recommendation**: `catalog-conversion-plan.md:290,315,365,377` and `ADR-0007-embedded-readonly-catalog.md:42` changed from `keep` to `remove`, while `risk-register.md:76` changed from `remove` back to `keep`. Relative to the earlier audit head `f67dcbdda8984f60edcab560cb57324f013cd0a3`, **85 live grep lines changed recommendation**: 43 engine-specification lines and 42 other live-document lines. The census does not change.
 
 Historical handoffs (`docs/handoff/2026-*`) and evidence (`docs/*/evidence/*`) are grouped by file and hit count as `historico, nao auditado`.
 
@@ -76,15 +76,17 @@ Historical handoffs (`docs/handoff/2026-*`) and evidence (`docs/*/evidence/*`) a
 | `docs/migration/analysis-cross-machine-operations.md:70,74,82` | 3 | plan location plus the owner-decision section/prefix | S4 and Q4/Q5 close all decisions referenced by these markers | remove |
 | `docs/migration/analysis-pulse.md:6` | 1 | tag vocabulary | vocabulary only | keep |
 | `docs/migration/analysis-pulse.md:61,83` | 2 | scope pointer and collector-runtime pointer | the 2026-10-06 owner decisions close both | remove |
-| `docs/migration/catalog-conversion-plan.md:9,72,113,207,251,290,315,365,373,377` | 10 | vocabulary plus still-open/evidence/implementation items | no recorded decision closes every pending concept on these raw lines | keep |
+| `docs/migration/catalog-conversion-plan.md:9,72,113,207,251,373` | 6 | vocabulary plus still-open/evidence/implementation items | no recorded decision or later implementation closes every pending concept on these raw lines | keep |
 | `docs/migration/catalog-conversion-plan.md:147,158,164,169,249-250,333,412,473` | 9 | BLOB, cross-machine links/Pulse, SQL-client/security, freeze and signing-approval markers | 2026-10-05 BLOB/credential decisions plus Q6/C10/K9 and the recorded credential-package Q1/Q2 answers close these markers | remove |
+| `docs/migration/catalog-conversion-plan.md:290,315,365,377` | 4 | rule-secret token syntax, vault format/protection, seal-tool name and engine-export location/line-ending conflict | the converter implements `{{secret:RULE:<RuleCode>}}`; credential-package Q2/Q9 decide the algorithms/protection and B6.2a fixes the vault format; B5 confirms `tools/Seal-Package.ps1`; B1 keeps exported engine artifacts outside Git and preserves their source encoding/line endings | remove |
 | `docs/migration/instance-directory-design.md:6` | 1 | tag definition says `[PENDING] later work` | vocabulary definition, not an open instance-directory question | keep |
 | `docs/migration/obsolete-catalog-metadata-cleanup.md:84` | 1 | real-snapshot cleanup evidence | evidence gate | keep |
 | `docs/phase0/central-schema-map.md:332` | 1 | text refers to an older pending item | documentary/historical wording inside a live map | keep |
 | `docs/phase0/current-system-map.md:15,353` | 2 | vocabulary and acceptance summary | vocabulary/status references | keep |
 | `docs/phase0/engine-porting-matrix.md:14,75,215,401,452` | 5 | vocabulary and Phase-0 evidence/status references | evidence map, not stale owner questions | keep |
 | `docs/phase0/risk-register.md:13,34` | 2 | vocabulary and machine-key validation status | vocabulary/technical evidence remains live | keep |
-| `docs/phase0/risk-register.md:41,66,71-74,76` | 7 | plan location, non-engine scope, change freeze, issuer/passphrase custody, catalog review and SQL-client delivery | S4, Q4, Q6, Q7 and C10 close these policy questions | remove |
+| `docs/phase0/risk-register.md:41,66,71-74` | 6 | plan location, non-engine scope, change freeze, issuer/passphrase custody and catalog review | S4, Q4, Q6 and Q7 close these policy questions | remove |
+| `docs/phase0/risk-register.md:76` | 1 | SQL-client delivery/platform plus future-version pin/review process | C10 closes delivery and the x86/arm64 platform limit, but it does not define how a new SQL-client version is pinned and reviewed | keep |
 | `docs/phase1/iis-reconcile-mwa-equivalence.md:7,30,80,87,94,101,111,115,118,127,141,151,163,165,178,191,199,208,212,214,218,222,227,237,240,246-249,252,254,260-266` | 38 | vocabulary, MWA/PS7 evidence and unexecuted gates | Q8 settles policy choices but these lines still carry validation/mechanism evidence not closed by that decision | keep |
 | `docs/phase1/phase1a-results.md:5,58-59,77-80` | 7 | vocabulary and ADR-0006 validation gates | accepted ADR does not erase validation gates | keep |
 | `docs/phase1/phase1b-machine-identity-cng.md:8,26` | 2 | vocabulary and conditional DPAPI fallback | vocabulary/technical gate, not owner questions | keep |
@@ -114,7 +116,7 @@ Historical handoffs (`docs/handoff/2026-*`) and evidence (`docs/*/evidence/*`) a
 
 | File:line | Hits | Short text | Decision/evidence status | Recommendation |
 |---|---:|---|---|---|
-| `docs/architecture/ADR-0007-embedded-readonly-catalog.md:42` | 1 | one grep line contains both vault and slicing pending wording | at least the vault-format concept remains unresolved on the audited tree | keep |
+| `docs/architecture/ADR-0007-embedded-readonly-catalog.md:42` | 1 | vault format/protection and per-table slicing pending wording | credential-package Q9 decides vault protection, B6.2a fixes the vault format, and the owner-approved conversion plan plus B3 cut-mode evidence closes the per-machine slicing rules | remove |
 | `docs/architecture/ADR-0008-engine-host-contract.md:67` | 1 | verified package state instead of caller-supplied expectations | decision log line 57 is explicitly pending on the audited tree | owner question |
 | `docs/decisions-log.md:57` | 1 | verified package state | explicitly pending on the audited tree | owner question |
 | `docs/handoff/pending-decisions-register.md:3,98` | 2 | register text refers to the source `[PENDING]` set/count | documentary references in the answered register | keep |
