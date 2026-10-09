@@ -44,7 +44,7 @@ Each port is one PR: the engine, its tests (conformance, mutation, one per issue
 
 | ID | Task | Status |
 |---|---|---|
-| C1 | Finish `DEPLOYMENT_PREFLIGHT` (#67): the Web Access credential check is restored, the engine reads the real catalog schema, behaviour tests for the review fixes, coverage of the original reviews declared (29 of 59). Still open: confine instance roots and service executables, Windows account names compared without case, the manifest authenticity thread, Codex review, merge | [PENDING] in progress |
+| C1 | Finish `DEPLOYMENT_PREFLIGHT` (#67). Done and tested on Windows: real schema, restored Web Access check, declared coverage (29 of 59), root confinement (lexical and resolved), executables, accounts, names and users compared against every enabled instance, links resolved, wildcard limited to catalog instances. Open on purpose: the manifest authenticity thread (Owner O3) and the wildcard scope (Owner O9). Then Codex review and merge | [PENDING] in progress; Codex review requested at 05d38f8 |
 | C2 | Merge #68 (engine host contract per specification): the reviewer checked the classes and the references against the data on 2026-10-09 | [PENDING] waiting for the Codex review of the final head |
 | C3 | Host: verified package state (D4) after the owner approves the design | [PENDING] blocked on Owner O3 |
 | C4 | B6.4: issue the credential package per machine | [PENDING] not started |
@@ -54,6 +54,7 @@ Each port is one PR: the engine, its tests (conformance, mutation, one per issue
 | C8 | Run `DEPLOYMENT_PREFLIGHT` on the real converted catalogs (the engine has only been compared with them, never run on them) | [PENDING] needs Owner O7 |
 | C9 | Automatic weekly removal of `results/*` log branches older than three days (153 branches had accumulated; 144 were deleted on 2026-10-09, tips recorded in issue #74) | [PENDING] needs Owner O8 |
 | C10 | Review the work of GPT before each merge: facts against the converted catalogs, classes against the fixed rule, no claim without a query | [PROPOSED] every PR |
+| C11 | The orchestrator (`FULL_DEPLOYMENT`, the engine registry) passes to the preflight the credentials of EVERY enabled instance that shares an IIS account (6 to 21 instances in each real catalog), not only the selected one; otherwise the preflight reports `SERVICE_IDENTITY_PASSWORD_UNVERIFIED` as an ERROR | [PENDING] part of C5 |
 
 ## 4. Owner decisions
 
@@ -69,3 +70,4 @@ These are proposals. None is approved until the owner answers and `docs/decision
 | O6 | Revoke the old GitHub token (full access to four repositories) and issue a narrow one | [DECIDED 2026-10-09] The owner revokes it at the end of the project; until then it stays in use |
 | O7 | How the engine is run on real catalogs: (a) the owner runs it on a Windows machine and sends the result, (b) a CI read key for the private snapshot repository, (c) a copy of the converted catalogs without customer data in this repository | [PENDING] The owner said "depois" (2026-10-09); recommendation (a) now, (c) later |
 | O8 | A weekly workflow that deletes `results/*` log branches older than three days and touches nothing else | [PENDING] Recommended |
+| O9 | Does the secret contract keep the kind wildcard (`IIS_IDENTITY.*`, now limited to enabled instances of the catalog) or must the orchestrator list every exact reference? | [PENDING] Recommended: keep the wildcard, restricted as it is now |
