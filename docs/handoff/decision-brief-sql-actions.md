@@ -76,8 +76,8 @@ Before a text-log reader can replace the current history action without losing s
 - `instanceCode` or equivalent target identity;
 - execution `mode`;
 - `startedAt` and `endedAt` (or enough timestamp plus duration data to derive both);
-- final `status`/outcome;
-- the non-secret result or failure `message` that is intended for history display.
++- final `status`/outcome;
++- the non-secret result or failure `message` that is intended for history display.
 
 `operationId` identifies one operation and is not a replacement for the source `SessionID`. The session/correlation identifier must remain distinct so related executions can still be grouped without inventing that relationship from engine or action identity.
 
@@ -157,7 +157,7 @@ The procedure is read-only. It inventories Management Console SQL objects and re
 - enabled action-requirement references;
 - object creation and modification dates.
 
-After the retired-object registry cleanup, the procedure deliberately returns `IsRetiredCandidate = 0` for every row. Its remaining value is support/audit visibility into the old Management Console database and its SQL-owned runtime model.
+Evidence boundary: the reviewer verified that `ops.GetObjectUsageAudit` is read-only. This brief did not verify the row-level value of `IsRetiredCandidate`; specifically, it did not establish that the procedure returns `IsRetiredCandidate = 0` for every row. That value is therefore not used as evidence for the recommendation below.
 
 ### Portable replacement
 
