@@ -42,7 +42,7 @@ CI proved the converter/verifier behavior with synthetic and LocalDB/SQL Server 
 
 | AdapterCode | SourceType | Route | Current ActionCode | Portable action that exists | Assessment |
 |---|---|---|---|---|---|
-| `DATABASE_SETTING` | `DATABASE_SETTING_RULE` | `/actions` | `SETTINGS_SYNC` | `DATABASE_SETTINGS` -> engine `DATABASE_CONTENT_SYNC` | stale name; there is already one approved portable action for this behavior |
+| `DATABASE_SETTING` | `DATABASE_SETTING_RULE` | `/actions?action=DATABASE_SETTINGS` | `SETTINGS_SYNC` | `DATABASE_SETTINGS` -> engine `DATABASE_CONTENT_SYNC` | stale name; there is already one approved portable action for this behavior |
 | `WINDOWS_SERVICE` | `WINDOWS_SERVICE` | `/environments` | `SERVICE_RECONCILE` | `WINDOWS_SERVICES` -> engine `WINDOWS_SERVICES` | stale name; there is already one approved portable action for this behavior |
 | `HOUSEKEEPING` | `RETENTION_POLICY` | `/housekeeping` | `HOUSEKEEPING_APPLY` | no equivalent apply action in the 17-engine post-cleanup catalog | stale execution reference; `STORAGE_SIZE_SCAN` is not an apply/cleanup replacement |
 
