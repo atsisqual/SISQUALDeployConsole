@@ -11,7 +11,7 @@ ADR-0007 requires every package file, including the catalog, to be covered by a 
 Three current call paths rely on manifest-derived data that is supplied again by a caller or reread from disk:
 
 1. `runtime/Sisqual.Runtime.EngineHost.psm1` receives `ManifestEntries` from its caller. It uses those entries to validate the catalog path, engine file, launcher and package secret contract before launching an engine.
-2. `runtime/Sisqual.Runtime.Catalog.Core.ps1` receives expected catalog properties from its caller. `Open-SisqualRuntimeCatalog` takes the expected SHA-256, size, server code, schema version and origin, while provider initialization receives a `VerifiedFiles` list. The catalog code validates those values, but it does not authenticate the source that supplied them.
+2. `runtime/Sisqual.Runtime.Catalog.Core.ps1` receives expected catalog properties from its caller. `Open-SisqualRuntimeCatalog` takes the expected SHA-256, size, server code, schema version, origin and optional origin reference, while provider initialization receives a `VerifiedFiles` list. The catalog code validates those values, but it does not authenticate the source that supplied them.
 3. The `DEPLOYMENT_PREFLIGHT` port in PR #67 runs in a separate engine process and rereads `package-manifest.json` from disk. It then uses that copy for the hashes of `runtime/Sisqual.Runtime.Catalog.psm1`, `runtime/Sisqual.Runtime.Catalog.Core.ps1` and the materialized SQLite provider files. If the manifest and a package file are replaced together after startup, the engine can validate the changed file against the changed manifest.
 
 The owner has already decided K3 and K4: the manifest carries a monotonic counter checked against the last accepted run on the machine, the portable folder is protected, and package members are reverified before load. The exact verified-state bootstrap that joins these decisions is not yet approved.
@@ -25,9 +25,10 @@ The relevant attacker or fault can:
 - replace a package file after the initial startup verification;
 - replace `package-manifest.json` together with the changed file, preserving self-consistency but not the original authenticated state;
 - cause an in-process adapter to pass manifest entries, expected catalog hashes, sizes or metadata that were not the values authenticated at bootstrap;
-- attempt rollback to an older package whose signature is valid but whose K3 counter is lower than the last accepted counter on the machine.
+- attempt rollback to an older package whose signature is valid but whose K3 counter is lower than the last accepted counter on the machine;
+- attempt to reuse the same valid counter with a different signed manifest.
 
-The design does **not** claim to protect against an administrator who controls the machine, can replace the running process, inspect its memory, replace pinned trust material, or alter the mechanism that stores the last accepted K3 counter. Protecting against that actor is outside this application's trust boundary.
+The design does **not** claim to protect against an administrator who controls the machine, can replace the running process, inspect its memory, replace pinned trust material, or alter the mechanism that stores the last accepted K3 record. Protecting against that actor is outside this application's trust boundary.
 
 ## Proposed decision
 
@@ -38,13 +39,26 @@ The design does **not** claim to protect against an administrator who controls t
 - the manifest signature against the already approved pinned issuer trust;
 - package identity and canonical package root;
 - every manifest entry's normalized path, SHA-256 and size;
-- catalog entries and their expected metadata needed by the runtime catalog opener;
-- the K3 monotonic counter against the last accepted counter on the machine;
+- catalog entries and their expected metadata needed by the runtime catalog opener, including `ExpectedOriginReference` when the signed manifest supplies it;
+- the K3 monotonic counter against the last accepted package identity on the machine;
 - any manifest contract/version fields required to interpret those entries.
 
 Only after all checks succeed may the bootstrap construct the verified package state.
 
-[PENDING] K3 requires persistent state outside the replaceable package, but the exact storage path, ACL, atomic update rule and recovery procedure for the last accepted counter are not decided by this ADR. Those details change the package integrity/trust bootstrap and require owner approval.
+#### K3 persisted identity and restart equality
+
+[PROPOSED] The persisted K3 identity is the pair `(counter, manifestDigest)`, where `manifestDigest` is the SHA-256 of the exact authenticated manifest bytes covered by the accepted signature. The counter namespace is one sequence per machine for this signed SISQUAL Deploy Console package trust domain; it is not per catalog, engine, file or caller. A future need for multiple independent package trust domains on one machine would require another owner decision before implementation.
+
+Given persisted `(storedCounter, storedManifestDigest)` and an authenticated candidate `(counter, manifestDigest)`:
+
+- `counter < storedCounter`: reject as rollback;
+- `counter = storedCounter` and `manifestDigest = storedManifestDigest`: accept as an ordinary restart of the same authenticated package;
+- `counter = storedCounter` and `manifestDigest <> storedManifestDigest`: reject same-counter manifest substitution;
+- `counter > storedCounter`: continue full package verification and, only after every bootstrap verification succeeds, atomically replace the persisted pair with the new `(counter, manifestDigest)` before publishing verified state or enabling any runtime consumer.
+
+A failed atomic persistence must fail startup; the process must not expose the newly verified state if the durable identity was not advanced. Re-accepting the same `(counter, digest)` does not rewrite the record. The persistence operation must be crash-safe as one atomic record replacement, so readers never observe a new counter with an old digest or the reverse.
+
+[PENDING] The storage path, ACL, concrete atomic-replace mechanism, durability/flush details and recovery procedure remain owner decisions because they change the package integrity/trust bootstrap. The comparison/equality semantics above are the proposed behavior to be approved with that storage design.
 
 ### 2. The state is immutable after creation
 
@@ -56,7 +70,7 @@ The state should contain only authenticated metadata, for example:
 - manifest contract version and manifest digest;
 - verified K3 counter;
 - exact file map keyed by normalized manifest path, with SHA-256 and size;
-- verified catalog metadata required by `Open-SisqualRuntimeCatalog`;
+- verified catalog metadata required by `Open-SisqualRuntimeCatalog`: path, SHA-256, size, expected server code, expected schema version, expected origin and optional `ExpectedOriginReference`;
 - signature/trust result needed for diagnostics, without private key material.
 
 Consumers receive read access to this state through a runtime-owned API. They do not receive raw, caller-selected manifest entries.
@@ -65,7 +79,9 @@ Consumers receive read access to this state through a runtime-owned API. They do
 
 [PROPOSED] `Sisqual.Runtime.EngineHost` stops accepting `ManifestEntries` as a trust input. It resolves engine, launcher, catalog and package-contract hashes from the bootstrap-owned verified package state and still rehashes each file immediately before use, as ADR-0008 requires.
 
-[PROPOSED] `Sisqual.Runtime.Catalog.Core` stops treating caller-provided expected hash, size, server code, schema version and provider `VerifiedFiles` as authority. The runtime catalog resolves the authenticated expected values from the same verified package state and compares the on-disk catalog/provider files immediately before open/load.
+[PROPOSED] `Sisqual.Runtime.Catalog.Core` stops treating caller-provided expected hash, size, server code, schema version, origin, optional `ExpectedOriginReference` and provider `VerifiedFiles` as authority. The runtime catalog resolves the authenticated expected values from the same verified package state and compares the on-disk catalog/provider files immediately before open/load.
+
+`ExpectedOriginReference` must be part of the bootstrap-owned catalog metadata when it is present in the signed manifest. Today `Open-SisqualRuntimeCatalog` skips the `catalog_meta.source_reference` comparison when `ExpectedOriginReference` is empty (`runtime/Sisqual.Runtime.Catalog.psm1`, current main lines 174-176). The proposed state therefore removes the caller's ability to turn that authenticated comparison off by passing an empty value when the manifest supplied one.
 
 The caller may still choose which already-verified catalog/action to operate on where the public API needs selection, but it cannot supply the expected integrity values that make that selection trusted.
 
@@ -73,11 +89,19 @@ The caller may still choose which already-verified catalog/action to operate on 
 
 The engine host and catalog runtime are in-process consumers. An engine is not: ADR-0008 deliberately launches each engine in another process. The child cannot directly read the parent's verified package state.
 
-[PROPOSED] The host therefore derives a minimal, engine-specific subset of authenticated package expectations from the verified state and includes that subset in the engine request. For `DEPLOYMENT_PREFLIGHT`, that subset would include the exact expected path/hash/size records needed to verify the runtime catalog modules and the SQLite provider files that the engine loads.
+[PROPOSED] The host therefore derives an immutable, engine-specific subset of authenticated package expectations from verified state and serializes it into the child request. For `DEPLOYMENT_PREFLIGHT`, the concrete proposed request subset is:
 
-The engine must use those host-supplied authenticated expectations and must not reread `package-manifest.json` as its source of trust.
+- `manifestDigest` and `manifestCounter`, for correlation with the parent-accepted package identity;
+- `catalog.path`, `catalog.sha256` and `catalog.size`;
+- `catalog.expectedServerCode`;
+- `catalog.expectedSchemaVersion`;
+- `catalog.expectedOrigin`;
+- `catalog.expectedOriginReference` when supplied by the signed manifest;
+- `files[]` entries containing normalized package-relative `path`, `sha256` and `size` for `runtime/Sisqual.Runtime.Catalog.psm1`, `runtime/Sisqual.Runtime.Catalog.Core.ps1` and every SQLite provider file the child loads.
 
-[PENDING] Adding verified package expectations to the engine request changes the approved ADR-0008 engine input contract. `AGENTS.md` requires owner approval for engine input/result contract changes. The exact request member name, schema and size limit are therefore intentionally not decided here.
+The catalog path and file paths remain selections within the already authenticated package root; the integrity and catalog metadata in this subset are derived only from the parent's immutable verified state. The child rehashes those files against the supplied expectations immediately before use and opens the catalog with the supplied expected hash, size and metadata. It must not reread `package-manifest.json` as its source of trust.
+
+[PENDING] This concrete subset changes the approved ADR-0008 engine input contract. It requires owner approval before implementation, including the request member name, exact JSON shape, compatibility/versioning and size limit. Until that approval, this is a proposed cross-process design, not an authorized contract change.
 
 ### 5. Reverification still happens at use time
 
@@ -94,7 +118,7 @@ This closes the difference between:
 
 Every host, catalog opener and engine could reread the manifest, verify its signature and apply K3 independently.
 
-Cost: duplicated crypto/trust-bootstrap code, duplicated persistent-counter coordination, more opportunities for inconsistent validation, and each child process needs access to the pinned trust material. It also makes "last accepted counter" ownership harder to define. Not recommended.
+Cost: duplicated crypto/trust-bootstrap code, duplicated persistent-counter coordination, more opportunities for inconsistent validation, and each child process needs access to the pinned trust material. It also makes the accepted `(counter, manifestDigest)` ownership harder to define. Not recommended.
 
 ### Make the package folder read-only with ACLs
 
@@ -106,16 +130,16 @@ Cost/limit: ACLs reduce accidental or unprivileged modification but do not authe
 
 ADR-0008 can continue to document that the caller supplies manifest-derived trust values and PR #67 can keep rereading the manifest in its child process.
 
-Cost: the same manifest can be replaced together with a changed file, and independent callers can bind different expected values. This preserves the known P1 in PR #67 and leaves K3/K4 only partially connected. Acceptable only if the owner explicitly chooses to retain the limit.
+Cost: the same manifest can be replaced together with a changed file, independent callers can bind different expected values, and an empty `ExpectedOriginReference` can suppress the origin-reference comparison. This preserves the known P1 in PR #67 and leaves K3/K4 only partially connected. Acceptable only if the owner explicitly chooses to retain the limit.
 
 ## Effect by consumer
 
 | Consumer | Current state | Proposed effect |
 |---|---|---|
-| `RuntimeBootstrap.ps1` | establishes runtime/bootstrap conditions but does not expose immutable authenticated package state | verify signature and K3, create verified state once, expose read-only access |
+| `RuntimeBootstrap.ps1` | establishes runtime/bootstrap conditions but does not expose immutable authenticated package state | verify signature and K3; enforce `(counter, manifestDigest)` restart semantics; atomically advance the durable pair before publishing new verified state |
 | `Sisqual.Runtime.EngineHost.psm1` | receives `ManifestEntries` from caller | remove caller authority for manifest entries; read expected hashes/contracts from verified state and rehash before launch |
-| `Sisqual.Runtime.Catalog.Core.ps1` | caller supplies expected catalog SHA-256, size, server/schema/origin and provider verified-file entries | derive authenticated expectations from verified state; caller cannot redefine them |
-| `DEPLOYMENT_PREFLIGHT` child process | rereads `package-manifest.json` for runtime-module/provider hashes | receive only the authenticated expectations it needs in the engine request; do not trust a disk reread of the manifest |
+| `Sisqual.Runtime.Catalog.Core.ps1` / `Sisqual.Runtime.Catalog.psm1` | caller supplies expected catalog SHA-256, size, server/schema/origin, optional origin reference and provider verified-file entries | derive authenticated expectations from verified state; caller cannot redefine them or suppress a signed origin-reference expectation |
+| `DEPLOYMENT_PREFLIGHT` child process | rereads `package-manifest.json` for runtime-module/provider hashes and opens the catalog in a separate process | receive the concrete authenticated catalog metadata plus module/provider path/hash/size subset in the engine request; rehash locally; do not trust a disk reread of the manifest |
 | adapters/orchestrators | may forward manifest-derived values | select operations/catalogs only; do not act as a package-integrity authority |
 | seal/verifier tooling | produces/verifies signed package material | K3 manifest member and release verification remain tooling concerns; no runtime consumer invents a counter |
 
@@ -123,8 +147,9 @@ Cost: the same manifest can be replaced together with a changed file, and indepe
 
 - One authenticated state defines what every in-process runtime consumer means by "the verified package".
 - Replacing a file and manifest together after bootstrap no longer changes the expected hash used by the running process.
+- Restarting the exact same accepted package is possible without weakening rollback protection; reusing its counter with a different manifest is rejected.
 - K3 rollback protection becomes part of the same trust bootstrap instead of an independent check with unclear ownership.
-- Engines that need package hashes require a host-to-engine contract extension because of the process boundary.
+- Engines that need package/catalog expectations require a host-to-engine contract extension because of the process boundary.
 - Process restart is required to accept a different package or higher manifest counter.
 
 ## Approval required
@@ -140,8 +165,9 @@ Cost: the same manifest can be replaced together with a changed file, and indepe
 The owner therefore needs to approve at least:
 
 1. bootstrap ownership of one immutable verified package state;
-2. K3 persistent-counter storage/update semantics;
-3. removal of caller-supplied integrity expectations from host/catalog APIs;
-4. the engine-request extension used to carry authenticated hashes across the process boundary.
+2. the proposed K3 `(counter, manifestDigest)` identity, equality/restart behavior, machine/package-trust-domain scope and atomic update point;
+3. the K3 persistent storage/ACL/crash-recovery mechanism;
+4. removal of caller-supplied integrity expectations, including `ExpectedOriginReference`, from host/catalog APIs;
+5. the proposed engine-request extension that carries catalog hash, size, signed catalog metadata and module/provider expectations across the process boundary.
 
 Until those decisions are made, all of the design above remains `[PROPOSED]`/`[PENDING]` and the known ADR-0008 trust-boundary limitation remains in force.
