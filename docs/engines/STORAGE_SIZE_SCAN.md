@@ -7,7 +7,7 @@ Tags: [CONFIRMED] read in the source; [PROPOSED] recommendation; [PENDING] needs
 
 ## 1. Purpose
 
-Measure the real size and number of files of each housekeeping policy's folders, so that a screen can show usage against the ceiling. [CONFIRMED] A read-only scan; the action is in group `HEALTH`, preview and apply, no instance selection, 300 s timeout, hidden from the menu. It does not delete or move anything (cleanup is a separate feature of the old console, outside the 17-engine portable catalog). Reviewer evidence from the six real converted catalogs used `SELECT COUNT(*) AS EngineCount FROM ops_Engine;` and returned `17` in each catalog.
+Measure the real size and number of files of each housekeeping policy's folders, so that a screen can show usage against the ceiling. [CONFIRMED] A read-only scan; the action is in group `HEALTH`, preview and apply, no instance selection, 300 s timeout, hidden from the menu. It does not delete or move anything (cleanup is a separate feature of the old console, outside the 17-engine portable catalog). [CONFIRMED] Reviewer-provided evidence, not rerun in this PR: the reviewer queried each of the six real converted catalogs with `SELECT COUNT(*) AS EngineCount FROM ops_Engine;` and reported `17` in every catalog.
 
 ## 2. Inputs
 
