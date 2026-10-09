@@ -162,7 +162,7 @@ INSERT INTO dbo_ManagedInstance VALUES('INST1','TESTSERVER','preflight-host.inva
 INSERT INTO dbo_ManagedInstance VALUES('INST2','TESTSERVER','preflight-host2.invalid','PT','C2','svc-user2','web-user2',X'0102','01',1);
 INSERT INTO dbo_ManagedInstance VALUES('INST3','TESTSERVER','preflight-host3.invalid','ES','C3','svc-user3','web-user3',X'0102','01',1);
 INSERT INTO dbo_ManagedInstance VALUES('INST4','TESTSERVER','preflight-host4.invalid','BR','C4','svc-user4','web-user4',X'0102','01',1);
-INSERT INTO dbo_ManagedInstance VALUES('INST5','TESTSERVER','preflight-host5.invalid','PT','c1','svc-user5','web-user5',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST5','TESTSERVER','preflight-host5.invalid','PT','c1','SVC-USER','web-user5',X'0102','01',1);
 CREATE TABLE cfg_Application(ApplicationCode TEXT,PhysicalPathTemplate TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_Application VALUES('APP1','{INSTANCE_ROOT}\\App',1);
 CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,FileFormat TEXT,IsRequired INTEGER,IsEnabled INTEGER);
@@ -285,7 +285,11 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Throws 'READ_ONLY engine cannot be invoked as APPLY through host' { Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode APPLY -InstanceCode INST1 -PlanFingerprint ('0'*64) -Secrets $secrets | Out-Null } 'READ_ONLY_APPLY_NOT_ALLOWED'
 
     # All instances: INST1 is fine; INST2 (PT), INST3 (ES) and INST4 (BR) have no instance root. INST2 and INST3 have no QR asset, INST4 is not PT or ES.
-    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    # INST5 uses the Windows account SVC-USER, which is INST1's svc-user written in capitals, with a different password: the same account cannot have two passwords.
+    $allSecrets = @{}; foreach ($key in $secrets.Keys) { $allSecrets[$key] = $secrets[$key] }
+    $allSecrets['IIS_IDENTITY.INST5'] = 'canary-preflight-secret-C!'
+    $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $allSecrets
+    Check 'Windows account names are compared without case: svc-user and SVC-USER with different passwords conflict' (@($all.results | Where-Object { $_.object -ceq 'SERVICE_IDENTITY_PASSWORD_CONFLICT:SVC-USER' -and $_.status -ceq 'ERROR' }).Count -eq 1)
     $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
     Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)' ($qrMissing.Count -eq 3 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3|QR_ASSET_MISSING:INST5 / c1') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
     $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
@@ -297,6 +301,19 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $escaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $escape.Package -CatalogPath $escape.Catalog -CatalogSession $escape.Session -ManifestEntries $escape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
     Write-SafeResultDiagnostic -Label 'path-escape' -Result $escaped
     Check 'a required file whose path leaves the application folder is REQUIRED_PATH_OUTSIDE_ROOT, even if a file exists there' (@($escaped.results | Where-Object { $_.object -ceq 'REQUIRED_PATH_OUTSIDE_ROOT:3' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and @($escaped.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+
+    # An instance whose host name is a path leaves the services root: its folder exists there, and must not be treated as the instance folder.
+    New-Item -ItemType Directory -Path (Join-Path (Split-Path -Parent $servicesRoot) 'outside') -Force | Out-Null
+    $hostEscape = New-ScenarioPackage -Name 'hostescape' -ExtraSql "INSERT INTO dbo_ManagedInstance VALUES('INST6','TESTSERVER','..\\outside','PT','C6','svc-user6','web-user6',X'0102','01',1);"
+    $hostEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $hostEscape.Package -CatalogPath $hostEscape.Catalog -CatalogSession $hostEscape.Session -ManifestEntries $hostEscape.Entries -Mode PREVIEW -InstanceCode INST6 -Secrets $secrets
+    Check 'a host name that leaves the services root is INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT, even if the folder exists' (@($hostEscaped.results | Where-Object { $_.object -ceq 'INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT:INST6' -and $_.status -ceq 'ERROR' }).Count -ge 1 -and @($hostEscaped.results | Where-Object { $_.object -like 'INSTANCE_ROOT_MISSING*' }).Count -eq 0)
+
+    # A service executable that leaves the instance folder is not probed: the file exists, and must not satisfy the check.
+    $exeOutside = [IO.Path]::GetFullPath((Join-Path $servicesRoot 'preflight-host.invalid\..\..\evil.exe'))
+    [IO.File]::WriteAllText($exeOutside,'x',[Text.UTF8Encoding]::new($false))
+    $exeEscape = New-ScenarioPackage -Name 'exeescape' -ExtraSql "UPDATE cfg_WindowsServiceDefinition SET ExecutablePathTemplate = '{INSTANCE_ROOT}\\..\\..\\evil.exe';"
+    $exeEscaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $exeEscape.Package -CatalogPath $exeEscape.Catalog -CatalogSession $exeEscape.Session -ManifestEntries $exeEscape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Check 'a service executable path that leaves the instance folder is SERVICE_EXECUTABLE_OUTSIDE_ROOT, even if a file exists there' (@($exeEscaped.results | Where-Object { $_.object -ceq 'SERVICE_EXECUTABLE_OUTSIDE_ROOT:WFM_MOBILE_APP' -and $_.status -ceq 'ERROR' }).Count -eq 1 -and @($exeEscaped.results | Where-Object { $_.object -like 'SERVICE_EXECUTABLE_MISSING*' }).Count -eq 0)
 
     # A file in a folder that cannot be read is an ERROR for that item and the run still finishes (specification: not a crash).
     if ($IsWindows) {

@@ -134,6 +134,11 @@ function New-OrdinalMap {
     return [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::Ordinal)
 }
 
+function New-IgnoreCaseMap {
+    # Windows account names, service names and local user names are not case sensitive: svc-user and SVC-USER are the same account.
+    return [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::OrdinalIgnoreCase)
+}
+
 function Test-PathUnderRoot {
     param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Root)
     $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
@@ -153,7 +158,18 @@ function Get-InstanceRoot {
     $servicesRoot = [string](Get-Field $Server 'ServicesRoot' '')
     $hostName = [string](Get-Field $Instance 'HostName' '')
     if ([string]::IsNullOrWhiteSpace($servicesRoot) -or [string]::IsNullOrWhiteSpace($hostName)) { return '' }
-    return [IO.Path]::GetFullPath((Join-Path $servicesRoot $hostName))
+    $root = [IO.Path]::GetFullPath((Join-Path $servicesRoot $hostName))
+    # A host name that is a path ('..\outside', an absolute path) must not move the instance out of the services root.
+    if (-not (Test-PathUnderRoot -Path $root -Root $servicesRoot) -or $root.TrimEnd('\','/').Equals([IO.Path]::GetFullPath($servicesRoot).TrimEnd('\','/'),[StringComparison]::OrdinalIgnoreCase)) { return '' }
+    return $root
+}
+
+function Test-InstanceRootConfined {
+    param([Parameter(Mandatory)][object]$Server,[Parameter(Mandatory)][object]$Instance)
+    $servicesRoot = [string](Get-Field $Server 'ServicesRoot' '')
+    $hostName = [string](Get-Field $Instance 'HostName' '')
+    if ([string]::IsNullOrWhiteSpace($servicesRoot) -or [string]::IsNullOrWhiteSpace($hostName)) { return $true }
+    return -not [string]::IsNullOrWhiteSpace((Get-InstanceRoot $Server $Instance))
 }
 
 function Expand-LocalTemplate {
@@ -293,7 +309,7 @@ function Invoke-ReviewWindowsServices {
     param($Context)
     $definitions = @(Get-EnabledRows 'cfg_WindowsServiceDefinition')
     if ($definitions.Count -eq 0) { Add-Issue ERROR WINDOWS_SERVICES WINDOWS_SERVICE_DEFINITION_MISSING }
-    $nameSet = New-OrdinalMap
+    $nameSet = New-IgnoreCaseMap
     foreach ($instance in $Context.SelectedInstances) {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -309,7 +325,7 @@ function Invoke-ReviewWindowsServices {
             }
         }
     }
-    $userHashes = New-OrdinalMap
+    $userHashes = New-IgnoreCaseMap
     foreach ($instance in $Context.SelectedInstances) {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -325,7 +341,7 @@ function Invoke-ReviewWebAccess {
     param($Context)
     if (@(Get-EnabledRows 'cfg_WebAccessPolicy').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_POLICY_MISSING }
     if (@(Get-EnabledRows 'cfg_WebAccessTemplate').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_TEMPLATE_MISSING }
-    $users = New-OrdinalMap
+    $users = New-IgnoreCaseMap
     foreach ($instance in $Context.SelectedInstances) {
         $code = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'WebAccessUserName' '')
@@ -455,6 +471,7 @@ function Invoke-RequiredFileChecks {
     foreach ($instance in $Context.SelectedInstances) {
         Assert-NotCancelled
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
+        if (-not (Test-InstanceRootConfined $Context.Server $instance)) { Add-Issue ERROR APPLICATION_TREE INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT $instanceCode $instanceCode; continue }
         $instanceRoot = Get-InstanceRoot $Context.Server $instance
         $rootState = if ([string]::IsNullOrWhiteSpace($instanceRoot)) { 'MISSING' } else { Test-PathChecked $instanceRoot Container }
         if ($rootState -ceq 'DENIED') { Add-Issue ERROR APPLICATION_TREE PATH_ACCESS_DENIED $instanceCode $instanceCode; continue }
@@ -496,9 +513,13 @@ function Invoke-ServiceFileChecks {
     foreach ($instance in $Context.SelectedInstances) {
         Assert-NotCancelled
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
+        if (-not (Test-InstanceRootConfined $Context.Server $instance)) { Add-Issue ERROR WINDOWS_SERVICE INSTANCE_ROOT_OUTSIDE_SERVICES_ROOT $instanceCode $instanceCode; continue }
+        $serviceInstanceRoot = Get-InstanceRoot $Context.Server $instance
         foreach ($definition in $definitions) {
             $template = [string](Get-Field $definition 'ExecutablePathTemplate' '')
             $path = Expand-LocalTemplate $template $Context.Server $instance
+            # The executable of an instance service lives in the instance folder: an absolute path or a parent reference in the template would otherwise point at any program on the machine.
+            if (-not [string]::IsNullOrWhiteSpace($path) -and -not [string]::IsNullOrWhiteSpace($serviceInstanceRoot) -and -not (Test-PathUnderRoot -Path $path -Root $serviceInstanceRoot)) { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_OUTSIDE_ROOT ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode; continue }
             $exeState = if ([string]::IsNullOrWhiteSpace($path)) { 'MISSING' } else { Test-PathChecked $path Leaf }
             if ($exeState -ceq 'DENIED') { Add-Issue ERROR WINDOWS_SERVICE PATH_ACCESS_DENIED ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
             elseif ($exeState -cne 'EXISTS') { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_MISSING ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
