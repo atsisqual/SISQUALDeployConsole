@@ -58,7 +58,23 @@ Given persisted `(storedCounter, storedManifestDigest)` and an authenticated can
 
 A failed atomic persistence must fail startup; the process must not expose the newly verified state if the durable identity was not advanced. Re-accepting the same `(counter, digest)` does not rewrite the record. The persistence operation must be crash-safe as one atomic record replacement, so readers never observe a new counter with an old digest or the reverse.
 
-[PENDING] The storage path, ACL, concrete atomic-replace mechanism, durability/flush details and recovery procedure remain owner decisions because they change the package integrity/trust bootstrap. The comparison/equality semantics above are the proposed behavior to be approved with that storage design.
+#### Serialized compare-and-advance
+
+[PROPOSED] The comparison and durable advance above are one serialized machine-wide operation. The proposed durable files live outside the replaceable portable folder under `C:\SISQUALWFM\WFM.Files\SISQUALDeployManagement\`: `package-state.json` holds the accepted `(counter, manifestDigest)` record and `package-state.lock` is the inter-process serialization point. The directory ACL is part of the trust bootstrap and remains subject to owner approval.
+
+The bootstrap may perform signature, manifest and file verification before entering the critical section, but it **must not** accept or publish the candidate from a counter value read before the lock. To commit an authenticated candidate it must:
+
+1. acquire an exclusive inter-process lock on `package-state.lock` (`FileShare.None` or an equivalent Windows exclusive-file primitive);
+2. while holding that lock, reread `package-state.json` from disk and perform the `<`, equal-same-digest, equal-different-digest or `>` comparison against that fresh value;
+3. for `counter > storedCounter`, write the complete new JSON record to a same-directory temporary file, flush and close it, then atomically replace `package-state.json`; the counter and digest are never updated as separate writes;
+4. only after the atomic replace succeeds, publish the in-process verified package state and release the lock;
+5. for equal-same-digest, accept the ordinary restart without rewriting the state record; for rollback or equal-different-digest, fail startup while still treating the reread value as authoritative.
+
+This serialized reread is what prevents two processes that start concurrently with counter `N+1` from both deciding against an older `N` snapshot. The second process waits for the exclusive lock. After it acquires the lock it must reread the record advanced by the first process: the exact same `(N+1, digest)` is then the allowed restart case; a different digest at `N+1` is rejected as a same-counter conflict; a lower counter is rejected as rollback.
+
+[PROPOSED] Lock acquisition is bounded. If the second process cannot obtain the lock before the bootstrap deadline, it fails closed with `PACKAGE_STATE_LOCK_TIMEOUT`; it does not use a stale pre-lock comparison and does not publish verified state. [PENDING] The exact lock timeout, ACL, recovery of an abandoned/stale lock, JSON schema/version and Windows atomic-replace/flush primitive require owner approval with the trust-bootstrap implementation.
+
+[PENDING] The storage path, ACL, concrete atomic-replace mechanism, durability/flush details and recovery procedure remain owner decisions because they change the package integrity/trust bootstrap. The comparison/equality and serialized-update semantics above are the proposed behavior to be approved with that storage design.
 
 ### 2. The state is immutable after creation
 
@@ -136,7 +152,7 @@ Cost: the same manifest can be replaced together with a changed file, independen
 
 | Consumer | Current state | Proposed effect |
 |---|---|---|
-| `RuntimeBootstrap.ps1` | establishes runtime/bootstrap conditions but does not expose immutable authenticated package state | verify signature and K3; enforce `(counter, manifestDigest)` restart semantics; atomically advance the durable pair before publishing new verified state |
+| `RuntimeBootstrap.ps1` | establishes runtime/bootstrap conditions but does not expose immutable authenticated package state | verify signature and K3; serialize the fresh compare-and-advance under the durable state lock; enforce `(counter, manifestDigest)` restart semantics; atomically advance the durable pair before publishing new verified state |
 | `Sisqual.Runtime.EngineHost.psm1` | receives `ManifestEntries` from caller | remove caller authority for manifest entries; read expected hashes/contracts from verified state and rehash before launch |
 | `Sisqual.Runtime.Catalog.Core.ps1` / `Sisqual.Runtime.Catalog.psm1` | caller supplies expected catalog SHA-256, size, server/schema/origin, optional origin reference and provider verified-file entries | derive authenticated expectations from verified state; caller cannot redefine them or suppress a signed origin-reference expectation |
 | `DEPLOYMENT_PREFLIGHT` child process | rereads `package-manifest.json` for runtime-module/provider hashes and opens the catalog in a separate process | receive the concrete authenticated catalog metadata plus module/provider path/hash/size subset in the engine request; rehash locally; do not trust a disk reread of the manifest |
@@ -148,6 +164,7 @@ Cost: the same manifest can be replaced together with a changed file, independen
 - One authenticated state defines what every in-process runtime consumer means by "the verified package".
 - Replacing a file and manifest together after bootstrap no longer changes the expected hash used by the running process.
 - Restarting the exact same accepted package is possible without weakening rollback protection; reusing its counter with a different manifest is rejected.
+- Concurrent bootstrap processes cannot both accept a higher counter from the same stale durable snapshot: compare-and-advance is serialized and the second process rereads under the exclusive lock.
 - K3 rollback protection becomes part of the same trust bootstrap instead of an independent check with unclear ownership.
 - Engines that need package/catalog expectations require a host-to-engine contract extension because of the process boundary.
 - Process restart is required to accept a different package or higher manifest counter.
@@ -166,8 +183,9 @@ The owner therefore needs to approve at least:
 
 1. bootstrap ownership of one immutable verified package state;
 2. the proposed K3 `(counter, manifestDigest)` identity, equality/restart behavior, machine/package-trust-domain scope and atomic update point;
-3. the K3 persistent storage/ACL/crash-recovery mechanism;
-4. removal of caller-supplied integrity expectations, including `ExpectedOriginReference`, from host/catalog APIs;
-5. the proposed engine-request extension that carries catalog hash, size, signed catalog metadata and module/provider expectations across the process boundary.
+3. the proposed serialized K3 compare-and-advance mechanism, including the durable state/lock location, exclusive inter-process lock, second-process wait/fail behavior and `PACKAGE_STATE_LOCK_TIMEOUT`;
+4. the K3 persistent storage/ACL/crash-recovery/atomic-replace mechanism and exact lock timeout;
+5. removal of caller-supplied integrity expectations, including `ExpectedOriginReference`, from host/catalog APIs;
+6. the proposed engine-request extension that carries catalog hash, size, signed catalog metadata and module/provider expectations across the process boundary.
 
 Until those decisions are made, all of the design above remains `[PROPOSED]`/`[PENDING]` and the known ADR-0008 trust-boundary limitation remains in force.
