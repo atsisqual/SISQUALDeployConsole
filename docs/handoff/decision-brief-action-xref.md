@@ -29,7 +29,7 @@ I also checked the current specifications and source definitions to identify the
 
 - action `DATABASE_SETTINGS` exists and runs engine `DATABASE_CONTENT_SYNC`; it remains the retained step 30 of `FULL_DEPLOYMENT`;
 - action `WINDOWS_SERVICES` exists and runs engine `WINDOWS_SERVICES`;
-- action `STORAGE_SIZE_SCAN` exists, but it only measures housekeeping-policy storage. The specification explicitly says deletion/cleanup is a separate old-console feature, outside the 17 autonomous engine rows remaining in the post-cleanup portable catalog;
+- action `STORAGE_SIZE_SCAN` exists, but it only measures housekeeping-policy storage. Its specification says deletion/cleanup is a separate old-console feature; that specification still uses the historical phrase `outside the 19 engines`. The post-cleanup count of 17 autonomous engine rows comes solely from the reviewer converted-snapshot cleanup evidence above, not from `STORAGE_SIZE_SCAN.md`;
 - the owner decision of 2026-10-06 puts housekeeping itself in a separate phase after wave 9.
 
 The stale target codes `SETTINGS_SYNC`, `HOUSEKEEPING_APPLY` and `SERVICE_RECONCILE` do not resolve to rows in `ops_Action`, which is exactly why the real-snapshot `action-xref` group fails.
