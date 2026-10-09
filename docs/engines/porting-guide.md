@@ -24,7 +24,7 @@ For anyone who ports an engine (ADR-0008, `runtime/Sisqual.Runtime.EngineHost.ps
 
 ## 4. Secrets
 - Secrets reach the engine only in the request field `secrets`. Never in arguments, environment, logs, or the result, and never written to a file except the managed target that the engine's specification explicitly approves (for example the repaired application configuration of `CONFIG_REPAIR`, the machine-protected credential file of `WEB_ACCESS`, or the database row that `KEYCLOAK_CLIENT_SECRETS` updates).
-- Declare the references the engine reads in `contracts/engine-secret-references.json`, in the same PR, as exact references or per kind (`IIS_IDENTITY.*`, `WEB_ACCESS.*`, `MOBILE_APP_TOKEN.*`, `RULE_SECRET.*`). Declare only what the specification says the engine needs. An engine that reads a credential its specification does not mention is a defect, not a convenience.
+- Declare the references the engine reads in `contracts/engine-secret-references.json`, in the same PR, as **exact references**: that is all the host in `main` accepts (it rejects `*`). A per-kind form (`IIS_IDENTITY.*`, `WEB_ACCESS.*`) is `[PROPOSED]` in PR #67 and its scope is an open owner question (O9 of the work queue): do not declare it until the owner has answered and the host that accepts it is merged. Declare only what the specification says the engine needs. An engine that reads a credential its specification does not mention is a defect, not a convenience.
 - The host scans the result, standard output and standard error for every secret value it passed (plain, base64, URL and form encodings). Test with canary values that are long and unique (a one-character value is found everywhere).
 
 ## 5. The tests every engine needs
