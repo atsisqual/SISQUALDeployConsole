@@ -56,6 +56,25 @@ Check 'every table of the synthetic catalog is a carried table' ($badTables.Coun
 Check 'every column of the synthetic catalog is a real column' ($badColumns.Count -eq 0) ($badColumns -join ', ')
 Check 'the engine reads at least the tables of the reviews it implements' ($engineTables.Count -ge 20) ([string]$engineTables.Count)
 
+
+# Coverage of the original reviews. The fixture lists the issue codes of the original review procedures; the engine says how many it implements, and
+# the numbers must agree with the source, so an engine can never claim more coverage than it has (or forget to say it has less).
+$fixture = Get-Content -LiteralPath (Join-Path $repo 'tests/Fixtures/preflight-legacy-codes.json') -Raw | ConvertFrom-Json -Depth 20
+$engineSeverity = @{}
+foreach ($match in [regex]::Matches($engineText, 'Add-Issue\s+(ERROR|WARNING|INFO)\s+[A-Z_]+\s+([A-Z][A-Z0-9_]+)')) {
+    if (-not $engineSeverity.ContainsKey($match.Groups[2].Value)) { $engineSeverity[$match.Groups[2].Value] = [Collections.Generic.HashSet[string]]::new() }
+    [void]$engineSeverity[$match.Groups[2].Value].Add($match.Groups[1].Value)
+}
+$implemented = @($fixture.codes | Where-Object { $engineSeverity.ContainsKey([string]$_.code) })
+$missing = @($fixture.codes | Where-Object { -not $engineSeverity.ContainsKey([string]$_.code) })
+$declaredImplemented = [int]([regex]::Match($engineText, '\$script:CoverageImplemented = (\d+)').Groups[1].Value)
+$declaredTotal = [int]([regex]::Match($engineText, '\$script:CoverageTotal = (\d+)').Groups[1].Value)
+Check 'the engine declares exactly how many of the original issue codes it implements' ($declaredImplemented -eq $implemented.Count -and $declaredTotal -eq @($fixture.codes).Count) ("declared $declaredImplemented of $declaredTotal; source $($implemented.Count) of $(@($fixture.codes).Count)")
+$overrides = @{}; foreach ($override in $fixture.ownerSeverityOverrides) { $overrides[[string]$override.code] = [string]$override.engine }
+$wrongSeverity = @($implemented | Where-Object { $expected = if ($overrides.ContainsKey([string]$_.code)) { $overrides[[string]$_.code] } else { [string]$_.severity }; -not ($engineSeverity[[string]$_.code].Count -eq 1 -and $engineSeverity[[string]$_.code].Contains($expected)) } | ForEach-Object { [string]$_.code })
+Check 'every implemented issue code has the severity of the original review (or an owner decision)' ($wrongSeverity.Count -eq 0) ($wrongSeverity -join ', ')
+foreach ($group in ($missing | Group-Object review)) { Write-Host ('DIAG  not yet ported from {0}: {1}' -f $group.Name, (($group.Group | ForEach-Object { [string]$_.code }) -join ', ')) }
+
 Write-Host ('Preflight schema conformance: {0} passed / {1} failed' -f $script:Passed, $script:Failed)
 if ($script:Failed -gt 0) { exit 1 }
 exit 0

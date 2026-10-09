@@ -9,6 +9,10 @@ $script:Issues = [System.Collections.Generic.List[object]]::new()
 $script:Tables = @{}
 $script:Request = $null
 $script:Connection = $null
+# Coverage of the original model reviews (docs/handoff and tests/Fixtures/preflight-legacy-codes.json): how many of their issue codes this engine implements.
+# Test-DeploymentPreflightSchema compares these two numbers with the engine source and the fixture, so they cannot drift.
+$script:CoverageImplemented = 29
+$script:CoverageTotal = 59
 
 function Exit-InvalidRequest {
     exit 2
@@ -125,6 +129,25 @@ function Get-EnabledRows {
     return @(Get-CatalogRows $Name | Where-Object { Test-Enabled $_ })
 }
 
+function New-OrdinalMap {
+    # Catalog codes are compared exactly: a PowerShell hashtable would treat C1 and c1 as the same key.
+    return [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::Ordinal)
+}
+
+function Test-PathUnderRoot {
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Root)
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
+    $full = [IO.Path]::GetFullPath($Path)
+    return ($full.Equals($rootFull,[StringComparison]::OrdinalIgnoreCase) -or $full.StartsWith($rootFull + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase))
+}
+
+function Test-PathChecked {
+    # 'EXISTS', 'MISSING' or 'DENIED'. A path that cannot be read is a result for that item, never an exception that ends the run.
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][ValidateSet('Leaf','Container')][string]$PathType)
+    try { if (Test-Path -LiteralPath $Path -PathType $PathType -ErrorAction Stop) { return 'EXISTS' } else { return 'MISSING' } }
+    catch { return 'DENIED' }
+}
+
 function Get-InstanceRoot {
     param([Parameter(Mandatory)][object]$Server,[Parameter(Mandatory)][object]$Instance)
     $servicesRoot = [string](Get-Field $Server 'ServicesRoot' '')
@@ -201,7 +224,7 @@ function Invoke-ReviewManagementModel {
 function Invoke-ReviewApplicationCatalog {
     param($Context)
     $applications = @(Get-EnabledRows 'cfg_Application')
-    $seen = @{}
+    $seen = New-OrdinalMap
     foreach ($application in $applications) {
         $code = [string](Get-Field $application 'ApplicationCode' '')
         if ([string]::IsNullOrWhiteSpace($code)) { Add-Issue ERROR APPLICATION_CATALOG APPLICATION_CODE_MISSING; continue }
@@ -231,7 +254,7 @@ function Invoke-ReviewManagedAssets {
 function Invoke-ReviewRepairModel {
     param($Context)
     $files = @(Get-EnabledRows 'cfg_ConfigFile')
-    $fileById = @{}
+    $fileById = New-OrdinalMap
     foreach ($file in $files) { $fileById[[string](Get-Field $file 'FileID' '')] = $file }
     foreach ($rule in @(Get-EnabledRows 'cfg_ConfigRule')) {
         $fileId = [string](Get-Field $rule 'FileID' '')
@@ -249,7 +272,7 @@ function Invoke-ReviewIisModel {
     param($Context)
     if (@(Get-EnabledRows 'cfg_IisServerPolicy').Count -eq 0) { Add-Issue ERROR IIS_MODEL SERVER_POLICY_MISSING }
     $applications = @(Get-EnabledRows 'cfg_Application')
-    $appCodes = @{}
+    $appCodes = New-OrdinalMap
     foreach ($app in $applications) { $appCodes[[string](Get-Field $app 'ApplicationCode' '')] = $true }
     foreach ($definition in @(Get-EnabledRows 'cfg_IisApplicationDefinition')) {
         $code = [string](Get-Field $definition 'IisApplicationCode' '')
@@ -270,7 +293,7 @@ function Invoke-ReviewWindowsServices {
     param($Context)
     $definitions = @(Get-EnabledRows 'cfg_WindowsServiceDefinition')
     if ($definitions.Count -eq 0) { Add-Issue ERROR WINDOWS_SERVICES WINDOWS_SERVICE_DEFINITION_MISSING }
-    $nameSet = @{}
+    $nameSet = New-OrdinalMap
     foreach ($instance in $Context.SelectedInstances) {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -286,7 +309,7 @@ function Invoke-ReviewWindowsServices {
             }
         }
     }
-    $userHashes = @{}
+    $userHashes = New-OrdinalMap
     foreach ($instance in $Context.SelectedInstances) {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'IisIdentityUserName' '')
@@ -302,7 +325,7 @@ function Invoke-ReviewWebAccess {
     param($Context)
     if (@(Get-EnabledRows 'cfg_WebAccessPolicy').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_POLICY_MISSING }
     if (@(Get-EnabledRows 'cfg_WebAccessTemplate').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_TEMPLATE_MISSING }
-    $users = @{}
+    $users = New-OrdinalMap
     foreach ($instance in $Context.SelectedInstances) {
         $code = [string](Get-Field $instance 'InstanceCode' '')
         $user = [string](Get-Field $instance 'WebAccessUserName' '')
@@ -336,7 +359,7 @@ function Invoke-ReviewLinksPresentation {
     # The QR asset of a customer is the global asset QR_CHANNEL_<CustomerCode> (docs/migration/instance-directory-design.md). Codes and severities are those
     # of the original review: a missing asset is a WARNING for an enabled PT or ES instance with a customer code, an unassigned asset is INFO.
     $assets = @(Get-EnabledRows 'cfg_LinksPageAsset')
-    $assetCodes = @{}
+    $assetCodes = New-OrdinalMap
     foreach ($asset in $assets) { $assetCodes[[string](Get-Field $asset 'AssetCode' '')] = $true }
     foreach ($instance in $Context.SelectedInstances) {
         $customer = [string](Get-Field $instance 'CustomerCode' '')
@@ -345,7 +368,7 @@ function Invoke-ReviewLinksPresentation {
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         if (-not $assetCodes.ContainsKey('QR_CHANNEL_' + $customer)) { Add-Issue WARNING LINKS_PRESENTATION QR_ASSET_MISSING ($instanceCode + ' / ' + $customer) $instanceCode 'No QR asset is configured for this enabled PT/ES environment.' }
     }
-    $assignedAssetCodes = @{}
+    $assignedAssetCodes = New-OrdinalMap
     foreach ($instance in @($Context.Instances | Where-Object { Test-Enabled $_ })) {
         $customer = [string](Get-Field $instance 'CustomerCode' '')
         if (-not [string]::IsNullOrWhiteSpace($customer)) { $assignedAssetCodes['QR_CHANNEL_' + $customer] = $true }
@@ -373,7 +396,7 @@ function Invoke-ReviewPulseModel {
         if ($hubRows.Count -ne 1) { Add-Issue ERROR PULSE_MODEL PULSE_HUB_NOT_FOUND $hub; continue }
         if (-not (Test-SecretPresent ('IIS_IDENTITY.' + $hub))) { Add-Issue ERROR PULSE_MODEL PULSE_TASK_CREDENTIAL_MISSING $hub $hub }
     }
-    $applications = @{}
+    $applications = New-OrdinalMap
     foreach ($app in @(Get-EnabledRows 'cfg_Application')) { $applications[[string](Get-Field $app 'ApplicationCode' '')] = $true }
     foreach ($policy in @(Get-EnabledRows 'cfg_PulseHttpPolicy')) {
         $code = [string](Get-Field $policy 'ApplicationCode' '')
@@ -398,7 +421,7 @@ function Invoke-ReviewPulseModel {
 function Invoke-ReviewOperationsFramework {
     param($Context)
     $engines = @(Get-EnabledRows 'ops_Engine')
-    $engineByCode = @{}
+    $engineByCode = New-OrdinalMap
     foreach ($engine in $engines) { $engineByCode[[string](Get-Field $engine 'EngineCode' '')] = $engine }
     foreach ($action in @(Get-EnabledRows 'ops_Action')) {
         if ([string](Get-Field $action 'ActionType' '') -cne 'ENGINE') { continue }
@@ -423,21 +446,19 @@ function Invoke-ReviewOperationsFramework {
 function Invoke-RequiredFileChecks {
     param($Context)
     $files = @(Get-EnabledRows 'cfg_ConfigFile')
-    $rules = @(Get-EnabledRows 'cfg_ConfigRule')
-    $requiredFileIds = @{}
+    $requiredFileIds = New-OrdinalMap
     foreach ($file in $files) { if ([int](Get-Field $file 'IsRequired' 0) -eq 1) { $requiredFileIds[[string](Get-Field $file 'FileID' '')] = $true } }
-    $applications = @{}
+    $applications = New-OrdinalMap
     foreach ($app in @(Get-EnabledRows 'cfg_Application')) { $applications[[string](Get-Field $app 'ApplicationCode' '')] = $app }
-    $policies = @{}
+    $policies = New-OrdinalMap
     foreach ($policy in @(Get-EnabledRows 'cfg_ConfigFileRepairPolicy')) { $policies[[string](Get-Field $policy 'FileID' '')] = [string](Get-Field $policy 'RepairMode' 'PATCH') }
     foreach ($instance in $Context.SelectedInstances) {
         Assert-NotCancelled
         $instanceCode = [string](Get-Field $instance 'InstanceCode' '')
         $instanceRoot = Get-InstanceRoot $Context.Server $instance
-        if ([string]::IsNullOrWhiteSpace($instanceRoot) -or -not (Test-Path -LiteralPath $instanceRoot -PathType Container)) {
-            Add-Issue ERROR APPLICATION_TREE INSTANCE_ROOT_MISSING $instanceCode $instanceCode
-            continue
-        }
+        $rootState = if ([string]::IsNullOrWhiteSpace($instanceRoot)) { 'MISSING' } else { Test-PathChecked $instanceRoot Container }
+        if ($rootState -ceq 'DENIED') { Add-Issue ERROR APPLICATION_TREE PATH_ACCESS_DENIED $instanceCode $instanceCode; continue }
+        if ($rootState -cne 'EXISTS') { Add-Issue ERROR APPLICATION_TREE INSTANCE_ROOT_MISSING $instanceCode $instanceCode; continue }
         foreach ($file in $files) {
             $fileId = [string](Get-Field $file 'FileID' '')
             if (-not $requiredFileIds.ContainsKey($fileId)) { continue }
@@ -450,13 +471,21 @@ function Invoke-RequiredFileChecks {
             }
             $relative = [string](Get-Field $file 'RelativePath' '')
             if ([string]::IsNullOrWhiteSpace($relative) -or [string]::IsNullOrWhiteSpace($basePath)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PATH_EMPTY $fileId $instanceCode; continue }
+            # A sealed catalog can still be edited by hand and sealed again: neither the application folder nor the file may leave the folder they belong to.
+            if (-not (Test-PathUnderRoot -Path $basePath -Root $instanceRoot)) { Add-Issue ERROR APPLICATION_TREE APPLICATION_PATH_OUTSIDE_ROOT $applicationCode $instanceCode; continue }
             $fullPath = [IO.Path]::GetFullPath((Join-Path $basePath $relative))
+            if (-not (Test-PathUnderRoot -Path $fullPath -Root $basePath)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PATH_OUTSIDE_ROOT $fileId $instanceCode; continue }
             $mode = if ($policies.ContainsKey($fileId)) { $policies[$fileId] } else { 'PATCH' }
             if ($mode -ceq 'REPLACE') {
-                $parent = Split-Path -Parent $fullPath
-                if (-not (Test-Path -LiteralPath $parent -PathType Container)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_PARENT_MISSING $fileId $instanceCode }
+                $parentState = Test-PathChecked (Split-Path -Parent $fullPath) Container
+                if ($parentState -ceq 'DENIED') { Add-Issue ERROR APPLICATION_TREE PATH_ACCESS_DENIED $fileId $instanceCode }
+                elseif ($parentState -cne 'EXISTS') { Add-Issue ERROR APPLICATION_TREE REQUIRED_PARENT_MISSING $fileId $instanceCode }
             }
-            elseif (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { Add-Issue ERROR APPLICATION_TREE REQUIRED_FILE_MISSING $fileId $instanceCode }
+            else {
+                $fileState = Test-PathChecked $fullPath Leaf
+                if ($fileState -ceq 'DENIED') { Add-Issue ERROR APPLICATION_TREE PATH_ACCESS_DENIED $fileId $instanceCode }
+                elseif ($fileState -cne 'EXISTS') { Add-Issue ERROR APPLICATION_TREE REQUIRED_FILE_MISSING $fileId $instanceCode }
+            }
         }
     }
 }
@@ -470,7 +499,9 @@ function Invoke-ServiceFileChecks {
         foreach ($definition in $definitions) {
             $template = [string](Get-Field $definition 'ExecutablePathTemplate' '')
             $path = Expand-LocalTemplate $template $Context.Server $instance
-            if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_MISSING ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
+            $exeState = if ([string]::IsNullOrWhiteSpace($path)) { 'MISSING' } else { Test-PathChecked $path Leaf }
+            if ($exeState -ceq 'DENIED') { Add-Issue ERROR WINDOWS_SERVICE PATH_ACCESS_DENIED ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
+            elseif ($exeState -cne 'EXISTS') { Add-Issue ERROR WINDOWS_SERVICE SERVICE_EXECUTABLE_MISSING ([string](Get-Field $definition 'ServiceCode' '')) $instanceCode }
         }
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $instance 'IisIdentityUserName' ''))) { Add-Issue ERROR WINDOWS_SERVICE IIS_IDENTITY_USERNAME_PENDING $instanceCode $instanceCode }
         if (-not (Test-SecretPresent ('IIS_IDENTITY.' + $instanceCode))) { Add-Issue ERROR WINDOWS_SERVICE IIS_IDENTITY_PASSWORD_PENDING $instanceCode $instanceCode }
@@ -599,6 +630,7 @@ try {
     $context = [pscustomobject]@{ Server=$server; Servers=$servers; Instances=$instances; SelectedInstances=$selected; PackageRoot=$packageRoot; ManifestFiles=$manifestFiles }
 
     $meta = @(Get-CatalogRows 'catalog_meta')
+    Add-Issue INFO PREFLIGHT PREFLIGHT_COVERAGE_INCOMPLETE '' '' ('This preflight implements {0} of the {1} issue codes of the original model reviews; a clean result is not a complete readiness check.' -f $script:CoverageImplemented,$script:CoverageTotal)
     if ($meta.Count -eq 1) { Add-Issue INFO CATALOG CATALOG_BUILT_AT ([string](Get-Field $meta[0] 'built_at_utc' '')) '' 'Catalog build time; no age limit is applied.' }
 
     Invoke-RequiredFileChecks $context

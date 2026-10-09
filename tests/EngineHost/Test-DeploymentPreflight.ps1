@@ -94,6 +94,32 @@ function Invoke-DirectPreflightRequest {
     finally { $process.Dispose() }
 }
 
+function New-ScenarioPackage {
+    # A copy of the package whose catalog has extra rows, with its own manifest and catalog session.
+    param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][string]$ExtraSql)
+    $dest = Join-Path $temp ('scenario-' + $Name)
+    Copy-Item -LiteralPath $package -Destination $dest -Recurse -Force
+    $copyCatalog = Join-Path $dest 'catalog/catalog-TESTSERVER.db'
+    $copyBuilder = [Microsoft.Data.Sqlite.SqliteConnectionStringBuilder]::new()
+    $copyBuilder.DataSource = $copyCatalog
+    $copyBuilder.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadWrite
+    $copyBuilder.Pooling = $false
+    $copyConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new($copyBuilder.ConnectionString)
+    $copyConnection.Open()
+    try { Invoke-NonQuery $copyConnection $ExtraSql } finally { $copyConnection.Dispose() }
+    $copyEntries = PackageEntries $dest
+    $copyManifest = [ordered]@{
+        contractVersion='0.1-proposed'; packageId='00000000-0000-4000-8000-000000000112'; productVersion='0.0.0-test'; builtAt='2026-10-08T06:02:00Z'
+        catalog=[ordered]@{ serverCode='TESTSERVER'; file='catalog/catalog-TESTSERVER.db'; schemaVersion=2; origin='conversion-tool'; originReference='synthetic' }
+        files=@($copyEntries)
+        signature=[ordered]@{ issuerKeyId=('0'*64); algorithm='ECDSA-P256-SHA256'; value='AAAAAAAAAAAAAAAAAAAAAAAA' }
+    }
+    [IO.File]::WriteAllText((Join-Path $dest 'package-manifest.json'),($copyManifest | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
+    $copySession = New-SisqualTestCatalogSession -CatalogPath $copyCatalog -MachineName $machine
+    Set-SisqualTestCatalogRows -Session $copySession -Engine $engine -Action $action
+    return [pscustomobject]@{ Package = $dest; Catalog = $copyCatalog; Entries = $copyEntries; Session = $copySession }
+}
+
 $temp = Join-Path $env:TEMP ('sisqual-preflight-' + [guid]::NewGuid().ToString('N'))
 try {
     $package = Join-Path $temp 'package'
@@ -136,6 +162,7 @@ INSERT INTO dbo_ManagedInstance VALUES('INST1','TESTSERVER','preflight-host.inva
 INSERT INTO dbo_ManagedInstance VALUES('INST2','TESTSERVER','preflight-host2.invalid','PT','C2','svc-user2','web-user2',X'0102','01',1);
 INSERT INTO dbo_ManagedInstance VALUES('INST3','TESTSERVER','preflight-host3.invalid','ES','C3','svc-user3','web-user3',X'0102','01',1);
 INSERT INTO dbo_ManagedInstance VALUES('INST4','TESTSERVER','preflight-host4.invalid','BR','C4','svc-user4','web-user4',X'0102','01',1);
+INSERT INTO dbo_ManagedInstance VALUES('INST5','TESTSERVER','preflight-host5.invalid','PT','c1','svc-user5','web-user5',X'0102','01',1);
 CREATE TABLE cfg_Application(ApplicationCode TEXT,PhysicalPathTemplate TEXT,IsEnabled INTEGER);
 INSERT INTO cfg_Application VALUES('APP1','{INSTANCE_ROOT}\\App',1);
 CREATE TABLE cfg_ConfigFile(FileID INTEGER,ApplicationCode TEXT,RelativePath TEXT,FileFormat TEXT,IsRequired INTEGER,IsEnabled INTEGER);
@@ -238,6 +265,7 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     Check 'PREVIEW leaves managed filesystem byte-identical' ($before -ceq $after)
     Check 'catalog build time is INFO only' (@($result.results | Where-Object { $_.object -like 'CATALOG_BUILT_AT*' -and $_.status -ceq 'INFO' }).Count -eq 1)
     Check 'normalized result arithmetic is valid' (([int]$result.summary.succeededTargets + [int]$result.summary.failedTargets) -le [int]$result.summary.targetCount -and [int]$result.summary.errorCount -eq 0)
+    Check 'the result says the coverage of the original reviews is incomplete (INFO)' (@($result.results | Where-Object { $_.object -like 'PREFLIGHT_COVERAGE_INCOMPLETE*' -and $_.status -ceq 'INFO' }).Count -eq 1)
     Check 'an optional file that is not deployed is not reported as missing (cfg_ConfigFile.IsRequired)' (@($result.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
     Check 'an unassigned QR asset is INFO, as in the original review' (@($result.results | Where-Object { $_.object -ceq 'QR_ASSET_UNASSIGNED:QR_CHANNEL_ZZ' -and $_.status -ceq 'INFO' }).Count -eq 1)
     Check 'an instance whose customer has its QR_CHANNEL_<CustomerCode> asset has no missing-asset issue' (@($result.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' }).Count -eq 0)
@@ -259,9 +287,37 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     # All instances: INST1 is fine; INST2 (PT), INST3 (ES) and INST4 (BR) have no instance root. INST2 and INST3 have no QR asset, INST4 is not PT or ES.
     $all = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $package -CatalogPath $catalog -CatalogSession $session -ManifestEntries $entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
     $qrMissing = @($all.results | Where-Object { $_.object -like 'QR_ASSET_MISSING*' })
-    Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only' ($qrMissing.Count -eq 2 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
+    Check 'a missing QR asset is a WARNING, for an enabled PT or ES instance with a customer code only, and codes are compared exactly (customer c1 does not match QR_CHANNEL_C1)' ($qrMissing.Count -eq 3 -and @($qrMissing | Where-Object { $_.status -cne 'WARNING' }).Count -eq 0 -and (@($qrMissing | ForEach-Object { [string]$_.object }) -join '|') -ceq 'QR_ASSET_MISSING:INST2 / C2|QR_ASSET_MISSING:INST3 / C3|QR_ASSET_MISSING:INST5 / c1') ((@($qrMissing | ForEach-Object { [string]$_.status + ' ' + [string]$_.object }) -join '; '))
     $summaryText = ('target={0} failed={1} succeeded={2}' -f $all.summary.targetCount, $all.summary.failedTargets, $all.summary.succeededTargets)
-    Check 'failedTargets counts every instance with an error, not just one' ([int]$all.summary.targetCount -eq 4 -and [int]$all.summary.failedTargets -eq 3 -and [int]$all.summary.succeededTargets -eq 1) $summaryText
+    Check 'failedTargets counts every instance with an error, not just one' ([int]$all.summary.targetCount -eq 5 -and [int]$all.summary.failedTargets -eq 4 -and [int]$all.summary.succeededTargets -eq 1) $summaryText
+
+    # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
+    [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
+    $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"
+    $escaped = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $escape.Package -CatalogPath $escape.Catalog -CatalogSession $escape.Session -ManifestEntries $escape.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    Write-SafeResultDiagnostic -Label 'path-escape' -Result $escaped
+    Check 'a required file whose path leaves the application folder is REQUIRED_PATH_OUTSIDE_ROOT, even if a file exists there' (@($escaped.results | Where-Object { $_.object -ceq 'REQUIRED_PATH_OUTSIDE_ROOT:3' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and @($escaped.results | Where-Object { $_.object -like 'REQUIRED_FILE_MISSING*' }).Count -eq 0)
+
+    # A file in a folder that cannot be read is an ERROR for that item and the run still finishes (specification: not a crash).
+    if ($IsWindows) {
+        $lockedDir = Join-Path $appRoot 'locked'
+        New-Item -ItemType Directory -Path $lockedDir -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $lockedDir 'data.json'),'{}',[Text.UTF8Encoding]::new($false))
+        $denied = New-ScenarioPackage -Name 'denied' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(4,'APP1','locked\data.json','JSON',1,1);"
+        $sid = '*' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        & icacls.exe $lockedDir /deny ($sid + ':(OI)(CI)(RX)') | Out-Null
+        try {
+            $effective = $false
+            try { [void](Test-Path -LiteralPath (Join-Path $lockedDir 'data.json') -ErrorAction Stop) } catch { $effective = $true }
+            if ($effective) {
+                $lockedRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $denied.Package -CatalogPath $denied.Catalog -CatalogSession $denied.Session -ManifestEntries $denied.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+                Write-SafeResultDiagnostic -Label 'access-denied' -Result $lockedRun
+                Check 'a file in a folder that cannot be read is PATH_ACCESS_DENIED for that item and the run still completes' (@($lockedRun.results | Where-Object { $_.object -ceq 'PATH_ACCESS_DENIED:4' -and $_.status -ceq 'ERROR' -and $_.instanceCode -ceq 'INST1' }).Count -eq 1 -and [string]$lockedRun.errorMessage -ceq 'PREFLIGHT_ERRORS')
+            }
+            else { Write-Host 'DIAG  access-denied: the deny ACL did not stop this process from reading the folder on this runner; the access-denied path was NOT exercised' }
+        }
+        finally { & icacls.exe $lockedDir /remove:d $sid | Out-Null }
+    }
 
     # A catalog module changed on disk after the manifest was made is not imported: the engine compares it with the manifest before it imports it.
     $moduleFile = Join-Path $package 'runtime/Sisqual.Runtime.Catalog.Core.ps1'
