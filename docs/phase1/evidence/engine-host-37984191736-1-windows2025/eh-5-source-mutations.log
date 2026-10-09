@@ -1,0 +1,49 @@
+PASS  live guard: manifest hash enforcement?
+PASS  live guard: stdout stderr result secret scan?
+PASS  live guard: schema arithmetic upper bound?
+PASS  live guard: same-session preview fingerprint?
+PASS  live guard: documented child exit codes only?
+PASS  live guard: successful preview cache gate?
+PASS  live guard: PowerShell 7 ACL extension?
+PASS  live guard: JSON escaped secret representation?
+PASS  live guard: backup schema validation?
+PASS  live guard: result timestamp strings preserved?
+PASS  live guard: Seal-Package canonical serializer reused?
+PASS  live guard: decoded result secret scan?
+PASS  live guard: failed completion audit helper?
+PASS  live guard: async stdin byte write?
+PASS  live guard: catalog path verification?
+PASS  live guard: action enabled guard?
+PASS  live guard: action engine mapping guard?
+PASS  live guard: completion summary audit?
+PASS  live guard: machine ownership comes from active catalog session?
+PASS  live guard: redirected stream drain is deadline bounded?
+PASS  live guard: invalid UTF8 result is mapped?
+PASS  live guard: the engine is started through the host launcher that waits for the gate?
+PASS  live guard: the gate line is sent only after the job assignment?
+PASS  live guard: form-style URL encoding is decoded before the leak check?
+PASS  live guard: the child executable is pinned to the running PowerShell?
+PASS  live guard: the kill policy comes from the action, not from the declared class?
+PASS  live guard: action and engine come from the verified catalog?
+PASS  live guard: the launcher is verified against the manifest?
+PASS  live guard: synthesised failures keep the real start?
+PASS  live guard: declared secrets come from the approved package contract?
+PASS  live guard: actions without an engine are classified before any engine is looked up?
+PASS  live guard: a failed containment ends the launcher process?
+PASS  live guard: the stream reader keeps draining after the limit?
+PASS  live guard: the result root must be one object?
+PASS  live guard: secret references may be declared per kind?
+PASS  live guard: engine is contained in a job object?
+PASS  live guard: survivors are terminated through the job?
+PASS  live guard: the console host is not counted as a survivor?
+PASS  live guard: stream drain is counted from the end of the engine, not from its expired deadline?
+PASS  live guard: a member that already exited is not a survivor?
+PASS  live guard: survivors are those still alive after a settling time?
+PASS  live guard: failure audit carries a reason?
+PASS  live guard: machine ownership uses the operating system name?
+PASS  live guard: only declared secrets are forwarded?
+PASS  live guard: cancel signal failure does not stop timeout handling?
+PASS  live guard: selected instance must exist in the verified catalog?
+PASS  live guard: engine environment is cleared and allowlisted?
+PASS  live guard: result validation cannot throw out of the host?
+EngineHost source mutation anchors: 48 passed / 0 failed?
