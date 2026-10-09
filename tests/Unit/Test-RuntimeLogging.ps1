@@ -238,7 +238,9 @@ try {
     [IO.File]::WriteAllText($stalePath, 'stale')
     $module = Get-Module Sisqual.Runtime.Logging
     & $module { $script:LogState.LastRetentionUtcDate = [DateOnly]::FromDateTime([datetime]::UtcNow.AddDays(-1)) }
-    Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.ROLLOVER' -Message 'wall clock rollover' -TimestampUtc $reference | Out-Null
+    # The event is stamped with the wall clock, not with the fixed $reference date: on the day when 'today minus three days' is $reference's date, the stale file
+    # and the file this write appends to are the same file, and the append would recreate the file that retention just removed.
+    Write-SisqualRuntimeLog -Level INFO -EventCode 'RUNTIME.ROLLOVER' -Message 'wall clock rollover' -TimestampUtc $wallNow | Out-Null
     Test-Check 'wall-clock UTC rollover automatically re-runs retention' (-not (Test-Path -LiteralPath $stalePath))
 
     $swapRoot = Join-Path $tempBase 'swap'
