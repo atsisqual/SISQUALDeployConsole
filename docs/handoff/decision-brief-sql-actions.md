@@ -31,8 +31,8 @@ The source snapshot describes the old console. It is not executable evidence for
 
 | Action | Current type | Current behavior | Portable replacement | Owner / wave | Recommendation |
 |---|---|---|---|---|---|
-| `EXECUTION_HISTORY` | `SQL` | Reads the latest 200 rows from `ops.ExecutionLog` | Read-only report over the portable text logs | Runtime/report surface; no engine wave | Read-only report; do not create an engine |
-| `LINKS_VISIBILITY_MATRIX` | `SQL` | Reads effective `/links` publication state from `cfg.LinksPageInstanceApplicationCatalog` | Read-only effective-visibility matrix owned with `LINKS_VISIBILITY` | Wave 8 | Read-only report; no second engine |
+| `EXECUTION_HISTORY` | `SQL` | Reads the latest 200 rows from `ops.ExecutionLog` | Read-only report over portable text logs after the runtime producer records the required action lifecycle fields | Runtime/report surface; no engine wave | Read-only report; do not create an engine |
+| `LINKS_VISIBILITY_MATRIX` | `SQL` | Reads effective `/links` publication state from `cfg.LinksPageInstanceApplicationCatalog`, including both page modes | Wave 8 read-only visibility surface covering general-page and individual-page rows; change proposals remain individual-page only | Wave 8 | Read-only report; no second engine |
 | `OBJECT_AUDIT` | `SQL` | Executes `ops.GetObjectUsageAudit` against Management Console SQL metadata | No like-for-like runtime replacement after `_sisqualMANAGEMENT` is retired | None if retired; new approved scope if retained | Retire from portable V1; use a separate support/cutover tool only if the capability is still required |
 
 ## 1. EXECUTION_HISTORY
@@ -63,19 +63,34 @@ This is a read-only presentation of execution history. It does not reconcile or 
 
 ### Portable replacement
 
-ADR-0007 removes the writable state database from the portable application and states that operation history goes to plain-text logs. The Phase 3 logging foundation already implements the local text-log substrate. ADR-0008 explicitly records the owner decision that `EXECUTION_HISTORY` is replaced by reading those text logs.
+ADR-0007 removes the writable state database from the portable application and states that operation history goes to plain-text logs. ADR-0008 explicitly records the owner decision that `EXECUTION_HISTORY` is replaced by reading those text logs.
 
-The replacement therefore belongs to the runtime/reporting surface, not the engine host. A UI or report reader can parse the bounded local log set and expose the same operational questions: action, target, mode, start/end, outcome and message.
+That architectural decision does not mean the current log records are already a field-for-field replacement. The current engine host completion/failure records include operation id, engine, mode, instance, duration, exit code, outcome/summary, locks and plan information, but they do not record the top-level `ActionCode` or the engine result message. `EngineCode` cannot be used to reconstruct the action reliably because an action may alias another engine and a composite parent action may execute child engines.
+
+Before a text-log reader can replace the current history action without losing source-visible information, the runtime producer/adapter must emit normalized operation lifecycle records that preserve, at minimum:
+
+- `operationId`;
+- top-level `actionCode`;
+- `engineCode` when an engine is involved;
+- `instanceCode` or equivalent target identity;
+- execution `mode`;
+- `startedAt` and `endedAt` (or enough timestamp plus duration data to derive both);
+- final `status`/outcome;
+- the non-secret result or failure `message` that is intended for history display.
+
+For composite actions the record must retain the parent action identity as well as child engine events. For aliases, the requested action code must remain distinct from the resolved engine code. None of these fields requires a state database; they are structured fields in the plain-text operation log.
+
+The replacement therefore belongs to the runtime/reporting surface, not the engine host as a new engine. The report reader is complete only after those producer fields exist; this brief does not implement them.
 
 ### Wave ownership
 
-`N/A` as an engine wave. The foundation is Phase 3 runtime logging; any final UI/report surface should be implemented with the runtime/UI work that exposes operation logs.
+`N/A` as an engine wave. The foundation is Phase 3 runtime logging. Completing the replacement requires runtime/adapter logging work to emit the normalized lifecycle fields above, followed by the UI/report surface that reads them.
 
 ### Recommendation
 
 **Read-only report; do not create an engine.**
 
-Keeping this as an engine would add a process launch only to read data that the runtime already owns, and would incorrectly model product-local history as a managed-system operation.
+Preserve the current history semantics in the text-log producer first, then build the reader. Keeping this as an engine would add a process launch only to read product-local history and would incorrectly model that history as a managed-system operation.
 
 ## 2. LINKS_VISIBILITY_MATRIX
 
@@ -91,27 +106,34 @@ The source action is enabled, has `ModePolicy = NONE`, has no engine and no inst
 - effective publication state;
 - last modification time.
 
-It filters `IsGloballyPublished = 1` and orders the result by page mode, instance and application.
+It filters `IsGloballyPublished = 1` and orders the result by page mode, instance and application. The report therefore covers the general-page publication view as well as the individual-page visibility view.
 
 This is already a read-only matrix. It does not apply visibility changes.
 
 ### Portable replacement
 
-The owner decision recorded in `docs/decisions-log.md` makes link visibility a read-only matrix in V1; a change is an owner edit of the catalog followed by a seal. The Wave 8 `LINKS_VISIBILITY` specification also defines the portable direction as an effective-visibility matrix and change proposal rather than a central database write.
+The owner decision recorded in `docs/decisions-log.md` makes link visibility a read-only matrix in V1; a change is an owner edit of the catalog followed by a seal. The Wave 8 `LINKS_VISIBILITY` specification defines the portable individual-page direction as an effective-visibility matrix and change proposal rather than a central database write.
 
-The SQL action therefore has no reason to survive as a separate executable action. The matrix should be exposed by the same read-only logic used by Wave 8 so it cannot disagree with `LINKS_PAGES` or with the visibility proposal.
+The current Wave 8 specification describes the 840 instance/application combinations for the 70 individual-page instances. That is sufficient for per-instance override proposals, but by itself it is not the complete replacement for the SQL report because the SQL report also exposes the general-page publication rows/state.
+
+The Wave 8 read-only surface must therefore cover both page modes:
+
+- general-page rows/state needed to preserve the current report visibility;
+- individual-page effective visibility (default/profile/override) for the existing matrix and proposal logic.
+
+Change proposals remain restricted to the individual-page capability described by `LINKS_VISIBILITY`; general-page rows are read-only report data in this replacement. The read-only calculation should still be shared with `LINKS_PAGES` so the report and generated pages cannot disagree.
 
 ### Wave ownership
 
 **Wave 8 - `LINKS_VISIBILITY`.**
 
-The matrix is a report surface of that capability. It is not a second engine.
+The complete matrix/report surface belongs to that capability. It is not a second engine. The Wave 8 implementation/specification must account for the general-page report rows in addition to its existing individual-page matrix.
 
 ### Recommendation
 
 **Read-only report owned by Wave 8; retire the standalone SQL action path.**
 
-If a browser route or API endpoint is needed, it should call the shared read-only visibility calculation rather than queueing an engine or executing catalog SQL text.
+Expose both page modes in the read-only surface, while keeping owner-edit/change-proposal behavior limited to the individual-page visibility rules already approved. If a browser route or API endpoint is needed, it should call shared read-only visibility logic rather than queueing an engine or executing catalog SQL text.
 
 ## 3. OBJECT_AUDIT
 
@@ -167,8 +189,8 @@ A later implementation PR may change navigation or catalog metadata according to
 
 Recommended end state:
 
-1. `EXECUTION_HISTORY`: no executable action; expose a read-only text-log report.
-2. `LINKS_VISIBILITY_MATRIX`: no executable SQL action; expose the Wave 8 read-only matrix.
+1. `EXECUTION_HISTORY`: no executable action; after the runtime producer preserves the required action lifecycle fields, expose a read-only text-log report.
+2. `LINKS_VISIBILITY_MATRIX`: no executable SQL action; expose the Wave 8 read-only surface for both general-page and individual-page rows, with change proposals restricted to individual pages.
 3. `OBJECT_AUDIT`: absent from portable V1; optional separate legacy support/cutover tool only if still needed.
 
 ## Owner decision O5
@@ -177,8 +199,8 @@ Please decide one disposition for each action:
 
 | Action | A | B | C | Recommendation |
 |---|---|---|---|---|
-| `EXECUTION_HISTORY` | Read-only text-log report | New read-only engine | Retire without replacement | **A** |
-| `LINKS_VISIBILITY_MATRIX` | Wave 8 read-only matrix/report | New separate read-only engine | Retire without replacement | **A** |
+| `EXECUTION_HISTORY` | Read-only text-log report, with producer lifecycle fields completed first | New read-only engine | Retire without replacement | **A** |
+| `LINKS_VISIBILITY_MATRIX` | Wave 8 read-only matrix/report covering both page modes; proposals individual-page only | New separate read-only engine | Retire without replacement | **A** |
 | `OBJECT_AUDIT` | Retire from portable V1; optional separate legacy support tool | Define a new portable audit capability and wave | Keep blocked indefinitely | **A** |
 
 No implementation should infer owner approval from this document. Record O5 in `docs/decisions-log.md` before changing runtime behavior or catalog/navigation semantics.
