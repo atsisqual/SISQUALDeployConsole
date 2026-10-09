@@ -1,0 +1,900 @@
+-- Verbatim text of the nine original review procedures whose checks DEPLOYMENT_PREFLIGHT already implements, for the audit of the engine against them (docs/handoff/work-queue.md, D14).
+-- Companion of docs/handoff/preflight-legacy-procedures.sql.txt (the five procedures it does not port yet): same source (Management Console snapshot, git blob 99f8719f at reference a62e49a7), same
+-- extraction (from CREATE to the next GO, CR removed, non-ASCII shown as '?'), same T-SQL semantics to decide (read the header of that file: Latin1_General_CI_AS, space padding, LEN, LTRIM and RTRIM).
+-- cfg.ReviewManagementModel and cfg.ReviewRepairModel report findings without an issue code (free text in the original): the codes the engine uses for them are the engine's own.
+-- cfg.ReviewApplicationCatalog and cfg.ReviewManagedAssets state no severity in the original.
+
+-- ======================================================================
+-- cfg.ReviewManagementModel  (69 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewManagementModel]
+    @MachineName sysname = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @MachineName = COALESCE(NULLIF(@MachineName, N''),
+        CONVERT(sysname, SERVERPROPERTY('MachineName')));
+
+    SELECT
+        Severity = 'ERROR',
+        ObjectType = 'ManagedServer',
+        ObjectCode = CONVERT(nvarchar(200), @MachineName),
+        Issue = N'No enabled ManagedServer exists for the current machine.'
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.ManagedServer
+        WHERE IsEnabled = 1
+          AND MachineName = @MachineName
+    )
+
+    UNION ALL
+
+    SELECT
+        'ERROR',
+        'ManagedServer',
+        S.ServerCode,
+        N'ConfigBackupRoot is empty.'
+    FROM dbo.ManagedServer AS S
+    WHERE S.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND NULLIF(LTRIM(RTRIM(S.ConfigBackupRoot)), N'') IS NULL
+
+    UNION ALL
+
+    SELECT
+        'ERROR',
+        'DatabaseCopyPolicy',
+        S.ServerCode,
+        N'No enabled database-copy policy exists.'
+    FROM dbo.ManagedServer AS S
+    WHERE S.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND NOT EXISTS
+      (
+          SELECT 1
+          FROM cfg.DatabaseCopyPolicy AS P
+          WHERE P.ServerCode = S.ServerCode
+            AND P.IsEnabled = 1
+      )
+
+    UNION ALL
+
+    SELECT
+        'ERROR',
+        'DatabaseDefinition',
+        N'<catalogue>',
+        N'No enabled copyable databases are registered.'
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.DatabaseDefinition
+        WHERE IsEnabled = 1
+          AND CopyEnabled = 1
+    )
+;
+END;
+
+-- ======================================================================
+-- cfg.ReviewApplicationCatalog  (60 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewApplicationCatalog]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        IssueCode,
+        ApplicationCode,
+        Details
+    FROM
+    (
+        SELECT
+            IssueCode = CONVERT(varchar(80), 'IIS_APPLICATION_NOT_IN_CATALOG'),
+            ApplicationCode = I.IisApplicationCode,
+            Details = CONVERT(nvarchar(1000), N'IIS application definition has no cfg.Application row.')
+        FROM cfg.IisApplicationDefinition AS I
+        LEFT JOIN cfg.Application AS A
+            ON A.ApplicationCode = I.IisApplicationCode
+        WHERE I.IsEnabled = 1
+          AND A.ApplicationCode IS NULL
+
+        UNION ALL
+
+        SELECT
+            IssueCode = CONVERT(varchar(80), 'CONFIG_FILE_WITHOUT_APPLICATION'),
+            ApplicationCode = CONVERT(varchar(80), NULL),
+            Details = CONVERT(nvarchar(1000), N'FileID=' + CONVERT(nvarchar(20), F.FileID) + N'; RelativePath=' + F.RelativePath)
+        FROM cfg.ConfigFile AS F
+        WHERE F.IsEnabled = 1
+          AND F.ApplicationCode IS NULL
+
+        UNION ALL
+
+        SELECT
+            IssueCode = CONVERT(varchar(80), 'DUPLICATE_IIS_PATH'),
+            ApplicationCode = MIN(A.ApplicationCode),
+            Details = CONVERT(nvarchar(1000), N'IIS path is used by more than one enabled catalogue entry: ' + A.IisPath)
+        FROM cfg.Application AS A
+        WHERE A.IsEnabled = 1
+          AND A.IisPath IS NOT NULL
+        GROUP BY A.IisPath
+        HAVING COUNT(*) > 1
+
+        UNION ALL
+
+        SELECT
+            IssueCode = CONVERT(varchar(80), 'NON_IIS_COMPONENT_HAS_IIS_PATH'),
+            ApplicationCode = A.ApplicationCode,
+            Details = CONVERT(nvarchar(1000), N'Component is not in cfg.IisApplicationDefinition but has IisPath=' + A.IisPath)
+        FROM cfg.Application AS A
+        LEFT JOIN cfg.IisApplicationDefinition AS I
+            ON I.IisApplicationCode = A.ApplicationCode
+           AND I.IsEnabled = 1
+        WHERE A.IsEnabled = 1
+          AND I.IisApplicationCode IS NULL
+          AND A.IisPath IS NOT NULL
+    ) AS Issues
+    ORDER BY IssueCode, ApplicationCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewManagedAssets  (48 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewManagedAssets]
+    @MachineName sysname = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET @MachineName=COALESCE(NULLIF(@MachineName,N''),CONVERT(sysname,SERVERPROPERTY('MachineName')));
+
+    SELECT IssueCode,InstanceCode,Details
+    FROM
+    (
+        SELECT
+            IssueCode=CONVERT(varchar(80),'ENABLED_INSTANCE_LOGO_MISSING'),
+            I.InstanceCode,
+            Details=CONVERT(nvarchar(1000),N'Enabled managed instance has no CustomerLogo binary content.')
+        FROM dbo.ManagedServer AS S
+        INNER JOIN dbo.ManagedInstance AS I ON I.ServerCode=S.ServerCode
+        WHERE S.IsEnabled=1 AND I.IsEnabled=1
+          AND S.MachineName=@MachineName
+          AND I.CustomerLogo IS NULL
+
+        UNION ALL
+
+        SELECT
+            'ENABLED_INSTANCE_LOGO_HASH_MISSING',
+            I.InstanceCode,
+            N'Enabled managed instance has logo content but no SHA-256.'
+        FROM dbo.ManagedServer AS S
+        INNER JOIN dbo.ManagedInstance AS I ON I.ServerCode=S.ServerCode
+        WHERE S.IsEnabled=1 AND I.IsEnabled=1
+          AND S.MachineName=@MachineName
+          AND I.CustomerLogo IS NOT NULL
+          AND NULLIF(I.CustomerLogoSha256,'') IS NULL
+
+        UNION ALL
+
+        SELECT
+            'ASSET_DESTINATION_MISSING',
+            CONVERT(varchar(20),NULL),
+            N'No enabled CUSTOMER_LOGO destinations are configured.'
+        WHERE NOT EXISTS
+        (
+            SELECT 1 FROM cfg.ManagedAssetDestination
+            WHERE AssetType='CUSTOMER_LOGO' AND IsEnabled=1
+        )
+    ) AS X
+    ORDER BY IssueCode,InstanceCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewRepairModel  (51 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewRepairModel]
+(
+    @RepairGroup varchar(30) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        Severity = CONVERT(varchar(10), 'ERROR'),
+        ObjectType = CONVERT(varchar(30), 'CONFIG_RULE'),
+        ObjectCode = R.RuleCode,
+        Issue = CONVERT(nvarchar(1000), N'JSON repair rule has no RepairValueType.')
+    FROM cfg.ConfigRule AS R
+    WHERE R.IsEnabled = 1
+      AND R.SelectorType = 'JSON_VALUE'
+      AND R.RepairValueType IS NULL
+      AND (@RepairGroup IS NULL OR R.RepairGroup = @RepairGroup)
+
+    UNION ALL
+
+    SELECT
+        'ERROR',
+        'FILE_POLICY',
+        CONVERT(varchar(150), P.FileID),
+        N'REPLACE policy has no ExpectedContentTemplate.'
+    FROM cfg.ConfigFileRepairPolicy AS P
+    WHERE P.IsEnabled = 1
+      AND P.RepairMode = 'REPLACE'
+      AND NULLIF(P.ExpectedContentTemplate, N'') IS NULL
+      AND (@RepairGroup IS NULL OR P.RepairGroup = @RepairGroup)
+
+    UNION ALL
+
+    SELECT
+        'ERROR',
+        'CONFIG_RULE',
+        R.RuleCode,
+        N'XML rule allows creation but has neither an existing-node strategy nor a missing-node template.'
+    FROM cfg.ConfigRule AS R
+    WHERE R.IsEnabled = 1
+      AND R.SelectorType = 'XML_TEXT'
+      AND R.CreateIfMissing = 1
+      AND
+      (
+          NULLIF(R.MissingParentSelector, N'') IS NULL
+          OR NULLIF(R.MissingNodeTemplate, N'') IS NULL
+      )
+      AND (@RepairGroup IS NULL OR R.RepairGroup = @RepairGroup);
+END;
+
+-- ======================================================================
+-- cfg.ReviewWindowsServiceModel  (201 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewWindowsServiceModel]
+    @MachineName sysname,
+    @InstanceCode varchar(20) = NULL
+WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ServerCode varchar(30);
+
+    SELECT @ServerCode = S.ServerCode
+    FROM dbo.ManagedServer AS S
+    WHERE S.MachineName = @MachineName
+      AND S.IsEnabled = 1;
+
+    IF @ServerCode IS NULL
+    BEGIN
+        SELECT
+            IssueCode   = CONVERT(varchar(100), 'MANAGED_SERVER_NOT_FOUND'),
+            Severity    = CONVERT(varchar(10), 'ERROR'),
+            InstanceCode = CONVERT(varchar(20), NULL),
+            ServiceCode = CONVERT(varchar(60), NULL),
+            Details     = CONVERT(nvarchar(2000), N'No enabled ManagedServer matches the supplied machine.');
+        RETURN;
+    END;
+
+    DECLARE @Issues table
+    (
+        IssueCode    varchar(100)    NOT NULL,
+        Severity     varchar(10)     NOT NULL,
+        InstanceCode varchar(20)     NULL,
+        ServiceCode  varchar(60)     NULL,
+        Details      nvarchar(2000)  NOT NULL
+    );
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.WindowsServiceDefinition
+        WHERE IsEnabled = 1
+    )
+    BEGIN
+        INSERT INTO @Issues
+        VALUES
+        (
+            'WINDOWS_SERVICE_DEFINITION_MISSING',
+            'ERROR',
+            NULL,
+            NULL,
+            N'No enabled cfg.WindowsServiceDefinition row exists.'
+        );
+    END;
+
+    INSERT INTO @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    )
+    SELECT
+        'SERVICE_ACCOUNT_USERNAME_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        D.ServiceCode,
+        N'IisIdentityUserName is required because the Windows service uses the per-instance IIS identity.'
+    FROM cfg.ManagedInstanceRuntime AS I
+    CROSS JOIN cfg.WindowsServiceDefinition AS D
+    WHERE I.ServerCode = @ServerCode
+      AND I.IsEnabled = 1
+      AND D.IsEnabled = 1
+      AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+      AND NULLIF(LTRIM(RTRIM(I.IisIdentityUserName)), N'') IS NULL;
+
+    INSERT INTO @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    )
+    SELECT
+        'SERVICE_ACCOUNT_PASSWORD_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        D.ServiceCode,
+        N'IisIdentityPassword is required to create or reconcile the Windows service logon account.'
+    FROM cfg.ManagedInstanceRuntime AS I
+    CROSS JOIN cfg.WindowsServiceDefinition AS D
+    WHERE I.ServerCode = @ServerCode
+      AND I.IsEnabled = 1
+      AND D.IsEnabled = 1
+      AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+      AND NULLIF(I.IisIdentityPassword, N'') IS NULL;
+
+    INSERT INTO @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    )
+    SELECT
+        'SERVICE_NAME_TOO_LONG',
+        'ERROR',
+        I.InstanceCode,
+        D.ServiceCode,
+        N'Resolved service name exceeds 256 characters: ' +
+            COALESCE(cfg.ExpandTemplate(I.InstanceCode, D.ServiceNameTemplate), N'<NULL>')
+    FROM cfg.ManagedInstanceRuntime AS I
+    CROSS JOIN cfg.WindowsServiceDefinition AS D
+    WHERE I.ServerCode = @ServerCode
+      AND I.IsEnabled = 1
+      AND D.IsEnabled = 1
+      AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+      AND LEN(cfg.ExpandTemplate(I.InstanceCode, D.ServiceNameTemplate)) > 256;
+
+    ;WITH ServiceNames AS
+    (
+        SELECT
+            I.InstanceCode,
+            D.ServiceCode,
+            ServiceName = cfg.ExpandTemplate(I.InstanceCode, D.ServiceNameTemplate)
+        FROM cfg.ManagedInstanceRuntime AS I
+        CROSS JOIN cfg.WindowsServiceDefinition AS D
+        WHERE I.ServerCode = @ServerCode
+          AND I.IsEnabled = 1
+          AND D.IsEnabled = 1
+          AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+    ), Duplicates AS
+    (
+        SELECT ServiceName
+        FROM ServiceNames
+        GROUP BY ServiceName
+        HAVING COUNT(*) > 1
+    )
+    INSERT INTO @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    )
+    SELECT
+        'DUPLICATE_SERVICE_NAME',
+        'ERROR',
+        N.InstanceCode,
+        N.ServiceCode,
+        N'More than one enabled operation resolves to the same Windows service name: ' + N.ServiceName
+    FROM ServiceNames AS N
+    INNER JOIN Duplicates AS D
+        ON D.ServiceName = N.ServiceName;
+
+    ;WITH IdentityPasswords AS
+    (
+        SELECT
+            IdentityName = LOWER(LTRIM(RTRIM(I.IisIdentityUserName))),
+            I.IisIdentityPassword
+        FROM cfg.ManagedInstanceRuntime AS I
+        WHERE I.ServerCode = @ServerCode
+          AND I.IsEnabled = 1
+          AND NULLIF(LTRIM(RTRIM(I.IisIdentityUserName)), N'') IS NOT NULL
+          AND NULLIF(I.IisIdentityPassword, N'') IS NOT NULL
+          AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+    )
+    INSERT INTO @Issues
+    (
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    )
+    SELECT
+        'SERVICE_IDENTITY_PASSWORD_CONFLICT',
+        'ERROR',
+        NULL,
+        NULL,
+        N'The same local service identity has different passwords across enabled instances: ' + IdentityName
+    FROM IdentityPasswords
+    GROUP BY IdentityName
+    HAVING COUNT(DISTINCT IisIdentityPassword) > 1;
+
+    SELECT
+        IssueCode,
+        Severity,
+        InstanceCode,
+        ServiceCode,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity WHEN 'ERROR' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END,
+        InstanceCode,
+        ServiceCode,
+        IssueCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewWebAccessModel  (198 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewWebAccessModel]
+    @MachineName sysname = NULL,
+    @InstanceCode varchar(20) = NULL
+WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @MachineName =
+        COALESCE
+        (
+            NULLIF(@MachineName, N''),
+            CONVERT(sysname, SERVERPROPERTY('MachineName'))
+        );
+
+    SET @InstanceCode = NULLIF(@InstanceCode, '');
+
+    DECLARE @Issues TABLE
+    (
+        IssueCode   varchar(100)   NOT NULL,
+        Severity    varchar(10)    NOT NULL,
+        InstanceCode varchar(20)   NULL,
+        Details     nvarchar(2000) NOT NULL
+    );
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_POLICY_MISSING',
+        'ERROR',
+        NULL,
+        N'The enabled ManagedServer has no enabled Web Access policy.'
+    FROM dbo.ManagedServer AS S
+    WHERE S.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND NOT EXISTS
+      (
+          SELECT 1
+          FROM cfg.WebAccessPolicy AS P
+          WHERE P.ServerCode = S.ServerCode
+            AND P.IsEnabled = 1
+      );
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_USERNAME_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        N'WebAccessUserName is empty.'
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND
+      (
+          @InstanceCode IS NULL
+          OR I.InstanceCode = @InstanceCode
+      )
+      AND NULLIF(I.WebAccessUserName, N'') IS NULL;
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_PASSWORD_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        N'WebAccessPassword is empty. Store the per-instance password before deployment.'
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND
+      (
+          @InstanceCode IS NULL
+          OR I.InstanceCode = @InstanceCode
+      )
+      AND NULLIF(I.WebAccessPassword, N'') IS NULL;
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_BACKEND_URL_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        N'Web Access backend URL cannot be resolved from cfg.WebAccessPolicy.'
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    INNER JOIN cfg.WebAccessPolicy AS P
+        ON P.ServerCode = I.ServerCode
+       AND P.IsEnabled = 1
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND
+      (
+          @InstanceCode IS NULL
+          OR I.InstanceCode = @InstanceCode
+      )
+      AND NULLIF
+      (
+          cfg.ExpandTemplate
+          (
+              I.InstanceCode,
+              P.BackendBaseUrlTemplate
+          ),
+          N''
+      ) IS NULL;
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_PUBLIC_URL_MISSING',
+        'ERROR',
+        I.InstanceCode,
+        N'Web Access public launch URL cannot be resolved from cfg.WebAccessPolicy.'
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    INNER JOIN cfg.WebAccessPolicy AS P
+        ON P.ServerCode = I.ServerCode
+       AND P.IsEnabled = 1
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND
+      (
+          @InstanceCode IS NULL
+          OR I.InstanceCode = @InstanceCode
+      )
+      AND NULLIF
+      (
+          cfg.ExpandTemplate
+          (
+              I.InstanceCode,
+              P.PublicLaunchBaseUrlTemplate
+          ),
+          N''
+      ) IS NULL;
+
+    INSERT INTO @Issues
+    SELECT
+        'WEB_ACCESS_DUPLICATE_LOCAL_USER',
+        'ERROR',
+        MIN(I.InstanceCode),
+        N'The local Web Access username is assigned to more than one enabled instance on the same server: ' +
+        I.WebAccessUserName
+    FROM dbo.ManagedServer AS S
+    INNER JOIN cfg.ManagedInstanceRuntime AS I
+        ON I.ServerCode = S.ServerCode
+    WHERE S.IsEnabled = 1
+      AND I.IsEnabled = 1
+      AND S.MachineName = @MachineName
+      AND
+      (
+          @InstanceCode IS NULL
+          OR I.InstanceCode = @InstanceCode
+      )
+    GROUP BY
+        I.ServerCode,
+        I.WebAccessUserName
+    HAVING COUNT(*) > 1;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM cfg.WebAccessTemplate
+        WHERE TemplateCode = 'ROOT_DEFAULT_ASPX'
+          AND IsEnabled = 1
+          AND NULLIF(ContentTemplate, N'') IS NOT NULL
+    )
+    BEGIN
+        INSERT INTO @Issues
+        VALUES
+        (
+            'WEB_ACCESS_TEMPLATE_MISSING',
+            'ERROR',
+            NULL,
+            N'The enabled ROOT_DEFAULT_ASPX template is missing.'
+        );
+    END;
+
+    SELECT
+        IssueCode,
+        Severity,
+        InstanceCode,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity
+            WHEN 'ERROR' THEN 1
+            WHEN 'WARNING' THEN 2
+            ELSE 3
+        END,
+        IssueCode,
+        InstanceCode;
+END;
+
+-- ======================================================================
+-- cfg.ReviewLinksPageQrCodes  (92 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE cfg.ReviewLinksPageQrCodes
+    @MachineName sysname = NULL,
+    @InstanceCode varchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Issues TABLE
+    (
+        IssueCode varchar(100) NOT NULL,
+        Severity varchar(10) NOT NULL,
+        ObjectName nvarchar(300) NOT NULL,
+        Details nvarchar(2000) NOT NULL
+    );
+
+    INSERT @Issues
+    SELECT
+        'QR_CONTENT_HASH_MISMATCH',
+        'ERROR',
+        A.AssetCode,
+        N'The stored QR binary does not match ContentSha256.'
+    FROM cfg.LinksPageAsset AS A
+    WHERE A.IsEnabled = 1
+      AND A.AssetCode LIKE 'QR_CHANNEL[_]%'
+      AND LOWER
+          (
+              CONVERT
+              (
+                  char(64),
+                  HASHBYTES('SHA2_256', A.Content),
+                  2
+              )
+          ) <> A.ContentSha256;
+
+    INSERT @Issues
+    SELECT
+        'QR_ASSET_MISSING',
+        'WARNING',
+        CONCAT(I.InstanceCode, N' / ', I.CustomerCode),
+        N'No QR asset is configured for this enabled PT/ES environment.'
+    FROM dbo.ManagedInstance AS I
+    INNER JOIN dbo.ManagedServer AS S
+        ON S.ServerCode = I.ServerCode
+       AND S.IsEnabled = 1
+    WHERE I.IsEnabled = 1
+      AND I.CountryCode IN ('PT','ES')
+      AND I.CustomerCode IS NOT NULL
+      AND (@MachineName IS NULL OR S.MachineName = @MachineName)
+      AND (@InstanceCode IS NULL OR I.InstanceCode = @InstanceCode)
+      AND NOT EXISTS
+      (
+          SELECT 1
+          FROM cfg.LinksPageAsset AS A
+          WHERE A.AssetCode =
+                'QR_CHANNEL_' + CONVERT(varchar(20), I.CustomerCode)
+            AND A.IsEnabled = 1
+      );
+
+    INSERT @Issues
+    SELECT
+        'QR_ASSET_UNASSIGNED',
+        'INFO',
+        A.AssetCode,
+        N'The QR asset is currently not assigned to an enabled ManagedInstance.'
+    FROM cfg.LinksPageAsset AS A
+    WHERE A.IsEnabled = 1
+      AND A.AssetCode LIKE 'QR_CHANNEL[_]%'
+      AND NOT EXISTS
+      (
+          SELECT 1
+          FROM dbo.ManagedInstance AS I
+          WHERE I.IsEnabled = 1
+            AND A.AssetCode =
+                'QR_CHANNEL_' + CONVERT(varchar(20), I.CustomerCode)
+      );
+
+    SELECT
+        IssueCode,
+        Severity,
+        ObjectName,
+        Details
+    FROM @Issues
+    ORDER BY
+        CASE Severity
+            WHEN 'ERROR' THEN 1
+            WHEN 'WARNING' THEN 2
+            ELSE 3
+        END,
+        IssueCode,
+        ObjectName;
+END;
+
+-- ======================================================================
+-- cfg.ReviewPulseModel  (46 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE [cfg].[ReviewPulseModel]
+    @MachineName sysname,
+    @HubInstanceCode varchar(20)
+WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Issues TABLE(IssueCode varchar(100),Severity varchar(10),ObjectCode nvarchar(255),Details nvarchar(2000));
+
+    IF NOT EXISTS(
+        SELECT 1
+        FROM cfg.PulseProfile P
+        INNER JOIN cfg.ManagedInstanceRuntime I ON I.InstanceCode=P.HubInstanceCode AND I.IsEnabled=1
+        INNER JOIN dbo.ManagedServer S ON S.ServerCode=I.ServerCode AND S.IsEnabled=1
+        WHERE P.HubInstanceCode=@HubInstanceCode AND P.IsEnabled=1
+    )
+        INSERT @Issues VALUES('PULSE_HUB_NOT_FOUND','ERROR',@HubInstanceCode,N'Enabled pulse hub is not registered on any managed server.');
+
+    IF EXISTS(
+        SELECT 1 FROM cfg.PulseProfile P
+        INNER JOIN cfg.ManagedInstanceRuntime I ON I.InstanceCode=P.HubInstanceCode
+        WHERE P.HubInstanceCode=@HubInstanceCode
+          AND (NULLIF(I.IisIdentityUserName,N'') IS NULL OR NULLIF(I.IisIdentityPassword,N'') IS NULL)
+    )
+        INSERT @Issues VALUES('PULSE_TASK_CREDENTIAL_MISSING','ERROR',@HubInstanceCode,N'DEMOPT IIS identity username/password are required to register the collector task.');
+
+    INSERT @Issues
+    SELECT 'PULSE_RESOURCE_HASH_MISMATCH','ERROR',ResourceCode,N'Pulse resource hash does not match content.'
+    FROM cfg.PulseResource
+    WHERE IsEnabled=1 AND ContentSha256<>LOWER(CONVERT(char(64),HASHBYTES('SHA2_256',CASE WHEN TextContent IS NOT NULL THEN CONVERT(varbinary(max),TextContent) ELSE BinaryContent END),2));
+
+    INSERT @Issues
+    SELECT 'PULSE_HTTP_APPLICATION_MISSING','ERROR',P.ApplicationCode,N'HTTP policy references a missing or disabled application.'
+    FROM cfg.PulseHttpPolicy P
+    LEFT JOIN cfg.Application A ON A.ApplicationCode=P.ApplicationCode AND A.IsEnabled=1
+    WHERE P.IsEnabled=1 AND A.ApplicationCode IS NULL;
+
+    IF NOT EXISTS(SELECT 1 FROM cfg.PulseResource WHERE ResourceCode='PULSE_INDEX_HTML' AND IsEnabled=1)
+        INSERT @Issues VALUES('PULSE_PAGE_TEMPLATE_MISSING','ERROR','PULSE_INDEX_HTML',N'Pulse page template is missing.');
+
+    IF NOT EXISTS(SELECT 1 FROM cfg.PulseResource WHERE ResourceCode='PULSE_LOGO' AND IsEnabled=1)
+        INSERT @Issues VALUES('PULSE_LOGO_MISSING','ERROR','PULSE_LOGO',N'Pulse logo asset is missing.');
+
+    SELECT * FROM @Issues ORDER BY CASE Severity WHEN 'ERROR' THEN 1 ELSE 2 END,IssueCode,ObjectCode;
+END;
+
+-- ======================================================================
+-- ops.ReviewOperationsFramework  (103 lines)
+-- ======================================================================
+CREATE OR ALTER PROCEDURE ops.ReviewOperationsFramework
+    @MachineName sysname
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        IssueCode,
+        Severity,
+        ObjectCode,
+        Details
+    FROM
+    (
+        SELECT
+            IssueCode = CONVERT(varchar(100),'OPS_PROFILE_MISSING'),
+            Severity = CONVERT(varchar(10),'ERROR'),
+            ObjectCode = CONVERT(nvarchar(300),'DEFAULT'),
+            Details = CONVERT(nvarchar(2000),N'The enabled DEFAULT console profile is missing.')
+        WHERE NOT EXISTS
+        (
+            SELECT 1
+            FROM ops.ConsoleProfile
+            WHERE ProfileCode = 'DEFAULT'
+              AND IsEnabled = 1
+        )
+
+        UNION ALL
+
+        SELECT
+            'OPS_ACTION_WITHOUT_ENGINE',
+            'ERROR',
+            A.ActionCode,
+            N'Enabled ENGINE action has no enabled engine.'
+        FROM ops.Action AS A
+        LEFT JOIN ops.Engine AS E
+            ON E.EngineCode = A.EngineCode
+           AND E.IsEnabled = 1
+        WHERE A.IsEnabled = 1
+          AND A.ActionType = 'ENGINE'
+          AND E.EngineCode IS NULL
+
+        UNION ALL
+
+        SELECT
+            'OPS_ENGINE_HASH_MISMATCH',
+            'ERROR',
+            E.EngineCode,
+            N'Engine ScriptSha256 does not match ScriptText.'
+        FROM ops.Engine AS E
+        WHERE E.IsEnabled = 1
+          AND E.ScriptSha256 <>
+              LOWER
+              (
+                  CONVERT
+                  (
+                      char(64),
+                      HASHBYTES('SHA2_256',CONVERT(varbinary(max),E.ScriptText)),
+                      2
+                  )
+              )
+
+        UNION ALL
+
+        SELECT
+            'OPS_REQUIRED_OBJECT_MISSING',
+            'ERROR',
+            R.ActionCode + N'/' + R.RequirementCode,
+            N'Missing required ' + R.RequirementType + N': ' + R.ObjectName
+        FROM ops.ActionRequirement AS R
+        WHERE R.IsEnabled = 1
+          AND R.IsRequired = 1
+          AND
+          (
+              (R.RequirementType = 'OBJECT' AND OBJECT_ID(R.ObjectName) IS NULL)
+              OR
+              (
+                  R.RequirementType = 'COLUMN'
+                  AND COL_LENGTH
+                      (
+                          PARSENAME(R.ObjectName,3) + N'.' + PARSENAME(R.ObjectName,2),
+                          PARSENAME(R.ObjectName,1)
+                      ) IS NULL
+              )
+          )
+
+        UNION ALL
+
+        SELECT
+            'OPS_LOCAL_SERVER_MISSING',
+            'ERROR',
+            @MachineName,
+            N'No enabled ManagedServer exists for the current machine.'
+        WHERE NOT EXISTS
+        (
+            SELECT 1
+            FROM dbo.ManagedServer
+            WHERE MachineName = @MachineName
+              AND IsEnabled = 1
+        )
+    ) AS Issues
+    ORDER BY Severity,IssueCode,ObjectCode;
+END;
