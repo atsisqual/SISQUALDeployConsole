@@ -72,3 +72,8 @@ The old script uses the WebAdministration provider for the site test and the poo
 1. [PENDING] One local user per instance (76) with a reset password on every apply (`EnforcePasswordOnApply`). Recommendation: reset only when the credential changed, to avoid logging out users.
 2. [PENDING] Restart of the root pool: only when something changed (recommended).
 3. [PENDING] Whether the credential file may use the machine key of the portable instead of machine-scope protection. Recommendation: no, because the website process must read it.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `WEB_ACCESS.*`.

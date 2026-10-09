@@ -61,3 +61,8 @@ None expected: reviews report codes, object names and counts. [PROPOSED] A marke
 
 1. [PENDING] Keep a separate action, or make it the preview of the preflight. Recommendation: keep a read-only "check the model" screen that calls the shared reviews, and let the preflight call the same code and block on errors.
 2. [PENDING] Add the catalog status to the report (build time, source, manifest verified), which is the visible control for the stale-catalog risk (R-044). Recommendation: yes, as information rows.
+
+## Host contract
+
+- Engine class: `READ_ONLY`.
+- Credential references: none.

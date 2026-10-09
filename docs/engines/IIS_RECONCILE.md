@@ -77,3 +77,8 @@ The four plan procedures become a plan builder over the catalog (analysed here: 
 3. [PENDING] IIS-29 (central certificate store): no catalog binding definition uses that flag (`SslFlags` values 0, 1, 0). Recommendation: out of V1 scope; check real servers for sites that use it [V].
 4. [PENDING] The matrix's open points: IIS-01 mechanism, IIS-20 policy (recommend report and require approval when a virtual directory has children or settings), swallowed errors as warnings (recommend yes), backup mechanism.
 5. [PENDING] Where the pool identity account (`PoolIdentityTemplate`) lives and who creates it, since no policy allows creating it. Recommendation: a preflight error if it does not exist.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `IIS_IDENTITY.*`.

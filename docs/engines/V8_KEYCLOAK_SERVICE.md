@@ -73,3 +73,8 @@ The fixed Keycloak folder (`C:\SISQUALWFM\WFM.Services\<host>\V8\sisqualKeycloak
 2. [PENDING] `FULL_DEPLOYMENT` configures Keycloak (`CONFIG_REPAIR`, step 20) before the service exists; confirm that the files exist at step 20 on a clean server.
 3. [PENDING] Certificate validation exception for self-signed certificates. Recommendation: validate by default.
 4. [PENDING] Service log rotation (the log has no limit today). Recommendation: size-based rotation or a separate log folder with retention.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `IIS_IDENTITY.*`.

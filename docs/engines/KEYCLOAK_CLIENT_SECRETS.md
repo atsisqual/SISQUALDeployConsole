@@ -72,3 +72,8 @@ The mapping query joins the rule table to read the literal template as the secre
 2. [PENDING] Keycloak may keep client data in memory; a direct database update may not take effect until a restart or cache refresh. Recommendation: test [V]; if needed, restart the service after a change, or use the admin interface instead.
 3. [PENDING] One secret per rule for all instances (also open in the `CONFIG_REPAIR` specification, PR #32). Recommendation: keep, and review per-instance secrets before any customer-facing rollout.
 4. [PENDING] Connection encryption defaults for the instance SQL Servers. Recommendation: encrypt and validate by default, with an explicit exception setting.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `RULE_SECRET.ESIGN_V8_CLIENT_SECRET`, `RULE_SECRET.GEOFENCES_V8_CLIENT_SECRET`, `RULE_SECRET.MESSENGER_V8_CLIENT_SECRET`, `RULE_SECRET.VACATIONS_V8_CLIENT_SECRET`, `RULE_SECRET.MAINSHELL_V8_CLIENT_SECRET`, `RULE_SECRET.WEBAPI_V8_SWAGGER_CLIENT_SECRET`, `RULE_SECRET.API_V8_KEYCLOAK_ACCESS_TOKEN`, `RULE_SECRET.DASHBOARDS_V8_CLIENT_SECRET`.

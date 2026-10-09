@@ -75,3 +75,8 @@ The plan and review procedures become a local plan builder and review. The nativ
 2. [PENDING] One account for 76 instances: confirm that all instances of a machine share user and password (the review checks it). Recommendation: yes, one credential per machine for that account.
 3. [PENDING] Whether a restart is wanted on every change or only when the binary or account changed. Recommendation: only then.
 4. [PENDING] The logon-right helper: keep a native call, or use a tool. Recommendation: keep a small native call, tested under PowerShell 7.
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: `IIS_IDENTITY.*`.

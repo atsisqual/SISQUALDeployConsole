@@ -77,3 +77,8 @@ None expected: logos are customer branding, not credentials. Reports contain pat
 2. [PENDING] Validate that the bytes are a PNG and within a size limit before writing. Recommendation: yes (PNG signature, 1 MB), reported as an `ERROR` at catalog review.
 3. [PENDING] ACLs of the written files. The old engine sets none, so they inherit from the folder. Recommendation: keep, and confirm on the pilot [V].
 4. [PENDING] Should the engine also remove logos at destinations when the instance has none? Recommendation: no (never delete).
+
+## Host contract
+
+- Engine class: `MUTATING`.
+- Credential references: none.
