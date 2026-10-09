@@ -151,6 +151,13 @@ function Get-CatalogRows {
     finally { $command.Dispose() }
 }
 
+function Get-ServerPolicyRows {
+    # A policy belongs to one server: a row for another ServerCode (a catalog edited by hand and sealed again) is not the policy of this machine.
+    param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][object]$Server)
+    $serverCode = [string](Get-Field $Server 'ServerCode' '')
+    return @(Get-EnabledRows $Name | Where-Object { [string](Get-Field $_ 'ServerCode' '') -ceq $serverCode })
+}
+
 function Get-EnabledRows {
     param([Parameter(Mandatory)][string]$Name)
     return @(Get-CatalogRows $Name | Where-Object { Test-Enabled $_ })
@@ -344,7 +351,7 @@ function Invoke-ReviewRepairModel {
 
 function Invoke-ReviewIisModel {
     param($Context)
-    if (@(Get-EnabledRows 'cfg_IisServerPolicy').Count -eq 0) { Add-Issue ERROR IIS_MODEL SERVER_POLICY_MISSING }
+    if (@(Get-ServerPolicyRows 'cfg_IisServerPolicy' $Context.Server).Count -eq 0) { Add-Issue ERROR IIS_MODEL SERVER_POLICY_MISSING }
     $applications = @(Get-EnabledRows 'cfg_Application')
     $appCodes = New-OrdinalMap
     foreach ($app in $applications) { $appCodes[[string](Get-Field $app 'ApplicationCode' '')] = $true }
@@ -431,7 +438,7 @@ function Invoke-ReviewWindowsServices {
 
 function Invoke-ReviewWebAccess {
     param($Context)
-    if (@(Get-EnabledRows 'cfg_WebAccessPolicy').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_POLICY_MISSING }
+    if (@(Get-ServerPolicyRows 'cfg_WebAccessPolicy' $Context.Server).Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_POLICY_MISSING }
     if (@(Get-EnabledRows 'cfg_WebAccessTemplate').Count -eq 0) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_TEMPLATE_MISSING }
     $selectedCodes = New-OrdinalMap
     foreach ($selected in $Context.SelectedInstances) { $selectedCodes[[string](Get-Field $selected 'InstanceCode' '')] = $true }
@@ -455,7 +462,7 @@ function Invoke-ReviewWebAccess {
         if ($userCodes.Count -lt 2) { continue }
         foreach ($selectedUserHolder in @($userCodes | Where-Object { $selectedCodes.ContainsKey($_) } | Sort-Object -Unique)) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_DUPLICATE_LOCAL_USER $holderUser $selectedUserHolder }
     }
-    foreach ($policy in @(Get-EnabledRows 'cfg_WebAccessPolicy')) {
+    foreach ($policy in @(Get-ServerPolicyRows 'cfg_WebAccessPolicy' $Context.Server)) {
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'BackendBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_BACKEND_URL_MISSING }
         if ([string]::IsNullOrWhiteSpace([string](Get-Field $policy 'PublicLaunchBaseUrlTemplate' ''))) { Add-Issue ERROR WEB_ACCESS WEB_ACCESS_PUBLIC_URL_MISSING }
     }
@@ -463,7 +470,7 @@ function Invoke-ReviewWebAccess {
 
 function Invoke-ReviewLinksModel {
     param($Context)
-    if (@(Get-EnabledRows 'cfg_LinksPagePolicy').Count -eq 0) { Add-Issue ERROR LINKS_MODEL LINKS_PAGE_POLICY_MISSING }
+    if (@(Get-ServerPolicyRows 'cfg_LinksPagePolicy' $Context.Server).Count -eq 0) { Add-Issue ERROR LINKS_MODEL LINKS_PAGE_POLICY_MISSING }
     foreach ($row in @(Get-EnabledRows 'cfg_LinksProfileInstance')) {
         $instanceCode = [string](Get-Field $row 'InstanceCode' '')
         if (@($Context.Instances | Where-Object { [string](Get-Field $_ 'InstanceCode' '') -ceq $instanceCode }).Count -eq 0) { Add-Issue ERROR LINKS_MODEL LINKS_INSTANCE_MISSING $instanceCode $instanceCode }
@@ -687,7 +694,7 @@ function Write-EngineResult {
     # must still be written: one target, failed.
     $targetCount = 1
     if ($null -ne $script:Connection) {
-        try { $targetCount = [Math]::Max(1,@(Get-SelectedInstances -Instances (Get-CatalogRows 'dbo_ManagedInstance') -RequestedCode ([string](Get-Field $script:Request 'instanceCode' ''))).Count) }
+        try { $targetCount = @(Get-SelectedInstances -Instances (Get-CatalogRows 'dbo_ManagedInstance') -RequestedCode ([string](Get-Field $script:Request 'instanceCode' ''))).Count }   # once the catalog is open the count is the real one, zero included
         catch { $targetCount = 1 }
     }
     # A failed target is an instance with at least one ERROR; an ERROR that belongs to no instance (the catalog or the server) fails one target.

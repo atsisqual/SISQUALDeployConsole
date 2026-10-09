@@ -326,6 +326,17 @@ INSERT INTO ops_Action VALUES('DEPLOYMENT_PREFLIGHT','ENGINE','DEPLOYMENT_PREFLI
     $cancelled = if (Test-Path -LiteralPath $cancelResultPath -PathType Leaf) { [IO.File]::ReadAllText($cancelResultPath) | ConvertFrom-Json -Depth 30 -DateKind String } else { $null }
     Check 'a cancelled all-instances run marks every selected instance failed (the catalog is open, so the targets are known)' ($null -ne $cancelled -and [string]$cancelled.errorMessage -ceq 'CANCELLED' -and [int]$cancelled.summary.targetCount -eq 5 -and [int]$cancelled.summary.failedTargets -eq 5 -and [int]$cancelled.summary.succeededTargets -eq 0) (('exit={0} target={1} failed={2}' -f $cancelDirect.ExitCode,$cancelled.summary.targetCount,$cancelled.summary.failedTargets))
 
+    # A policy belongs to one server: policies for another ServerCode are not this machine's policies.
+    $otherServer = New-ScenarioPackage -Name 'otherserver' -ExtraSql "UPDATE cfg_IisServerPolicy SET ServerCode = 'OTHER_SERVER'; UPDATE cfg_WebAccessPolicy SET ServerCode = 'OTHER_SERVER'; UPDATE cfg_LinksPagePolicy SET ServerCode = 'OTHER_SERVER';"
+    $otherServerRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $otherServer.Package -CatalogPath $otherServer.Catalog -CatalogSession $otherServer.Session -ManifestEntries $otherServer.Entries -Mode PREVIEW -InstanceCode INST1 -Secrets $secrets
+    $policyCodes = @($otherServerRun.results | Where-Object { $_.status -ceq 'ERROR' -and ($_.object -like 'SERVER_POLICY_MISSING*' -or $_.object -like 'WEB_ACCESS_POLICY_MISSING*' -or $_.object -like 'LINKS_PAGE_POLICY_MISSING*') } | ForEach-Object { ([string]$_.object).Split(':')[0] } | Sort-Object)
+    Check 'policies that belong to another server do not count as this machine policy (IIS, Web Access and Links)' (($policyCodes -join ',') -ceq 'LINKS_PAGE_POLICY_MISSING,SERVER_POLICY_MISSING,WEB_ACCESS_POLICY_MISSING') ($policyCodes -join ',')
+
+    # A catalog that opens and has no enabled instance has zero targets, not one.
+    $noInstances = New-ScenarioPackage -Name 'noinstances' -ExtraSql 'UPDATE dbo_ManagedInstance SET IsEnabled = 0;'
+    $noInstancesRun = Invoke-SisqualEngineHost -ActionCode $preflightActionCode -EngineClass READ_ONLY -PackageRoot $noInstances.Package -CatalogPath $noInstances.Catalog -CatalogSession $noInstances.Session -ManifestEntries $noInstances.Entries -Mode PREVIEW -InstanceCode '' -Secrets $secrets
+    Check 'an all-instances run on a catalog with no enabled instance reports zero targets, not a fabricated one' ([int]$noInstancesRun.summary.targetCount -eq 0 -and [int]$noInstancesRun.summary.failedTargets -eq 0 -and [int]$noInstancesRun.summary.succeededTargets -eq 0) (('target={0} failed={1} succeeded={2}' -f $noInstancesRun.summary.targetCount,$noInstancesRun.summary.failedTargets,$noInstancesRun.summary.succeededTargets))
+
     # A path that leaves its folder: the file the catalog names exists, but outside the application folder, and must not satisfy the check.
     [IO.File]::WriteAllText((Join-Path $servicesRoot 'outside.txt'),'outside',[Text.UTF8Encoding]::new($false))
     $escape = New-ScenarioPackage -Name 'escape' -ExtraSql "INSERT INTO cfg_ConfigFile VALUES(3,'APP1','..\..\outside.txt','JSON',1,1);"
