@@ -1,7 +1,7 @@
 # Roadmap to completion
 
 **Date:** 2026-10-10
-**Status:** accepted as the working plan (PR #9 was merged on the owner's instruction); updated by the reviewer for ADR-0007 and the owner decisions recorded in `docs/decisions-log.md`. Repository status below is refreshed against `main@a1f84e0a5322f58ff03a67671a7376fe30ae03d5` and current pull-request metadata.
+**Status:** accepted as the working plan (PR #9 was merged on the owner's instruction); updated by the reviewer for ADR-0007 and the owner decisions recorded in `docs/decisions-log.md`. Repository status below is refreshed against `main@b0294e38333ab4ccc10d2ee93f2eb0efe3bbf0e0` and current pull-request metadata.
 Tags: [CONFIRMED] demonstrated, [PROPOSED] recommended, [PENDING] undecided, [DECIDED] owner decision, [CLOSED] explicitly closed, [V] needs a real server.
 
 ## 1. Where we are
@@ -26,13 +26,15 @@ Integrated in `main`:
 - Pending-marker audit, integrated by PR #77.
 - D6/D7/D8/D11 specification corrections, integrated by PR #79, PR #80, PR #81 and PR #82.
 - The original preflight-procedure evidence used for the predicate work, integrated by PR #83, PR #89 and PR #90.
+- D13 predicate specifications for IIS deployment, Links page and website branding, integrated by PR #85, PR #86 and PR #87.
+- The D14 managed-assets parity audit, integrated by PR #92.
 
 Current coordination/documentation branches outside `main` are not described as product changes "in review":
 
 - PR #69 remains open as the reviewer-owned porting-guide/work-queue coordination branch. It is deliberately not treated as integrated product state.
 - PR #78 is the text-only `PULSE_STATUS` port brief and remains separate from `main` while its documented dependency on the work-queue material is unresolved.
-- PRs #84-#88 are the D13 predicate specifications for the original preflight checks that were outside the first engine slice.
-- PRs #91-#99 are the D14 parity audits of the nine original review procedures already represented by the integrated engine.
+- PR #84 and PR #88 are the D13 predicate specifications still outside `main`; PR #85, PR #86 and PR #87 are already integrated.
+- PR #91 and PRs #93-#99 are the D14 parity audits still outside `main`; PR #92 is already integrated.
 - PR #101 is the D12 documentation correction for secret-reference family semantics; PR #102 is the D1 engine-result-row contract. Neither is part of `main` until the reviewer integrates it.
 
 ### DEPLOYMENT_PREFLIGHT coverage and parity
@@ -49,7 +51,7 @@ The complete portable application is not finished: machine identity and Phase 1C
 
 | Measure | What it counts | Estimate |
 |---|---|---:|
-| Share of the roadmap's remaining phases done | Only the work represented by the roadmap's remaining phases, using planned pull-request counts as weights. It excludes Phase 0 to 2, conversion B1 to B5 and other work completed before that roadmap. | about 17% (13 of 70) |
+| Share of the roadmap's remaining phases done | Only the work represented by the roadmap's remaining phases, using planned pull-request counts as weights. It excludes Phase 0 to 2, conversion B1 to B5 and other work completed before that roadmap. | about 19% (13 of 70; 18.57% unrounded) |
 | Whole project by pull requests | Work completed before the roadmap plus work completed since, divided by the whole project including the 19 pull requests added by the parity/audit work (`E0h` and `E0b` to `E0g`). | about 36 to 45% |
 | Area-weighted whole project | Work areas weighted by estimated effort; the engine work is treated as roughly half of the project and remains the largest and least advanced area. | about 33 to 35% |
 
