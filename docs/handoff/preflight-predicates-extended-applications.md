@@ -2,17 +2,77 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewExtendedApplicationModel`
-**Verification base:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`
+**Verification base:** procedure/view evidence from current `main`; port-gap evidence copied from read-only PR #69 head `bcd9a1d8ff71afbb9804dd042c7407b75e4a7b69`.
 
 ## Evidence boundary
 
-The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt`. Its header records the T-SQL comparison rules used below and includes the verbatim `cfg.IisServiceAutoStartProviderCatalog` view consumed by this procedure. The requested port set and rules 6 and 7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69.
+The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt`. Its header records the T-SQL comparison rules used below and current `main` contains the verbatim `cfg.IisServiceAutoStartProviderCatalog` view consumed by this procedure. The requested port set and rules 6 and 7 come from `docs/handoff/preflight-port-gap.md` on read-only PR #69; because #69 is still open, the exact rule text needed by this specification is reproduced below instead of requiring an unavailable file in this branch.
 
 SQLite table/column names were checked against `tests/Fixtures/carried-schema.json`. SQL Server table names map to SQLite by replacing the schema separator with `_`.
 
 `docs/decisions-log.md` records the 2026-10-05 owner decision that every source database uses `Latin1_General_CI_AS`, that stored text is not case-normalized, and that catalog codes in the new system compare exactly. Legacy text comparison is therefore case-insensitive and accent-sensitive. SQL Server equality also pads ordinary spaces; `LEN` ignores trailing ordinary spaces; one-argument `LTRIM`/`RTRIM` remove ordinary spaces only; and `NULLIF(x,'')` therefore returns NULL for ordinary-spaces-only values.
 
-The legacy `cfg.IisServiceAutoStartProviderCatalog` is a view, not a carried table. Its exact definition derives from carried `dbo.ManagedServer`, `dbo.ManagedInstance`, `cfg.IisApplicationAutoStartDefinition`, and `cfg.IisServiceAutoStartProviderDefinition`. `ProviderCode = P.ProviderName`; `ProviderName` is produced by nested `REPLACE` calls for `{INSTANCE_CODE}`, `{HOST_NAME}`, and `{HOST_NAME_SAFE}`, with `{HOST_NAME_SAFE}` using `REPLACE(I.HostName, '.', '_')`.
+### Exact dependent view evidence
+
+Current `main` appends this verbatim view to `docs/handoff/preflight-legacy-procedures.sql.txt`:
+
+```sql
+CREATE OR ALTER VIEW cfg.IisServiceAutoStartProviderCatalog
+AS
+SELECT DISTINCT
+    S.ServerCode,
+    S.MachineName,
+    I.InstanceCode,
+    SiteName = I.HostName,
+    ProviderCode = P.ProviderName,
+    ProviderName =
+        CONVERT
+        (
+            nvarchar(255),
+            REPLACE
+            (
+                REPLACE
+                (
+                    REPLACE
+                    (
+                        P.ProviderNameTemplate,
+                        N'{INSTANCE_CODE}',
+                        I.InstanceCode
+                    ),
+                    N'{HOST_NAME}',
+                    I.HostName
+                ),
+                N'{HOST_NAME_SAFE}',
+                REPLACE(I.HostName, N'.', N'_')
+            )
+        ),
+    P.ProviderType,
+    P.IsRequired,
+    P.SortOrder,
+    P.IsEnabled
+FROM dbo.ManagedServer AS S
+INNER JOIN dbo.ManagedInstance AS I
+    ON I.ServerCode = S.ServerCode
+   AND I.IsEnabled = 1
+INNER JOIN cfg.IisApplicationAutoStartDefinition AS D
+    ON D.IsEnabled = 1
+   AND D.ServiceAutoStartEnabled = 1
+INNER JOIN cfg.IisServiceAutoStartProviderDefinition AS P
+    ON P.ProviderName = D.ServiceAutoStartProvider
+   AND P.IsEnabled = 1
+WHERE S.IsEnabled = 1;
+```
+
+The view is derived only from carried `dbo.ManagedServer`, `dbo.ManagedInstance`, `cfg.IisApplicationAutoStartDefinition`, and `cfg.IisServiceAutoStartProviderDefinition`. `ProviderCode = P.ProviderName`; `ProviderName` is produced by the nested `REPLACE` calls above.
+
+### Rules 6 and 7 copied from PR #69
+
+The following is the implementation guidance this document consumed from PR #69 head `bcd9a1d8ff71afbb9804dd042c7407b75e4a7b69`:
+
+- **Rule 6 / cross-instance:** when a check requires two things to differ, compare against every enabled instance of the machine and report on the selected participant; credentials of other instances come from the request and missing required credentials are an error. **[PENDING]** This scope expansion is recorded porting guidance, not an owner-approved decision; where it changes an original selected-instance predicate, the final scope remains pending owner decision.
+- **Rule 7 / containment:** resolve catalog-derived paths through junctions/symbolic links and require the resolved path to remain under its approved root before probing it; unreadable paths are item errors, Windows names compare without case, catalog codes exactly.
+
+No write is made to PR #69 by this specification.
 
 ### Complete text-operator matrix
 
@@ -161,15 +221,15 @@ HAVING COUNT(*) > 1;
 
 **Original severity:** `ERROR`.
 
-**Rule 6:** Build provider rows for every enabled instance of the local machine. Report the duplicate on the selected instance when it participates; conflict with an unselected enabled instance still fires for the selected participant.
+**Rule 6:** **[PENDING]** PR #69 proposes comparing duplicates across every enabled instance of the local machine and reporting on the selected participant, including a conflict with an unselected enabled instance. The source procedure itself is machine-filtered but not selected-instance-filtered; the portable reporting/scope rule is not an owner-approved decision and must remain pending until the owner decides it.
 
 **Rule 7:** No filesystem path.
 
 **Text comparison:** See proc 70-71. Legacy duplicate groups are CI_AS and use SQL text equality semantics, including trailing-space equivalence. Portable non-code grouping is `[PENDING]`.
 
-**Tests:** Trigger: selected and unselected enabled instances derive the same group. Non-trigger: unique groups. Boundaries: case-only and trailing-space-only names group in legacy; accent-only names do not.
+**Tests:** Trigger: two enabled local-machine rows derive the same group. Non-trigger: unique groups. Boundary for the pending reporting rule: run for one selected instance when its duplicate is unselected; do not freeze the expected reporting outcome until Rule 6 is approved or rejected. Case-only and trailing-space-only names group in legacy; accent-only names do not.
 
-**Ambiguity:** Portable provider-name grouping policy only.
+**Ambiguity:** Portable provider-name grouping policy and Rule-6 reporting/scope policy.
 
 ## `AUTO_START_POOL_NOT_ALWAYS_RUNNING`
 
@@ -313,4 +373,4 @@ IF NOT EXISTS
 
 ## Implementation stop points
 
-The provider-catalog view derivation is confirmed. Remaining `[PENDING]` items are portable comparison-policy decisions, not unknown source behavior: non-code provider identifiers/names, `PoolStartMode`, Windows-name accent/padding behavior, and the case behavior of the view's placeholder `REPLACE`. Catalog codes are already exact by owner decision. No predicate may be reconstructed from the issue-code name.
+The provider-catalog view definition and T-SQL semantics are now self-contained in this specification from current `main`. The exact Rule 6/7 guidance consumed from PR #69 is also reproduced above so implementation does not depend on an unavailable file in this branch. Remaining `[PENDING]` items are portable comparison-policy decisions plus the owner decision on Rule 6 scope/reporting. Catalog codes are already exact by owner decision. No predicate may be reconstructed from the issue-code name.
