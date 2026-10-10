@@ -3,7 +3,7 @@
 **Status:** [PROPOSED]
 **Original:** `cfg.ReviewManagementModel`
 **Engine:** `Invoke-ReviewManagementModel`
-**Evidence:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa` and PR #67 branch `engine/deployment-preflight-v1`.
+**Evidence:** original procedure at `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`; audited engine implementation at PR #67 final head `d4cf6fe974030a39d3ffe852d2809ce9009fe73b`, integrated by merge `41d09f38e5aedc4f9b62656870d0b999ca661205`.
 
 The original procedure reports free-text findings and has no issue-code column. `LOCAL_SERVER_MISSING`, `LOCAL_SERVER_MULTIPLE`, and `INSTANCE_SERVER_MISMATCH` are engine-owned names.
 
