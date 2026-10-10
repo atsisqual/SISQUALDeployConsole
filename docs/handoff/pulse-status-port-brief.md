@@ -105,7 +105,7 @@ The exact `cfg.ReviewPulseModel` source defines these six codes. All are `ERROR`
 |---|---|---|
 | `PULSE_HUB_NOT_FOUND` | `ERROR` | No enabled `cfg.PulseProfile` for the requested hub joined to an enabled hub instance and enabled managed server. Portable mapping uses the corresponding carried instance/server tables. |
 | `PULSE_TASK_CREDENTIAL_MISSING` | `ERROR` | A Pulse profile exists for the hub and either the hub IIS identity username or password is empty. Portable mapping keeps the username predicate and replaces the password column with external `IIS_IDENTITY.<HubInstanceCode>` credential presence/decryption. |
-| `PULSE_RESOURCE_HASH_MISMATCH` | `ERROR` | For an enabled `cfg.PulseResource`, `ContentSha256` differs from lowercase SHA-256 of `TextContent` converted to bytes when text is non-null, otherwise `BinaryContent`. |
+| `PULSE_RESOURCE_HASH_MISMATCH` | `ERROR` | For an enabled `cfg.PulseResource`, `ContentSha256` differs from lowercase SHA-256 of `TextContent` encoded as UTF-16LE bytes when text is non-null, otherwise `BinaryContent`. `docs/migration/catalog-conversion-plan.md` records that the stored resource hashes use the UTF-16LE representation. |
 | `PULSE_HTTP_APPLICATION_MISSING` | `ERROR` | An enabled `cfg.PulseHttpPolicy` has no enabled `cfg.Application` with the same `ApplicationCode`. |
 | `PULSE_PAGE_TEMPLATE_MISSING` | `ERROR` | No enabled `cfg.PulseResource` with `ResourceCode = 'PULSE_INDEX_HTML'`. |
 | `PULSE_LOGO_MISSING` | `ERROR` | No enabled `cfg.PulseResource` with `ResourceCode = 'PULSE_LOGO'`. |
@@ -205,6 +205,10 @@ The owner approved an explicit catalog setting for a certificate-validation exce
 
 **Owner question:** approve, reject or amend that proposed state/persistence design before E1 treats it as settled behavior.
 
+### A7. Checks cut off by the overall collection deadline
+
+**[PENDING]** The owner decision fixes bounded parallelism and an overall deadline shorter than the collection interval, but it does not define the result semantics for checks that are still queued or are cancelled when that deadline expires. Before E1 implements the collector, decide whether those checks retain prior state, become a failure/unknown/not-run state, or are omitted, and define how that choice affects consecutive-failure counters, stale handling, the status snapshot and page counters. Collector behavior is blocked on this point; the deadline itself remains an approved constraint.
+
 ## 10. Test list by original issue code
 
 Each implemented original issue code gets its own behavior test. The trigger must be the exact source predicate, not a reconstruction from the name.
@@ -213,7 +217,7 @@ Each implemented original issue code gets its own behavior test. The trigger mus
 |---|---|
 | `PULSE_HUB_NOT_FOUND` | Catalog with no enabled hub/profile/server join satisfying the exact predicate; expect exactly this `ERROR` for the hub. Include a valid control case. |
 | `PULSE_TASK_CREDENTIAL_MISSING` | Two cases preserving the original OR predicate: empty catalog username, and valid username with missing/empty external IIS credential. Expect this `ERROR`; marker secret must not appear anywhere. |
-| `PULSE_RESOURCE_HASH_MISMATCH` | Enabled text resource and enabled binary resource whose stored SHA-256 is changed independently of content; expect this `ERROR` for the resource. Valid hashes must not trigger. |
+| `PULSE_RESOURCE_HASH_MISMATCH` | Enabled text resource and enabled binary resource whose stored SHA-256 is changed independently of content; expect this `ERROR` for the resource. Valid hashes must not trigger. For the valid text control, use a non-ASCII, multiline value and calculate the expected SHA-256 independently from its UTF-16LE bytes; the test must not derive the expected value through the implementation path being tested. |
 | `PULSE_HTTP_APPLICATION_MISSING` | Enabled HTTP policy whose `ApplicationCode` has no enabled matching application; expect this `ERROR`. Disabled policy is the negative control. |
 | `PULSE_PAGE_TEMPLATE_MISSING` | Remove/disable only `PULSE_INDEX_HTML`; expect this `ERROR`. |
 | `PULSE_LOGO_MISSING` | Remove/disable only `PULSE_LOGO`; expect this `ERROR`. |
@@ -233,7 +237,7 @@ Additional integration/security tests after the blocking source questions are an
 - preview writes nothing;
 - live branding/page/web-config/logo/collector writes use a temporary file and atomic replacement of the live target;
 - unconditional live-target recovery for the original safeguarded set: inject a failure on the later collector write after page, web config and logo have already been replaced; require the step-8 backups to restore page, web config, logo and collector to byte-for-byte equality with their pre-apply state, regardless of which of those targets had already been replaced. Website-branding assets are intentionally excluded from this recovery assertion because the original step 8 does not back them up; adding such backup coverage remains the `[PENDING]` decision recorded above;
-- bounded parallel checks respect the overall deadline;
+- **[PENDING A7]** deadline-cutoff coverage: create enough slow checks that some are queued or cancelled when the overall deadline expires, then assert the decided status/counter/stale/page-snapshot semantics. Do not freeze an expected outcome until A7 is decided;
 - HTTPS certificate validation is enabled by default;
 - healthy, responding-as-healthy, redirect, timeout/refused and failed responses preserve `HealthyStatusCodes`/`RespondingStatusCodes` semantics;
 - scheduled-task COM fallback is covered when `ScheduledTasks` is unavailable;
@@ -244,4 +248,4 @@ If the A6 persistence proposal is approved, add proposal-specific tests for atom
 
 ## 11. E1 entry gate
 
-E1 can implement the six exact Pulse-model predicates and non-ambiguous orchestration behavior only after its PR re-reads the exact source snapshot. Before coding website-branding checks, the check plan, collector destination, certificate exception, branding destination or portable state persistence, resolve A1-A6 with source/owner evidence. If an exact predicate remains unclear, stop on that item and name the ambiguity; do not infer it from an issue code or current document wording.
+E1 can implement the six exact Pulse-model predicates and non-ambiguous orchestration behavior only after its PR re-reads the exact source snapshot. Before coding website-branding checks, the check plan, collector destination, certificate exception, branding destination, portable state persistence or deadline-cutoff result semantics, resolve A1-A7 with source/owner evidence. If an exact predicate remains unclear, stop on that item and name the ambiguity; do not infer it from an issue code or current document wording.
