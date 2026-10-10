@@ -2,7 +2,7 @@
 
 **Status:** [PROPOSED]
 **Procedure:** `cfg.ReviewLinksPagePresentationResources`
-**Verification base:** `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`
+**Verification base:** original predicate evidence from `main@f7989a6b9043b9b16300404eb7e1dd27ca06a2aa`; implementation evidence from PR #67 final head `d4cf6fe974030a39d3ffe852d2809ce9009fe73b`, integrated by merge `41d09f38e5aedc4f9b62656870d0b999ca661205`.
 
 ## Evidence boundary
 
@@ -10,7 +10,7 @@ The predicate source is `docs/handoff/preflight-legacy-procedures.sql.txt`. The 
 
 SQLite table and column names were checked against `tests/Fixtures/carried-schema.json`. `cfg.LinksPagePresentationResource` maps to `cfg_LinksPagePresentationResource`; the carried columns used by the requested predicate are `ResourceCode`, `ResourceText`, `ContentSha256`, and `IsEnabled`.
 
-The corrected inventory fixture exists on PR #67, not main. The regenerated port gap records 66 original codes, 31 implemented and 35 still unported. For this procedure specifically, the original has two codes and exactly one remains unported.
+The corrected legacy-code fixture was carried by PR #67 and its final engine implementation is now integrated in `main` by merge `41d09f38e5aedc4f9b62656870d0b999ca661205`. The regenerated port gap records 66 original codes, 31 implemented and 35 still unported. For this procedure specifically, the original has two codes and exactly one remains unported.
 
 `docs/decisions-log.md` records the source database collation as `Latin1_General_CI_AS`: source text comparison is case-insensitive and accent-sensitive. The same 2026-10-05 owner decision makes catalog codes exact in the new system. `ContentSha256` is hash text, not a catalog code, so the source hash comparison semantics below remain CI_AS.
 
@@ -18,7 +18,7 @@ The corrected inventory fixture exists on PR #67, not main. The regenerated port
 
 The exact extracted procedure emits two issue codes:
 
-- `LINKS_PRESENTATION_RESOURCE_MISSING` -- already implemented by `Invoke-ReviewLinksPresentation` in PR #67: when there is no enabled `cfg_LinksPagePresentationResource` row, the engine emits this `ERROR` code;
+- `LINKS_PRESENTATION_RESOURCE_MISSING` -- implemented by `Invoke-ReviewLinksPresentation` at PR #67 final head `d4cf6fe974030a39d3ffe852d2809ce9009fe73b` and now present in `main` via merge `41d09f38e5aedc4f9b62656870d0b999ca661205`: when there is no enabled `cfg_LinksPagePresentationResource` row, the engine emits this `ERROR` code;
 - `LINKS_PRESENTATION_HASH_MISMATCH` -- not yet implemented and therefore the single D13e predicate specified below.
 
 The earlier 59-code inventory omitted seven original codes and made this procedure look inconsistent. The corrected 66-code inventory and regenerated `preflight-port-gap.md` resolve that discrepancy; there is no remaining `[PENDING]` inventory question and no 31st-item ambiguity.
@@ -62,4 +62,4 @@ WHERE P.IsEnabled = 1
 
 ## Implementation stop points
 
-This text specifies the only code from this procedure that is still unported. `LINKS_PRESENTATION_RESOURCE_MISSING` is already implemented; `LINKS_PRESENTATION_HASH_MISMATCH` remains. No predicate is derived from either issue-code name.
+This text specifies the only code from this procedure that is still unported. `LINKS_PRESENTATION_RESOURCE_MISSING` is already in integrated `main`; `LINKS_PRESENTATION_HASH_MISMATCH` remains. No predicate is derived from either issue-code name.
