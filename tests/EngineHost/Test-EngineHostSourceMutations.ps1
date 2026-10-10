@@ -41,6 +41,7 @@ $anchors = @(
     [pscustomobject]@{ Name = 'a failed containment ends the launcher process'; Text = "catch { Stop-SisqualEngineProcessTree -Process `$process -Containment `$null; throw 'ENGINE_CONTAINMENT_FAILED' }" },
     [pscustomobject]@{ Name = 'the stream reader keeps draining after the limit'; Text = 'if (overflow) continue;' },
     [pscustomobject]@{ Name = 'the result root must be one object'; Text = 'ConvertFrom-Json -Depth 50 -DateKind String -NoEnumerate' },
+    [pscustomobject]@{ Name = 'secret references may be declared per kind'; Text = 'function Test-SisqualSecretReferenceDeclared' },
     [pscustomobject]@{ Name = 'engine is contained in a job object'; Text = '$job.Assign($process.Handle)' },
     [pscustomobject]@{ Name = 'survivors are terminated through the job'; Text = '$job.TerminateSurvivors()' },
     [pscustomobject]@{ Name = 'the console host is not counted as a survivor'; Text = 'if (IsSystemConsoleHost(pid)) continue;' },
